@@ -1,0 +1,622 @@
+import type { Game } from '../game/game';
+import { cardRarity, cardTitle, type DraftCard } from '../game/build';
+import { esc } from './ui';
+import { HULLS, HEARTH_UNLOCKS, DIALOGUE, CHALLENGES, LORE, HEAT_LEVELS, SECTORS, BOSSES } from '../data/world';
+import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
+import { UPGRADES, SYNERGIES } from '../data/upgrades';
+import { ENEMIES, ELITE_INFO } from '../data/enemies';
+import { NODE_INFO } from '../game/run';
+import { Input, ACTION_LABELS, type Action } from '../core/input';
+import { dailySeed } from '../core/rng';
+import { PALETTES } from '../data/palettes';
+import { fmtInt } from '../core/math';
+import { MAX_LEVEL } from '../game/build';
+
+const FAMILY_ICON: Record<string, string> = { kinetic: '⁂', energy: '✧', ordnance: '✹', exotic: '◎', drone: '⟡', light: '☼' };
+const VISUAL_ICON: Record<string, string> = { projectile: '➶', ship: '⛭', trail: '≋', aura: '◌', explosion: '✺', drone: '⟡', hud: '◈' };
+
+function cardIcon(c: DraftCard): string {
+  switch (c.kind) {
+    case 'upgrade':
+      return c.def.rarity === 'artifact' ? '✦' : c.def.rarity === 'curse' ? '☠' : VISUAL_ICON[c.def.visual] ?? '◆';
+    case 'weapon':
+      return FAMILY_ICON[c.def.family] ?? '◆';
+    case 'level':
+      return '▲';
+    case 'evolve':
+      return '❂';
+  }
+}
+
+function cardDesc(c: DraftCard): string {
+  switch (c.kind) {
+    case 'upgrade':
+      return c.def.desc;
+    case 'weapon':
+      return `<span class="dim">${c.def.family} · ${c.def.slot}</span><br>${c.def.desc}<br><span class="faint">Evolves at Lv 5 with <b>${c.def.evolve.tag}</b>.</span>`;
+    case 'level':
+      return `Level ${c.weapon.level} → ${c.weapon.level + 1}. +15% damage, faster fire${c.weapon.level + 1 >= 3 ? ', more projectiles' : ''}.${c.weapon.level + 1 >= MAX_LEVEL ? `<br><span class="light">Max level: evolves with the ${c.weapon.def.evolve.tag} tag.</span>` : ''}`;
+    case 'evolve':
+      return `${c.weapon.def.evolve.desc}<br><span class="faint">${c.weapon.def.name} becomes something new.</span>`;
+  }
+}
+
+function cardTags(c: DraftCard, g: Game): string {
+  const tags = c.kind === 'upgrade' ? c.def.tags : c.kind === 'weapon' ? c.def.tags : c.weapon.def.tags;
+  return tags.map((t) => `<span class="tag ${(g.world!.build.tags[t] ?? 0) > 0 ? 'hit' : ''}">${t}</span>`).join('');
+}
+
+export function showTitle(g: Game): void {
+  const d = g.save.data;
+  const daily = dailySeed();
+  const best = d.dailyBest[daily];
+  g.ui.show(
+    'title',
+    `<div class="title-screen">
+      <div class="logo">LAST LIGHT<small>THE UNIVERSE IS GOING DARK</small></div>
+      <div class="menu">
+        <button class="primary" data-nav data-autofocus data-act="hearth">The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
+        <button data-nav data-act="quickdive">Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
+        <button data-nav data-act="daily">Daily Dive<span class="sub">${daily}${best ? ` · best ${fmtInt(best)}` : ''}</span></button>
+        <button data-nav data-act="codex">Codex</button>
+        <button data-nav data-act="settings">Settings</button>
+        <button data-nav data-act="credits">Credits</button>
+      </div>
+      <div class="footer"><span>Runs ${d.runs} · Wins ${d.wins} · Stars relit ${d.bossesKilled.length}</span><span>F1 look panel · F3 perf · click the game to lock the mouse</span></div>
+    </div>`,
+  );
+}
+
+export function showHearth(g: Game, refresh = false): void {
+  const d = g.save.data;
+  const lines = DIALOGUE.filter((l) => (l.req.runs ?? 0) <= d.runs && (l.req.bosses ?? 0) <= d.bossesKilled.length && (l.req.wins ?? 0) <= d.wins);
+  const shown = lines.slice(-3);
+  const tab = g.hearthTab;
+  let body = '';
+  if (tab === 'unlocks') {
+    body = HEARTH_UNLOCKS.map((u) => {
+      const lvl = g.save.unlockLevel(u.id);
+      const max = u.max ?? 1;
+      const cost = u.cost * (lvl + 1);
+      const done = lvl >= max;
+      return `<div class="item ${done ? 'owned' : d.embers < cost ? 'disabled' : ''}" data-nav data-act="unlock" data-arg="${u.id}">
+        <div class="ic">${u.kind === 'cosmetic' ? '❖' : u.kind === 'boost' ? '▲' : '◆'}</div>
+        <div class="grow"><div class="t">${esc(u.name)} ${max > 1 ? `<span class="faint">${lvl}/${max}</span>` : ''}</div><div class="d">${esc(u.desc)}</div></div>
+        <div class="price">${done ? 'OWNED' : `${cost} ✶`}</div></div>`;
+    }).join('');
+  } else if (tab === 'hulls') {
+    body = HULLS.map((h) => {
+      const own = d.hulls.includes(h.id);
+      const sel = g.selectedHull === h.id;
+      return `<div class="item ${sel ? 'owned' : ''} ${!own && d.embers < h.cost ? 'disabled' : ''}" data-nav data-act="hull" data-arg="${h.id}" style="--rc:${h.accent}">
+        <div class="ic">▲</div><div class="grow"><div class="t">${esc(h.name)} ${sel ? '<span class="light">· SELECTED</span>' : ''}</div><div class="d">${esc(h.desc)} <br><span class="light">${esc(h.passive)}</span><br>Starts: ${WEAPON_BY_ID[h.start.primary]!.name} + ${WEAPON_BY_ID[h.start.secondary]!.name}</div></div>
+        <div class="price">${own ? (sel ? '✓' : 'SELECT') : `${h.cost} ✶`}</div></div>`;
+    }).join('');
+  } else if (tab === 'arsenal') {
+    const pick = g.save.unlockLevel('l_pick') > 0;
+    body = `<p class="dim">Unlocked weapons enter the draft pool. ${pick ? 'Click an owned primary to start with it.' : 'Unlock <b>Armory Access</b> to choose your starting primary.'}</p>` +
+      WEAPONS.map((w) => {
+        const own = d.weapons.includes(w.id);
+        const sel = g.selectedPrimary === w.id;
+        return `<div class="item ${own ? '' : d.embers < (w.unlock ?? 50) ? 'disabled' : ''} ${sel ? 'owned' : ''}" data-nav data-act="weapon" data-arg="${w.id}">
+          <div class="ic">${FAMILY_ICON[w.family]}</div><div class="grow"><div class="t">${esc(w.name)} <span class="faint">${w.family} · ${w.slot}</span>${sel ? ' <span class="light">· START</span>' : ''}</div><div class="d">${esc(w.desc)}</div></div>
+          <div class="price">${own ? (pick && w.slot === 'primary' ? (sel ? '✓' : 'PICK') : '✓') : `${w.unlock ?? 50} ✶`}</div></div>`;
+      }).join('');
+  } else if (tab === 'heat') {
+    body = `<p class="dim">${d.heatUnlocked ? 'Stacking difficulty for better Embers.' : 'Relight the Last Star once to unlock Heat.'}</p>` +
+      [{ name: 'Heat 0 · Ember', desc: 'The standard dive.' }, ...HEAT_LEVELS].map((h, i) => {
+        const ok = i === 0 || (d.heatUnlocked && i <= d.maxHeat);
+        return `<div class="item ${g.selectedHeat === i ? 'owned' : ''} ${ok ? '' : 'disabled'}" data-nav data-act="heat" data-arg="${i}"><div class="ic">${i}</div><div class="grow"><div class="t">${h.name}</div><div class="d">${h.desc}${i > 0 ? ` (+${i * 12}% Embers)` : ''}</div></div></div>`;
+      }).join('');
+  } else if (tab === 'history') {
+    body = d.history.length
+      ? d.history.map((r) => `<div class="item"><div class="ic">${r.won ? '☀' : '☾'}</div><div class="grow"><div class="t">${r.won ? 'Relit the Last Star' : `Sector ${r.sector} · ${esc(r.cause)}`}${r.daily ? ' · DAILY' : ''}</div>
+          <div class="d">${esc(HULLS.find((h) => h.id === r.hull)?.name ?? r.hull)} · Heat ${r.heat} · ${r.kills} kills · ${fmtInt(r.light)} Light · ${Math.floor(r.timeSec / 60)}m${r.timeSec % 60}s<br>${esc(r.weapons.join(', '))}</div></div>
+          <div class="price">${fmtInt(r.score)}<br><span class="faint mono" title="seed">${esc(r.seed)}</span></div></div>`).join('')
+      : '<p class="dim">No dives yet.</p>';
+  } else if (tab === 'challenges') {
+    body = CHALLENGES.map((c) => `<div class="item ${d.challenges.includes(c.id) ? 'owned' : ''}"><div class="ic">${d.challenges.includes(c.id) ? '✓' : '·'}</div><div class="grow"><div class="t">${esc(c.name)}</div><div class="d">${esc(c.desc)}</div></div><div class="price">+${c.reward} ✶</div></div>`).join('');
+  }
+  const tabs = ['unlocks', 'hulls', 'arsenal', 'heat', 'challenges', 'history'];
+  const html = `<div class="row" style="padding:3vh 3vw;gap:3vw;align-items:stretch;width:100%">
+    <div class="col" style="width:min(420px,32vw)">
+      <h1>The Hearth</h1>
+      <div class="light display" style="font-size:var(--s4)">${fmtInt(d.embers)} Embers</div>
+      <div class="dim">Hearth level ${d.hearthLevel} · ${d.hulls.length}/${HULLS.length} hulls · ${d.weapons.length}/${WEAPONS.length} weapons</div>
+      <div style="margin-top:2vh">${shown.map((l, i) => `<div class="dialogue" style="animation-delay:${i * 0.25}s"><div class="who">${l.who}</div>${esc(l.text)}</div>`).join('')}</div>
+      <div class="col" style="margin-top:auto">
+        <button class="primary" data-nav data-autofocus data-act="dive">Dive · ${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? '')} · Heat ${g.selectedHeat}</button>
+        <button data-nav data-act="daily">Daily Dive</button>
+        <button data-nav data-act="title" data-back data-sfx="back">Back</button>
+      </div>
+    </div>
+    <div class="panel col grow" style="max-height:94vh">
+      <div class="tabs">${tabs.map((t) => `<button class="${t === tab ? 'on' : ''}" data-nav data-act="htab" data-arg="${t}">${t}</button>`).join('')}</div>
+      <div class="scroll col" style="max-height:78vh">${body}</div>
+    </div></div>`;
+  if (refresh) g.ui.refresh('hearth', html);
+  else g.ui.show('hearth', html);
+}
+
+export function showMap(g: Game): void {
+  const run = g.run!;
+  const w = g.world!;
+  const sec = SECTORS[run.sector]!;
+  const reach = new Set(g.reachable().map((n) => n.id));
+  const labels = run.map.nodes
+    .map((n) => {
+      const info = NODE_INFO[n.type];
+      const cls = n.id === run.node ? 'cur' : reach.has(n.id) ? 'reach' : n.visited ? 'done' : '';
+      return `<div class="node-label ${cls}" ${reach.has(n.id) ? 'data-nav' : ''} data-act="node" data-arg="${n.id}" data-node="${n.id}"><span class="ic">${info.icon}</span>${info.name}</div>`;
+    })
+    .join('');
+  const b = w.build;
+  g.ui.show(
+    'map',
+    `<div class="map-ui screen passthrough" style="position:absolute;inset:0;display:flex">
+      <div class="side panel col">
+        <h2>${esc(sec.name)}</h2>
+        <div class="dim">${esc(sec.star)} · ${esc(BOSSES[sec.boss]!.name)} waits at the dying star.</div>
+        <div class="stat"><span>Hull</span><b>${Math.ceil(w.player.hull)}/${w.player.maxHull}</b></div>
+        <div class="stat"><span>Light</span><b>${fmtInt(w.player.light)}</b></div>
+        <div class="stat"><span>Primary</span><b>${esc(b.primary.name)} Lv${b.primary.level}</b></div>
+        <div class="stat"><span>Secondary</span><b>${esc(b.secondary.name)} Lv${b.secondary.level}</b></div>
+        ${b.systems.map((s) => `<div class="stat"><span>System</span><b>${esc(s.name)} Lv${s.level}</b></div>`).join('')}
+        <div class="stat"><span>Upgrades</span><b>${[...b.upgrades.values()].reduce((a, c) => a + c, 0)}</b></div>
+        <div class="stat"><span>Synergies</span><b>${[...b.synergies].map((s) => SYNERGIES.find((x) => x.id === s)?.name).join(', ') || '—'}</b></div>
+        <div class="faint" style="margin-top:8px">Seed <span class="mono">${esc(run.seed)}</span>${run.daily ? ' · DAILY' : ''} · Heat ${run.heat}</div>
+        <button class="small" data-nav data-act="pausemenu">Menu</button>
+      </div>
+      <div class="side panel col" id="nodeinfo"><h3>Choose your next jump</h3><div class="dim">Pick a highlighted node. Each jump is a warp.</div>
+        ${Object.entries(NODE_INFO).filter(([k]) => k !== 'start').map(([, v]) => `<div class="row"><span style="width:20px;text-align:center">${v.icon}</span><span class="dim">${v.name}</span></div>`).join('')}
+      </div>
+    </div>
+    <div id="nodelabels">${labels}</div>`,
+  );
+}
+
+export function showDraft(g: Game): void {
+  const run = g.run!;
+  const w = g.world!;
+  const cards = run.draft ?? [];
+  const rerollCost = run.freeRerolls > 0 ? 'FREE' : `${20 + run.rerolls * 15} Light`;
+  const title = run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
+  g.ui.show(
+    'draft',
+    `<h1>${title}</h1><div class="dim">Light <span class="light mono">${fmtInt(w.player.light)}</span> · Cards marked COMBO work with your build</div>
+     <div class="cards">${cards
+       .map((c, i) => {
+         const r = cardRarity(c);
+         return `<div class="card r-${r}" style="--rc:var(--c-${r})" data-nav ${i === 0 ? 'data-autofocus' : ''} data-act="pick" data-arg="${i}">
+          <div class="glow"></div>${c.combo >= 2 ? '<div class="combo">COMBO</div>' : ''}
+          <div class="rar">${c.kind === 'evolve' ? 'Evolution' : c.kind === 'weapon' ? 'New weapon' : c.kind === 'level' ? 'Weapon level' : r}</div>
+          <div class="icon">${cardIcon(c)}</div>
+          <div class="nm">${esc(cardTitle(c))}</div>
+          <div class="ds">${cardDesc(c)}</div>
+          <div>${cardTags(c, g)}</div>
+          ${c.kind === 'upgrade' && run.banishes > 0 ? `<button class="small banish" data-act="banish" data-arg="${i}" title="Remove from this run's pool">Banish (${run.banishes})</button>` : ''}
+        </div>`;
+       })
+       .join('')}</div>
+     <div class="row"><button data-nav data-act="reroll">Reroll · ${rerollCost}</button><button data-nav data-act="skip">Skip · +25 Light</button></div>
+     <div class="faint" style="margin-top:12px">Keys <span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> pick</div>`,
+    'draft',
+  );
+}
+
+export function showShop(g: Game, refresh = false): void {
+  const run = g.run!;
+  const w = g.world!;
+  const items = run.shop ?? [];
+  const html = `<div class="panel center col" style="width:min(760px,92vw)">
+    <h1>Ash's Trading Post</h1>
+    <div class="dialogue"><div class="who">Ash</div>${['Everything must go. Mostly because the Hush is eating my warehouse.', 'Light only. No refunds. No questions. Some questions.', 'You again! Good. My best customer is still alive.'][run.sector % 3]}</div>
+    <div class="row spread"><span class="dim">Hull ${Math.ceil(w.player.hull)}/${w.player.maxHull}</span><span class="lightcount">${fmtInt(w.player.light)} Light</span></div>
+    <div class="col scroll" style="max-height:56vh">${items
+      .map((it, i) => `<div class="item ${it.sold ? 'owned' : w.player.light < it.price ? 'disabled' : ''}" style="--rc:var(--c-${it.rarity})" data-nav data-act="buy" data-arg="${i}">
+        <div class="ic">${it.kind === 'weapon' ? FAMILY_ICON[WEAPON_BY_ID[it.id]!.family] : it.kind.includes('repair') ? '✚' : it.kind === 'level' ? '▲' : '◆'}</div>
+        <div class="grow"><div class="t">${esc(it.name)} <span class="faint">${it.rarity}</span></div><div class="d">${esc(it.desc)}</div></div>
+        <div class="price">${it.sold ? 'SOLD' : `${it.price}`}</div></div>`)
+      .join('')}</div>
+    <button class="primary" data-nav data-act="leave" data-back>Warp on</button></div>`;
+  if (refresh) g.ui.refresh('shop', html);
+  else g.ui.show('shop', html);
+}
+
+export function showEvent(g: Game): void {
+  const run = g.run!;
+  const ev = run.lastEvent!;
+  const out = run.eventOutcome;
+  g.ui.show(
+    'event',
+    `<div class="panel center col" style="width:min(640px,92vw)">
+      <h1>${esc(ev.title)}</h1><p style="font-size:var(--s3);line-height:1.6">${esc(ev.text)}</p>
+      ${out ? `<div class="dialogue">${esc(out)}</div><button class="primary" data-nav data-autofocus data-act="leave">Continue</button>` : ev.choices.map((c, i) => `<button data-nav data-act="choice" data-arg="${i}" style="text-align:left">${esc(c.label)}</button>`).join('')}
+    </div>`,
+  );
+}
+
+export function showForge(g: Game): void {
+  const w = g.world!;
+  const run = g.run!;
+  const cost = 50 + run.sector * 20;
+  const commons = [...w.build.upgrades.keys()].filter((id) => UPGRADES.find((x) => x.id === id)?.rarity === 'common').length;
+  g.ui.refresh(
+    'forge',
+    `<div class="panel center col" style="width:min(720px,92vw)">
+      <h1>The Forge</h1><div class="row spread"><span class="dim">Fuse, upgrade or reroll.</span><span class="lightcount">${fmtInt(w.player.light)} Light</span></div>
+      <h3>Upgrade a weapon · ${cost} Light</h3>
+      ${w.build.weapons.map((x) => `<div class="item ${x.level >= 5 || w.player.light < cost ? 'disabled' : ''}" data-nav data-act="forge" data-arg="level:${x.def.id}"><div class="ic">${FAMILY_ICON[x.def.family]}</div><div class="grow"><div class="t">${esc(x.name)}</div><div class="d">Lv ${x.level} → ${Math.min(5, x.level + 1)}</div></div></div>`).join('')}
+      <h3>Fuse · two commons into a rare choice</h3>
+      <div class="item ${commons < 2 ? 'disabled' : ''}" data-nav data-act="forge" data-arg="fuse:"><div class="ic">⚒</div><div class="grow"><div class="t">Fuse</div><div class="d">${commons} common upgrades available</div></div></div>
+      <h3>Reroll an upgrade · ${Math.round(cost * 0.6)} Light</h3>
+      <div class="col scroll" style="max-height:24vh">${[...w.build.upgrades.keys()].map((id) => {
+        const u = UPGRADES.find((x) => x.id === id)!;
+        return `<div class="item" style="--rc:var(--c-${u.rarity})" data-nav data-act="forge" data-arg="reroll:${id}"><div class="ic">↻</div><div class="grow"><div class="t">${esc(u.name)}</div><div class="d">${esc(u.desc)}</div></div></div>`;
+      }).join('') || '<div class="dim">No upgrades yet.</div>'}</div>
+      <button class="primary" data-nav data-act="forge" data-arg="leave:" data-back>Leave</button></div>`,
+  );
+}
+
+export function showRest(g: Game): void {
+  const w = g.world!;
+  g.ui.show(
+    'rest',
+    `<div class="panel center col" style="width:min(620px,92vw)">
+      <h1>A Quiet Orbit</h1><p class="dim">The dark is still here. For a moment, nothing hunts you.</p>
+      <div class="item" data-nav data-autofocus data-act="rest" data-arg="repair:"><div class="ic">✚</div><div class="grow"><div class="t">Repair</div><div class="d">Restore ${Math.round(w.player.maxHull * 0.5)} hull (${Math.ceil(w.player.hull)}/${w.player.maxHull}).</div></div></div>
+      ${w.build.weapons.filter((x) => x.level < 5).map((x) => `<div class="item" data-nav data-act="rest" data-arg="train:${x.def.id}"><div class="ic">▲</div><div class="grow"><div class="t">Train ${esc(x.name)}</div><div class="d">Lv ${x.level} → ${x.level + 1}</div></div></div>`).join('')}
+    </div>`,
+  );
+}
+
+function buildSummary(g: Game): string {
+  const w = g.world!;
+  const b = w.build;
+  const total = b.weapons.reduce((a, x) => a + x.damageDealt, 0) || 1;
+  return `<div class="col"><h3>Weapons</h3>${b.weapons
+    .map((x) => `<div><div class="stat"><span>${esc(x.name)} Lv${x.level}${x.evolved ? ' ❂' : ''}</span><b>${fmtInt(x.damageDealt)} · ${x.kills} kills</b></div><div class="dmgbar" style="width:${(x.damageDealt / total) * 100}%"></div></div>`)
+    .join('')}
+    <h3 style="margin-top:10px">Upgrades</h3><div>${[...b.upgrades.entries()].map(([id, n]) => {
+      const u = UPGRADES.find((x) => x.id === id)!;
+      return `<span class="tag" style="color:var(--c-${u.rarity})">${esc(u.name)}${n > 1 ? ' ×' + n : ''}</span>`;
+    }).join('') || '<span class="dim">none</span>'}</div>
+    <h3 style="margin-top:10px">Synergies</h3><div>${[...b.synergies].map((s) => `<span class="tag hit">${esc(SYNERGIES.find((x) => x.id === s)!.name)}</span>`).join('') || '<span class="dim">none</span>'}</div></div>`;
+}
+
+export function showPause(g: Game): void {
+  g.ui.show(
+    'pause',
+    `<div class="row center" style="gap:3vw;align-items:flex-start">
+      <div class="col" style="width:280px"><h1>Paused</h1>
+        <button class="primary" data-nav data-autofocus data-act="resume" data-back>Resume</button>
+        <button data-nav data-act="settings">Settings</button>
+        <button data-nav data-act="abandon">Abandon dive</button>
+        <div class="dim" style="margin-top:12px">Seed <span class="mono">${esc(g.run?.seed ?? '')}</span></div>
+      </div>
+      <div class="panel" style="width:min(520px,60vw);max-height:80vh;overflow:auto">${g.world ? buildSummary(g) : ''}</div>
+    </div>`,
+  );
+}
+
+export function showDeath(g: Game): void {
+  const w = g.world!;
+  const r = g.lastRecord!;
+  g.ui.show(
+    'death',
+    `<div class="row center" style="gap:3vw;align-items:flex-start">
+      <div class="col" style="width:360px">
+        <div class="display" style="font-size:var(--s6);color:#d8d0e8">The light fades</div>
+        <div class="dim">Killed by <span style="color:var(--danger)">${esc(w.player.deathCause)}</span> in ${esc(SECTORS[g.run!.sector]!.name)}</div>
+        <div class="panel col" style="margin-top:12px">
+          <div class="stat"><span>Kills</span><b>${fmtInt(w.stats.kills)}</b></div>
+          <div class="stat"><span>Light harvested</span><b>${fmtInt(w.player.lightTotal)}</b></div>
+          <div class="stat"><span>Grazes</span><b>${fmtInt(w.stats.grazes)}</b></div>
+          <div class="stat"><span>Best chain</span><b>${w.stats.maxChain}</b></div>
+          <div class="stat"><span>Stars relit</span><b>${w.stats.bossKills}</b></div>
+          <div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div>
+          <div class="stat"><span>Embers earned</span><b class="light">+${r.embers}</b></div>
+          <div class="faint">Seed <span class="mono">${esc(r.seed)}</span></div>
+        </div>
+        <button class="primary" data-nav data-autofocus data-act="again">Dive again <span class="kbd">R</span></button>
+        <button data-nav data-act="hearth">Return to the Hearth</button>
+        <button class="small" data-nav data-act="copyseed">Copy seed & score</button>
+      </div>
+      <div class="panel" style="width:min(520px,55vw);max-height:84vh;overflow:auto">${buildSummary(g)}</div>
+    </div>`,
+  );
+}
+
+export function showVictory(g: Game): void {
+  const r = g.lastRecord!;
+  g.ui.show(
+    'victory',
+    `<div class="col center" style="align-items:center;text-align:center;max-width:720px">
+      <div class="logo" style="font-size:var(--s6)">THE LAST STAR BURNS</div>
+      <p class="dim" style="font-size:var(--s3)">For now, the dark retreats. Somewhere, a thousand stars remember how to shine.</p>
+      <div class="panel" style="width:420px"><div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div><div class="stat"><span>Embers</span><b class="light">+${r.embers}</b></div><div class="stat"><span>Time</span><b>${Math.floor(r.timeSec / 60)}m ${r.timeSec % 60}s</b></div></div>
+      <div class="row" style="margin-top:16px"><button class="primary" data-nav data-autofocus data-act="endless">Go beyond · Endless</button><button data-nav data-act="hearth">Return home</button></div>
+    </div>`,
+  );
+}
+
+export function showCredits(g: Game): void {
+  g.ui.show(
+    'credits',
+    `<div class="panel center col" style="width:min(640px,92vw)"><h1>Credits</h1>
+      <p>LAST LIGHT — design, code, shaders, VFX, synthesized audio and procedural music generated in-engine.</p>
+      <p class="dim">Rendering: three.js (MIT) as a rendering library. Fonts: Unica One, Chakra Petch, Syne Mono (SIL Open Font License) via Fontsource.</p>
+      <p class="dim">No third-party art or audio assets are used: every model is procedural geometry and every sound is synthesized with the Web Audio API. See docs/CREDITS.md.</p>
+      <p class="faint">Mood references: Signalis, Return of the Obra Dinn, Chris Foss, Outer Wilds. No assets copied.</p>
+      <button data-nav data-autofocus data-act="title" data-back>Back</button></div>`,
+  );
+}
+
+export function showCodex(g: Game): void {
+  const d = g.save.data;
+  const tab = g.codexTab;
+  let body = '';
+  const unk = '<span class="faint">???</span>';
+  if (tab === 'enemies') {
+    body = ENEMIES.map((e) => {
+      const k = d.codex.enemies.includes(e.id);
+      return `<div class="item ${k ? '' : 'disabled'}" style="--rc:${e.accent}"><div class="ic">●</div><div class="grow"><div class="t">${k ? esc(e.name) : unk} <span class="faint">${k ? e.faction : ''}</span></div><div class="d">${k ? esc(e.desc) : 'Not yet encountered.'}</div></div></div>`;
+    }).join('') + `<h3 style="margin-top:12px">Elite modifiers</h3>` + Object.values(ELITE_INFO).map((x) => `<div class="stat"><span>${x.name}</span><span class="dim">${x.desc}</span></div>`).join('') +
+      `<h3 style="margin-top:12px">Bosses</h3>` + Object.values(BOSSES).map((b) => `<div class="item ${d.bossesKilled.includes(b.id) ? '' : 'disabled'}"><div class="ic">☀</div><div class="grow"><div class="t">${d.bossesKilled.includes(b.id) ? b.name : unk}</div><div class="d">${d.bossesKilled.includes(b.id) ? esc(b.desc) : esc(b.title)}</div></div></div>`).join('');
+  } else if (tab === 'weapons') {
+    body = WEAPONS.map((w) => {
+      const k = d.codex.weapons.includes(w.id);
+      return `<div class="item ${k ? '' : 'disabled'}"><div class="ic">${FAMILY_ICON[w.family]}</div><div class="grow"><div class="t">${k ? esc(w.name) : unk} <span class="faint">${w.family}</span></div><div class="d">${k ? esc(w.desc) + `<br>Evolves with <b>${w.evolve.tag}</b> into <span class="light">${esc(w.evolve.name)}</span>` : 'Undiscovered.'}</div></div></div>`;
+    }).join('');
+  } else if (tab === 'upgrades') {
+    body = UPGRADES.map((u) => {
+      const k = d.codex.items.includes(u.id);
+      return `<div class="item ${k ? '' : 'disabled'}" style="--rc:var(--c-${u.rarity})"><div class="ic">◆</div><div class="grow"><div class="t">${k ? esc(u.name) : unk} <span class="faint">${u.rarity}</span></div><div class="d">${k ? esc(u.desc) : ''}</div></div></div>`;
+    }).join('');
+  } else if (tab === 'synergies') {
+    body = SYNERGIES.map((s) => {
+      const k = d.codex.synergies.includes(s.id);
+      const needs = Object.entries(s.needs).map(([t, n]) => `${n}× ${t}`).join(' + ');
+      return `<div class="item ${k ? '' : 'disabled'}"><div class="ic">${s.kind === 'reaction' ? '⚗' : '✦'}</div><div class="grow"><div class="t">${k ? esc(s.name) : unk} <span class="faint">${s.kind}</span></div><div class="d">${k ? esc(s.desc) : s.kind === 'synergy' ? `Needs ${needs}` : 'Combine statuses to discover.'}</div></div></div>`;
+    }).join('');
+  } else {
+    body = LORE.map((l) => {
+      const k = d.codex.lore.includes(l.id);
+      return `<div class="item ${k ? '' : 'disabled'}"><div class="ic">❦</div><div class="grow"><div class="t">${k ? esc(l.title) : unk}</div><div class="d">${k ? esc(l.text) : 'Found in derelicts and events.'}</div></div></div>`;
+    }).join('');
+  }
+  const count = (a: string[], all: number) => `${a.length}/${all}`;
+  const tabs: [string, string][] = [
+    ['enemies', count(d.codex.enemies, ENEMIES.length)],
+    ['weapons', count(d.codex.weapons, WEAPONS.length)],
+    ['upgrades', count(d.codex.items, UPGRADES.length)],
+    ['synergies', count(d.codex.synergies, SYNERGIES.length)],
+    ['lore', count(d.codex.lore, LORE.length)],
+  ];
+  g.ui.refresh(
+    'codex',
+    `<div class="panel center col" style="width:min(860px,94vw);max-height:92vh">
+      <h1>Codex</h1>
+      <div class="tabs">${tabs.map(([t, c]) => `<button class="${t === tab ? 'on' : ''}" data-nav data-act="ctab" data-arg="${t}">${t} ${c}</button>`).join('')}</div>
+      <div class="scroll col" style="max-height:66vh">${body}</div>
+      <button data-nav data-act="back" data-back>Back</button></div>`,
+  );
+}
+
+function slider(label: string, key: string, v: number, min: number, max: number, step: number, fmt = (x: number) => x.toFixed(2)): string {
+  return `<div class="setting"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-input="set" data-key="${key}" data-nav><span class="v">${fmt(v)}</span></div>`;
+}
+function toggle(label: string, key: string, v: boolean): string {
+  return `<div class="setting"><span>${label}</span><button class="small" data-nav data-act="toggle" data-arg="${key}">${v ? 'ON' : 'OFF'}</button><span></span></div>`;
+}
+function select(label: string, key: string, v: string, opts: [string, string][]): string {
+  return `<div class="setting"><span>${label}</span><select data-change="set" data-key="${key}" data-nav>${opts.map(([k, n]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span></span></div>`;
+}
+
+export function showSettings(g: Game, refresh = false): void {
+  const s = g.settings;
+  const tab = g.settingsTab;
+  let body = '';
+  if (tab === 'video') {
+    body = select('Quality', 'quality', s.quality, [['auto', 'Auto (adaptive)'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']]) +
+      slider('Field of view', 'fov', s.fov, 55, 100, 1, (x) => x.toFixed(0)) + toggle('CRT scanlines', 'scanlines', s.scanlines) + toggle('Cockpit camera (V)', 'cockpit', s.cockpit);
+  } else if (tab === 'audio') {
+    body = slider('Master', 'volumes.master', s.volumes.master, 0, 1, 0.05) + slider('Music', 'volumes.music', s.volumes.music, 0, 1, 0.05) + slider('Effects', 'volumes.sfx', s.volumes.sfx, 0, 1, 0.05) +
+      slider('Interface', 'volumes.ui', s.volumes.ui, 0, 1, 0.05) + slider('Ambience', 'volumes.ambience', s.volumes.ambience, 0, 1, 0.05) + toggle('Mono audio', 'mono', s.mono) + toggle('Visual cues for sounds', 'visualCues', s.visualCues);
+  } else if (tab === 'controls') {
+    body = slider('Mouse/stick sensitivity', 'sensitivity', s.sensitivity, 0.2, 3, 0.05) + toggle('Invert Y', 'invertY', s.invertY) + slider('Aim assist', 'aimAssist', s.aimAssist, 0, 1, 0.05) +
+      toggle('Auto-level', 'autoLevel', s.autoLevel) + toggle('Boost: toggle instead of hold', 'boostToggle', s.boostToggle) +
+      `<h3 style="margin-top:12px">Bindings · click then press a key/button</h3>` +
+      (Object.keys(ACTION_LABELS) as Action[]).map((a) => `<div class="setting"><span>${ACTION_LABELS[a]}</span><button class="small" data-nav data-act="rebind" data-arg="${a}">${s.bindings[a].map(Input.codeLabel).join(' / ')}</button><span></span></div>`).join('') +
+      `<button class="small" data-nav data-act="resetbind">Reset bindings</button>`;
+  } else if (tab === 'access') {
+    body = slider('Screen shake', 'shake', s.shake, 0, 1.5, 0.05) + slider('Flash intensity', 'flash', s.flash, 0, 1, 0.05) + toggle('Reduced motion', 'reducedMotion', s.reducedMotion) +
+      select('Colorblind shot tones', 'colorblind', s.colorblind, [['default', 'Default'], ['deuteranopia', 'Deuteranopia'], ['protanopia', 'Protanopia'], ['tritanopia', 'Tritanopia']]) +
+      slider('UI scale', 'uiScale', s.uiScale, 0.75, 1.6, 0.05) + toggle('Damage numbers', 'damageNumbers', s.damageNumbers) + slider('Game speed (assist)', 'gameSpeed', s.gameSpeed, 0.5, 1, 0.05);
+  } else {
+    body = `<p class="dim">Saves live in this browser (IndexedDB, localStorage fallback). Export a code to back up or move your progress.</p>
+      <button class="small" data-nav data-act="export">Export save</button>
+      <textarea id="savecode" placeholder="Paste a save code here"></textarea>
+      <div class="row"><button class="small" data-nav data-act="import">Import save</button><button class="small" data-nav data-act="wipe">Erase progress</button></div>`;
+  }
+  const tabs = ['video', 'audio', 'controls', 'access', 'data'];
+  const html = `<div class="panel center col" style="width:min(760px,94vw);max-height:92vh">
+    <h1>Settings</h1>
+    <div class="tabs">${tabs.map((t) => `<button class="${t === tab ? 'on' : ''}" data-nav data-act="stab" data-arg="${t}">${t === 'access' ? 'accessibility' : t}</button>`).join('')}</div>
+    <div class="scroll" style="max-height:66vh">${body}</div>
+    <button data-nav data-act="back" data-back data-sfx="back">Back</button></div>`;
+  if (refresh) g.ui.refresh('settings', html);
+  else g.ui.show('settings', html);
+}
+
+/** Wire every data-act action to the game. */
+export function registerActions(g: Game): void {
+  const ui = g.ui;
+  let settingsReturn: () => void = () => showTitle(g);
+  let codexReturn: () => void = () => showTitle(g);
+  ui.on('hearth', () => g.goHearth());
+  ui.on('title', () => g.goTitle());
+  ui.on('quickdive', () => g.startRun());
+  ui.on('dive', () => g.startRun());
+  ui.on('daily', () => g.startRun({ daily: true }));
+  ui.on('credits', () => {
+    g.setState('credits');
+    showCredits(g);
+  });
+  ui.on('codex', () => {
+    const from = g.state;
+    codexReturn = from === 'hearth' ? () => g.goHearth() : () => g.goTitle();
+    g.setState('codex');
+    showCodex(g);
+  });
+  ui.on('ctab', (a) => {
+    g.codexTab = a;
+    showCodex(g);
+  });
+  ui.on('settings', () => {
+    const from = g.state;
+    settingsReturn = from === 'pause' ? () => {
+      g.setState('pause');
+      showPause(g);
+    } : () => g.goTitle();
+    g.setState('settings');
+    showSettings(g);
+  });
+  ui.on('stab', (a) => {
+    g.settingsTab = a;
+    showSettings(g, true);
+  });
+  ui.on('back', () => {
+    if (g.state === 'settings') {
+      g.save.save();
+      settingsReturn();
+    } else if (g.state === 'codex') codexReturn();
+    else g.goTitle();
+  });
+  ui.on('set', (v, el) => {
+    const key = el.dataset.key!;
+    const s = g.settings as unknown as Record<string, unknown>;
+    const num = Number(v);
+    const val = isNaN(num) || key === 'quality' || key === 'colorblind' ? v : num;
+    if (key.startsWith('volumes.')) (s.volumes as Record<string, number>)[key.slice(8)] = num;
+    else s[key] = val;
+    const label = el.parentElement?.querySelector('.v');
+    if (label) label.textContent = typeof val === 'number' ? (key === 'fov' ? val.toFixed(0) : val.toFixed(2)) : '';
+    g.applySettings();
+    g.save.save();
+  });
+  ui.on('toggle', (k) => {
+    const s = g.settings as unknown as Record<string, boolean>;
+    s[k] = !s[k];
+    g.applySettings();
+    g.save.save();
+    showSettings(g, true);
+  });
+  ui.on('rebind', (a, el) => {
+    el.textContent = 'PRESS…';
+    g.input.captureNext = (code) => {
+      if (code !== 'Escape') g.settings.bindings[a as Action] = [code];
+      g.applySettings();
+      g.save.save();
+      showSettings(g, true);
+    };
+  });
+  ui.on('resetbind', () => {
+    import('../core/input').then((m) => {
+      g.settings.bindings = structuredClone(m.DEFAULT_BINDINGS);
+      g.applySettings();
+      g.save.save();
+      showSettings(g, true);
+    });
+  });
+  ui.on('export', () => {
+    const ta = document.getElementById('savecode') as HTMLTextAreaElement;
+    ta.value = g.save.export();
+    ta.select();
+    navigator.clipboard?.writeText(ta.value).catch(() => {});
+  });
+  ui.on('import', () => {
+    const ta = document.getElementById('savecode') as HTMLTextAreaElement;
+    const ok = g.save.import(ta.value);
+    g.audio.play(ok ? 'uiBuy' : 'uiDeny');
+    if (ok) g.applySettings();
+  });
+  ui.on('wipe', (_a, el) => {
+    if (el.dataset.confirm) {
+      g.save.reset();
+      g.goTitle();
+    } else {
+      el.dataset.confirm = '1';
+      el.textContent = 'Click again to erase';
+    }
+  });
+  ui.on('htab', (a) => {
+    g.hearthTab = a;
+    showHearth(g, true);
+  });
+  ui.on('unlock', (a) => g.buyUnlock(a));
+  ui.on('hull', (a) => g.buyHull(a));
+  ui.on('weapon', (a) => {
+    if (g.save.data.weapons.includes(a)) {
+      if (g.save.unlockLevel('l_pick') > 0 && WEAPON_BY_ID[a]!.slot === 'primary') {
+        g.selectedPrimary = g.selectedPrimary === a ? '' : a;
+        showHearth(g, true);
+      }
+    } else g.buyWeapon(a);
+  });
+  ui.on('heat', (a) => {
+    const i = Number(a);
+    if (i === 0 || (g.save.data.heatUnlocked && i <= g.save.data.maxHeat)) {
+      g.selectedHeat = i;
+      showHearth(g, true);
+    } else g.audio.play('uiDeny');
+  });
+  ui.on('node', (a) => g.chooseNode(Number(a)));
+  ui.on('pausemenu', () => {
+    g.setState('pause');
+    showPause(g);
+  });
+  ui.on('pick', (a) => g.pickCard(Number(a)));
+  ui.on('banish', (a) => g.banishCard(Number(a)));
+  ui.on('reroll', () => g.rerollDraft());
+  ui.on('skip', () => g.skipDraft());
+  ui.on('buy', (a) => g.buy(Number(a)));
+  ui.on('leave', () => {
+    if (g.state === 'event' && g.run?.eventOutcome?.includes('Hostiles')) return;
+    g.openMap();
+  });
+  ui.on('choice', (a) => g.chooseEvent(Number(a)));
+  ui.on('forge', (a) => {
+    const [k, arg] = a.split(':');
+    g.forgeAction(k!, arg ?? '');
+  });
+  ui.on('rest', (a) => {
+    const [k, arg] = a.split(':');
+    g.restAction(k!, arg ?? '');
+  });
+  ui.on('resume', () => {
+    if (g.prevState === 'map' || (g.state === 'pause' && !g.director)) {
+      g.openMap();
+      return;
+    }
+    g.resume();
+  });
+  ui.on('abandon', () => g.abandonRun());
+  ui.on('again', () => g.startRun({ hull: g.run?.hull, heat: g.run?.heat }));
+  ui.on('copyseed', () => {
+    const r = g.lastRecord;
+    if (r) navigator.clipboard?.writeText(`LAST LIGHT · seed ${r.seed} · ${r.won ? 'WON' : 'sector ' + r.sector} · score ${r.score}${r.daily ? ' · daily' : ''}`).catch(() => {});
+  });
+  ui.on('endless', () => g.startEndless());
+  ui.onBack = () => {
+    if (g.state === 'map') {
+      g.setState('pause');
+      showPause(g);
+    }
+  };
+  // number keys pick draft cards
+  window.addEventListener('keydown', (e) => {
+    if (g.state === 'draft' && /^Digit[1-4]$/.test(e.code)) g.pickCard(Number(e.code.slice(5)) - 1);
+  });
+  void PALETTES;
+}

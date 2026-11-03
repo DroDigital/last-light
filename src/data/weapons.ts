@@ -1,0 +1,240 @@
+import type { WeaponDef } from '../game/types';
+
+/**
+ * 33 weapons across 6 families. Each has a unique evolution unlocked at level 5
+ * when the build carries the evolution tag. Base params are per-shot.
+ */
+export const WEAPONS: WeaponDef[] = [
+  // ---------------- KINETIC (primary) ----------------
+  {
+    id: 'autocannon', name: 'Autocannon', family: 'kinetic', slot: 'primary', tags: ['kinetic', 'rapid'],
+    desc: 'Reliable rapid-fire slugs with solid knockback.', behavior: 'bullet', sfx: 'kinetic',
+    base: { damage: 9, rate: 9, speed: 240, life: 1.1, size: 0.35, count: 1, spread: 0.02, knock: 4 },
+    color: '#ffd8a0', recoil: 0.06, shake: 0.03,
+    evolve: { tag: 'crit', name: 'Thunderclap Cannon', desc: 'Crits detonate in small thunderclaps.', mods: { damage: 14, rate: 11, explode: 3, crit: 0.15 }, color: '#fff0c0' },
+  },
+  {
+    id: 'scattergun', name: 'Scattergun', family: 'kinetic', slot: 'primary', tags: ['kinetic', 'area'],
+    desc: 'A wide fan of pellets. Devastating up close.', behavior: 'bullet', sfx: 'scatter',
+    base: { damage: 6, rate: 2.6, speed: 200, life: 0.55, size: 0.3, count: 8, spread: 0.16, knock: 8 },
+    color: '#ffc080', recoil: 0.25, shake: 0.12,
+    evolve: { tag: 'split', name: 'Starburst Shotgun', desc: 'Pellets burst into secondary fans.', mods: { count: 11, split: 2, damage: 7 }, color: '#ffe0a0' },
+  },
+  {
+    id: 'flak', name: 'Flak Cannon', family: 'kinetic', slot: 'primary', tags: ['kinetic', 'area'],
+    desc: 'Shells that burst near enemies into shrapnel clouds.', behavior: 'bullet', sfx: 'heavy',
+    base: { damage: 16, rate: 3, speed: 150, life: 0.9, size: 0.5, count: 1, spread: 0.03, explode: 7, knock: 10 },
+    color: '#ffb060', recoil: 0.2, shake: 0.1, unlock: 60,
+    evolve: { tag: 'burn', name: 'Firestorm Battery', desc: 'Bursts rain burning shrapnel.', mods: { explode: 10, burn: 0.6, damage: 22 }, color: '#ff8030' },
+  },
+  {
+    id: 'railgun', name: 'Railgun', family: 'kinetic', slot: 'primary', tags: ['kinetic', 'pierce', 'charge'],
+    desc: 'Hypervelocity slug that pierces everything in a line.', behavior: 'rail', sfx: 'rail',
+    base: { damage: 70, rate: 0.9, range: 400, pierce: 99, size: 0.6, knock: 25, crit: 0.1 },
+    color: '#d0f0ff', recoil: 0.5, shake: 0.25, unlock: 90,
+    evolve: { tag: 'shock', name: 'Tempest Driver', desc: 'Rail lines leave chain lightning in their wake.', mods: { damage: 110, rate: 1.1, shock: 1, chain: 3 }, color: '#a0e0ff' },
+  },
+  {
+    id: 'gauss', name: 'Gauss Repeater', family: 'kinetic', slot: 'primary', tags: ['kinetic', 'pierce', 'rapid'],
+    desc: 'Twin magnetic slugs that punch through one target.', behavior: 'bullet', sfx: 'kinetic',
+    base: { damage: 8, rate: 7, speed: 300, life: 1, size: 0.3, count: 2, spread: 0.035, pierce: 1, knock: 3 },
+    color: '#e0e8ff', recoil: 0.05, shake: 0.03, unlock: 50,
+    evolve: { tag: 'cryo', name: 'Glacier Repeater', desc: 'Slugs freeze-brand targets for shatters.', mods: { damage: 11, pierce: 3, cryo: 0.5 }, color: '#c0f0ff' },
+  },
+  {
+    id: 'ripper', name: 'Ripper Disc', family: 'kinetic', slot: 'primary', tags: ['kinetic', 'ricochet'],
+    desc: 'Spinning discs ricochet between enemies.', behavior: 'bullet', sfx: 'heavy',
+    base: { damage: 14, rate: 2.8, speed: 140, life: 2.2, size: 0.55, count: 1, spread: 0, ricochet: 3, knock: 6 },
+    color: '#ffe0b0', recoil: 0.1, shake: 0.05, unlock: 70,
+    evolve: { tag: 'chain', name: 'Saw Constellation', desc: 'Discs ricochet endlessly and split on each bounce.', mods: { ricochet: 7, split: 1, damage: 18 }, color: '#fff0d0' },
+  },
+  // ---------------- ENERGY (primary) ----------------
+  {
+    id: 'pulse', name: 'Pulse Laser', family: 'energy', slot: 'primary', tags: ['energy', 'rapid'],
+    desc: 'Fast, precise bolts of coherent light.', behavior: 'bullet', sfx: 'energy',
+    base: { damage: 7, rate: 11, speed: 320, life: 0.9, size: 0.28, count: 1, spread: 0.01 },
+    color: '#a0fff0', recoil: 0.03, shake: 0.015,
+    evolve: { tag: 'pierce', name: 'Spectral Lattice', desc: 'Bolts pierce and leave refracted copies.', mods: { pierce: 3, damage: 10, split: 1 }, color: '#e0fff8' },
+  },
+  {
+    id: 'lance', name: 'Beam Lance', family: 'energy', slot: 'primary', tags: ['energy', 'pierce'],
+    desc: 'A continuous cutting beam. Hold to burn through lines.', behavior: 'beam', sfx: 'beam',
+    base: { damage: 4, rate: 20, range: 120, size: 0.5, pierce: 3 },
+    color: '#80ffe0', unlock: 60,
+    evolve: { tag: 'burn', name: 'Solar Scalpel', desc: 'The beam widens and ignites all it touches.', mods: { damage: 6, range: 160, size: 0.9, burn: 0.5, pierce: 8 }, color: '#ffe080' },
+  },
+  {
+    id: 'arc', name: 'Arc Caster', family: 'energy', slot: 'primary', tags: ['energy', 'chain', 'shock'],
+    desc: 'Lightning that leaps between nearby enemies.', behavior: 'arc', sfx: 'arc',
+    base: { damage: 12, rate: 4, range: 70, chain: 3, shock: 0.25 },
+    color: '#b0c0ff', recoil: 0.04, unlock: 55,
+    evolve: { tag: 'void', name: 'Stormheart', desc: 'Arcs chain twice as far and drag targets together.', mods: { chain: 7, range: 100, void: 0.4, damage: 15 }, color: '#c0a0ff' },
+  },
+  {
+    id: 'prismgun', name: 'Prism Cannon', family: 'energy', slot: 'primary', tags: ['energy', 'split'],
+    desc: 'Crystal bolts that refract into three on impact.', behavior: 'bullet', sfx: 'energy',
+    base: { damage: 13, rate: 4, speed: 220, life: 1.1, size: 0.4, count: 1, spread: 0.01, split: 3 },
+    color: '#ffc0ff', unlock: 65,
+    evolve: { tag: 'radiant', name: 'Rainbow Engine', desc: 'Refractions refract again, each shedding Light.', mods: { split: 5, radiant: 0.25, damage: 16 }, color: '#ffe0ff' },
+  },
+  {
+    id: 'needler', name: 'Ion Needler', family: 'energy', slot: 'primary', tags: ['energy', 'shock', 'rapid'],
+    desc: 'Needles that stack static charge on targets.', behavior: 'bullet', sfx: 'energy',
+    base: { damage: 4, rate: 16, speed: 280, life: 0.8, size: 0.2, count: 1, spread: 0.05, shock: 0.12 },
+    color: '#c0e0ff', unlock: 45,
+    evolve: { tag: 'homing', name: 'Hornet Swarmcaster', desc: 'Needles seek and overload targets.', mods: { homing: 3, shock: 0.3, rate: 20 }, color: '#e0f0ff' },
+  },
+  {
+    id: 'photon', name: 'Photon Fan', family: 'energy', slot: 'primary', tags: ['energy', 'area', 'light'],
+    desc: 'Sweeping fans of photons that grow with collected Light.', behavior: 'bullet', sfx: 'energy',
+    base: { damage: 6, rate: 3.5, speed: 210, life: 0.8, size: 0.3, count: 5, spread: 0.11 },
+    color: '#fff0a0', unlock: 80,
+    evolve: { tag: 'flare', name: 'Dawnwing', desc: 'A dawn-bright wall of light, doubled during Flare.', mods: { count: 9, damage: 9, radiant: 0.15 }, color: '#fffbe0' },
+  },
+  // ---------------- ORDNANCE (secondary) ----------------
+  {
+    id: 'swarm', name: 'Swarm Missiles', family: 'ordnance', slot: 'secondary', tags: ['ordnance', 'homing'],
+    desc: 'A salvo of seeking micro-missiles.', behavior: 'missile', sfx: 'missile',
+    base: { damage: 16, rate: 1.1, speed: 90, life: 3, size: 0.4, count: 6, spread: 0.5, homing: 5, explode: 4 },
+    color: '#ffa060', shake: 0.06,
+    evolve: { tag: 'on-kill', name: 'Locust Cloud', desc: 'Every kill releases two more missiles.', mods: { count: 10, damage: 20 }, color: '#ffc080' },
+  },
+  {
+    id: 'torpedo', name: 'Torpedo', family: 'ordnance', slot: 'secondary', tags: ['ordnance', 'area', 'charge'],
+    desc: 'A slow, heavy warhead with an enormous blast.', behavior: 'missile', sfx: 'missile',
+    base: { damage: 140, rate: 0.45, speed: 70, life: 4, size: 0.9, count: 1, homing: 1.2, explode: 18, knock: 40 },
+    color: '#ff8040', shake: 0.15, unlock: 50,
+    evolve: { tag: 'void', name: 'Collapsar Torpedo', desc: 'Detonations implode first, dragging enemies in.', mods: { damage: 200, explode: 26, void: 1 }, color: '#c080ff' },
+  },
+  {
+    id: 'mines', name: 'Cluster Mines', family: 'ordnance', slot: 'secondary', tags: ['ordnance', 'area'],
+    desc: 'Scatter proximity mines behind you.', behavior: 'mine', sfx: 'mine',
+    base: { damage: 40, rate: 0.9, speed: 30, life: 12, size: 0.6, count: 5, spread: 1.2, explode: 8, special: 0.4 },
+    color: '#ff9050', unlock: 40,
+    evolve: { tag: 'cryo', name: 'Permafrost Field', desc: 'Mines freeze everything in a wide radius.', mods: { count: 8, explode: 12, cryo: 1 }, color: '#a0e0ff' },
+  },
+  {
+    id: 'novabomb', name: 'Nova Bomb', family: 'ordnance', slot: 'secondary', tags: ['ordnance', 'area', 'light'],
+    desc: 'A thrown star that detonates in a blinding nova.', behavior: 'missile', sfx: 'missile',
+    base: { damage: 90, rate: 0.35, speed: 110, life: 0.9, size: 1.0, count: 1, explode: 26, knock: 60 },
+    color: '#fff0c0', shake: 0.3, unlock: 75,
+    evolve: { tag: 'radiant', name: 'Supernova Seed', desc: 'The nova rains Light motes and rekindles shields.', mods: { damage: 150, explode: 34, radiant: 1 }, color: '#ffffff' },
+  },
+  {
+    id: 'hellfire', name: 'Hellfire Rack', family: 'ordnance', slot: 'secondary', tags: ['ordnance', 'burn', 'rapid'],
+    desc: 'Rapid unguided rockets that leave fire behind.', behavior: 'missile', sfx: 'missile',
+    base: { damage: 12, rate: 6, speed: 150, life: 1.6, size: 0.35, count: 1, spread: 0.08, explode: 4, burn: 0.35 },
+    color: '#ff7030', shake: 0.04, unlock: 55,
+    evolve: { tag: 'homing', name: 'Inferno Choir', desc: 'Rockets seek and splash wider fire.', mods: { homing: 2.5, explode: 7, burn: 0.8 }, color: '#ffa040' },
+  },
+  {
+    id: 'shrapnel', name: 'Shrapnel Shell', family: 'ordnance', slot: 'secondary', tags: ['ordnance', 'split', 'kinetic'],
+    desc: 'A shell that bursts into a sphere of fragments.', behavior: 'missile', sfx: 'heavy',
+    base: { damage: 30, rate: 0.8, speed: 120, life: 0.7, size: 0.7, count: 1, split: 16, explode: 6 },
+    color: '#ffd090', shake: 0.1, unlock: 45,
+    evolve: { tag: 'ricochet', name: 'Pinball Shell', desc: 'Fragments ricochet three times.', mods: { split: 24, ricochet: 3 }, color: '#fff0c0' },
+  },
+  // ---------------- EXOTIC (secondary) ----------------
+  {
+    id: 'gravwell', name: 'Gravity Well', family: 'exotic', slot: 'secondary', tags: ['exotic', 'void', 'area'],
+    desc: 'Opens a well that drags and crushes enemies.', behavior: 'well', sfx: 'exotic',
+    base: { damage: 8, rate: 0.35, speed: 80, life: 4, size: 1.2, range: 26, special: 60, void: 1 },
+    color: '#b080ff', shake: 0.08,
+    evolve: { tag: 'ordnance', name: 'Event Horizon', desc: 'Wells collapse into a nova when they close.', mods: { range: 34, damage: 12, explode: 22 }, color: '#e0a0ff' },
+  },
+  {
+    id: 'singularity', name: 'Singularity', family: 'exotic', slot: 'secondary', tags: ['exotic', 'void', 'charge'],
+    desc: 'A slow black sun that devours everything near it.', behavior: 'well', sfx: 'exotic',
+    base: { damage: 18, rate: 0.2, speed: 40, life: 6, size: 2, range: 40, special: 110, void: 1 },
+    color: '#8040ff', shake: 0.12, unlock: 100,
+    evolve: { tag: 'light', name: 'White Hole', desc: 'Swallowed enemies erupt as Light.', mods: { damage: 28, range: 50, radiant: 1 }, color: '#ffffff' },
+  },
+  {
+    id: 'timeshard', name: 'Time Shard', family: 'exotic', slot: 'secondary', tags: ['exotic', 'cryo'],
+    desc: 'Shards that freeze time around impact, slowing all.', behavior: 'bullet', sfx: 'exotic',
+    base: { damage: 22, rate: 1.4, speed: 160, life: 1.4, size: 0.5, count: 3, spread: 0.12, cryo: 1, statusPower: 2, explode: 8 },
+    color: '#a0f0ff', unlock: 70,
+    evolve: { tag: 'kinetic', name: 'Stopped Clock', desc: 'Frozen enemies shatter on any hit.', mods: { count: 5, explode: 12, damage: 30 }, color: '#e0ffff' },
+  },
+  {
+    id: 'echo', name: 'Echo Lance', family: 'exotic', slot: 'secondary', tags: ['exotic', 'pierce'],
+    desc: 'A piercing lance that returns as an echo.', behavior: 'bullet', sfx: 'exotic',
+    base: { damage: 34, rate: 1.2, speed: 180, life: 1.2, size: 0.7, count: 1, pierce: 99, special: 1 },
+    color: '#d0b0ff', unlock: 60,
+    evolve: { tag: 'split', name: 'Choir of Echoes', desc: 'Every echo splits into three more echoes.', mods: { damage: 48, split: 3 }, color: '#f0d0ff' },
+  },
+  {
+    id: 'voidspike', name: 'Void Spike', family: 'exotic', slot: 'secondary', tags: ['exotic', 'void', 'corrode'],
+    desc: 'Spikes embed and rot armor before bursting.', behavior: 'bullet', sfx: 'exotic',
+    base: { damage: 26, rate: 1.6, speed: 200, life: 1, size: 0.45, count: 2, spread: 0.05, corrode: 1, void: 0.4, explode: 5 },
+    color: '#a060c0', unlock: 65,
+    evolve: { tag: 'chain', name: 'Rot Lattice', desc: 'Corrosion spreads to everything nearby.', mods: { count: 4, corrode: 1, chain: 4 }, color: '#c080e0' },
+  },
+  {
+    id: 'lattice', name: 'Entropy Lattice', family: 'exotic', slot: 'secondary', tags: ['exotic', 'shock', 'area'],
+    desc: 'Deploys a crackling net that shocks anything inside.', behavior: 'well', sfx: 'arc',
+    base: { damage: 10, rate: 0.5, speed: 60, life: 5, size: 1, range: 22, special: 0, shock: 1 },
+    color: '#c0d0ff', unlock: 80,
+    evolve: { tag: 'burn', name: 'Overload Grid', desc: 'Nets ignite and overload trapped enemies.', mods: { range: 30, burn: 1, damage: 16 }, color: '#ffd0a0' },
+  },
+  // ---------------- DRONES (system) ----------------
+  {
+    id: 'interceptors', name: 'Interceptor Wing', family: 'drone', slot: 'system', tags: ['drone', 'kinetic'],
+    desc: 'Two drones that hunt nearby enemies.', behavior: 'drone', sfx: 'drone',
+    base: { damage: 6, rate: 4, speed: 220, life: 0.8, size: 0.25, special: 2 },
+    color: '#c0ffe0',
+    evolve: { tag: 'rapid', name: 'Hornet Squadron', desc: 'Five drones in tight formation.', mods: { special: 5, damage: 8 }, color: '#e0fff0' },
+  },
+  {
+    id: 'wisp', name: 'Repair Wisp', family: 'drone', slot: 'system', tags: ['drone', 'shield'],
+    desc: 'A wisp that slowly mends your shields and zaps foes.', behavior: 'drone', sfx: 'drone',
+    base: { damage: 5, rate: 2, speed: 200, life: 0.8, size: 0.25, special: 1, shock: 0.2 },
+    color: '#a0ffc0', unlock: 40,
+    evolve: { tag: 'hull', name: 'Lifebloom Choir', desc: 'Three wisps that also mend the hull.', mods: { special: 3, damage: 8 }, color: '#d0ffe0' },
+  },
+  {
+    id: 'mirror', name: 'Mirror Drone', family: 'drone', slot: 'system', tags: ['drone', 'split'],
+    desc: 'Copies your primary fire at half strength.', behavior: 'drone', sfx: 'drone',
+    base: { damage: 0.5, rate: 0, special: 1 },
+    color: '#f0e0ff', unlock: 85,
+    evolve: { tag: 'crit', name: 'Hall of Mirrors', desc: 'Two mirrors at full strength.', mods: { special: 2, damage: 1 }, color: '#ffffff' },
+  },
+  {
+    id: 'sentinel', name: 'Sentinel Pod', family: 'drone', slot: 'system', tags: ['drone', 'orbit', 'shield'],
+    desc: 'Orbiting pods that block enemy shots.', behavior: 'halo', sfx: 'drone',
+    base: { damage: 10, rate: 0, size: 1.0, range: 5, special: 2 },
+    color: '#c0e0ff', unlock: 50,
+    evolve: { tag: 'shock', name: 'Aegis Ring', desc: 'Four pods that discharge lightning on block.', mods: { special: 4, shock: 1, damage: 16 }, color: '#e0f0ff' },
+  },
+  {
+    id: 'layer', name: 'Mine-Layer Drone', family: 'drone', slot: 'system', tags: ['drone', 'ordnance'],
+    desc: 'A drone that seeds mines near enemies.', behavior: 'drone', sfx: 'drone',
+    base: { damage: 30, rate: 0.6, speed: 0, life: 10, explode: 7, special: 1 },
+    color: '#ffb080', unlock: 55,
+    evolve: { tag: 'area', name: 'Minefield Architect', desc: 'Two drones laying cluster mines.', mods: { special: 2, explode: 10, damage: 40 }, color: '#ffd0a0' },
+  },
+  // ---------------- LIGHT (system / secondary) ----------------
+  {
+    id: 'flarebeam', name: 'Flare Beam', family: 'light', slot: 'secondary', tags: ['light', 'pierce'],
+    desc: 'Pour banked Lumen into a searing beam. Scales with Light.', behavior: 'beam', sfx: 'light',
+    base: { damage: 7, rate: 20, range: 150, size: 1.0, pierce: 99 },
+    color: '#fff6c0', unlock: 60,
+    evolve: { tag: 'flare', name: 'Sunspear', desc: 'Doubles during Flare and ignites targets.', mods: { damage: 11, size: 1.6, burn: 0.5 }, color: '#ffffff' },
+  },
+  {
+    id: 'halo', name: 'Halo', family: 'light', slot: 'system', tags: ['light', 'orbit'],
+    desc: 'Blades of light orbit the Lantern, cutting all they touch.', behavior: 'halo', sfx: 'light',
+    base: { damage: 8, rate: 0, size: 0.8, range: 7, special: 3 },
+    color: '#fff0b0',
+    evolve: { tag: 'speed', name: 'Corona', desc: 'Six blades on a wide orbit.', mods: { special: 6, range: 10, damage: 12 }, color: '#ffffe0' },
+  },
+  {
+    id: 'lanternpulse', name: 'Lantern Pulse', family: 'light', slot: 'system', tags: ['light', 'area'],
+    desc: 'Periodic shockwaves of light. Bigger with more Light banked.', behavior: 'pulse', sfx: 'light',
+    base: { damage: 20, rate: 0.5, range: 18, knock: 20 },
+    color: '#fff8d0', unlock: 45,
+    evolve: { tag: 'radiant', name: 'Heartbeat of the Last Star', desc: 'Pulses twice as often and harvest Light.', mods: { rate: 1.1, range: 24, radiant: 0.5, damage: 30 }, color: '#ffffff' },
+  },
+];
+
+export const WEAPON_BY_ID: Record<string, WeaponDef> = Object.fromEntries(WEAPONS.map((w) => [w.id, w]));
