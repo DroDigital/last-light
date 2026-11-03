@@ -231,7 +231,7 @@ export function showEvent(g: Game): void {
     'event',
     `<div class="panel center col" style="width:min(640px,92vw)">
       <h1>${esc(ev.title)}</h1><p style="font-size:var(--s3);line-height:1.6">${esc(ev.text)}</p>
-      ${out ? `<div class="dialogue">${esc(out)}</div><button class="primary" data-nav data-autofocus data-act="leave">Continue</button>` : ev.choices.map((c, i) => `<button data-nav data-act="choice" data-arg="${i}" style="text-align:left">${esc(c.label)}</button>`).join('')}
+      ${out ? `<div class="dialogue">${esc(out)}</div>${run.pendingFight ? '<div class="dim">Brace for contact…</div>' : '<button class="primary" data-nav data-autofocus data-act="leave">Continue</button>'}` : ev.choices.map((c, i) => `<button data-nav data-act="choice" data-arg="${i}" style="text-align:left">${esc(c.label)}</button>`).join('')}
     </div>`,
   );
 }
@@ -582,7 +582,7 @@ export function registerActions(g: Game): void {
   ui.on('skip', () => g.skipDraft());
   ui.on('buy', (a) => g.buy(Number(a)));
   ui.on('leave', () => {
-    if (g.state === 'event' && g.run?.eventOutcome?.includes('Hostiles')) return;
+    if (g.state === 'event' && g.run?.pendingFight) return;
     g.openMap();
   });
   ui.on('choice', (a) => g.chooseEvent(Number(a)));

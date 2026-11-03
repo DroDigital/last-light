@@ -114,6 +114,36 @@ if (scenario === 'ship') {
     await shot('s-' + h);
   }
 }
+if (scenario === 'fullrun') {
+  const log = await page.evaluate(async () => {
+    const g = window.__ll;
+    const out = [];
+    g.startRun({ seed: 'FULLRUN' });
+    g.godMode = true; g.autopilot = true; g.input.synthetic.add('fire1'); g.input.synthetic.add('fire2'); g.input.synthetic.add('forward');
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let guard = 0;
+    while (guard++ < 250) {
+      if (g.state === 'victory') { out.push('VICTORY'); break; }
+      if (g.state === 'warp') { g.simulate(0); await wait(50); for (let i = 0; i < 40 && g.state === 'warp'; i++) { g.render(0, 0.1); } continue; }
+      if (g.state === 'map') { const r = g.reachable(); const n = r.find((x) => x.type === 'boss') || r[0]; out.push(`S${g.run.sector} -> ${n.type}`); g.chooseNode(n.id); continue; }
+      if (g.state === 'combat') {
+        let t = 0; while (g.state === 'combat' && t < 400) { g.simulate(2); t += 2; }
+        out.push(`  combat ${g.director ? g.director.kind : ''} t=${t} kills=${g.world.stats.kills} state=${g.state}${g.world.boss ? ' bossdead=' + g.world.boss.dead : ''}`);
+        if (t >= 400) { out.push('STUCK in combat: live=' + g.world.liveEnemyCount() + ' spent=' + g.director?.spent + '/' + g.director?.budget); break; }
+        continue;
+      }
+      if (g.state === 'draft') { g.pickCard(0); continue; }
+      if (g.state === 'shop') { g.buy(0); g.openMap(); continue; }
+      if (g.state === 'event') { g.chooseEvent(0); await wait(1200); if (g.state === 'event') g.openMap(); continue; }
+      if (g.state === 'forge') { g.forgeAction('leave', ''); continue; }
+      if (g.state === 'rest') { g.restAction('repair', ''); continue; }
+      out.push('unknown state ' + g.state); break;
+    }
+    out.push(`final state=${g.state} sector=${g.run && g.run.sector} kills=${g.world && g.world.stats.kills} bosses=${g.world && g.world.stats.bossKills} embers=${g.save.data.embers}`);
+    return out;
+  });
+  console.log(log.join('\n'));
+}
 if (scenario === 'stress') {
   await ll(() => window.__ll.startRun({ seed: 'STRESS' }));
   await page.waitForTimeout(3000);
@@ -125,12 +155,22 @@ if (scenario === 'stress') {
   console.log(JSON.stringify(st));
 }
 if (scenario === 'menus') {
-  await ll(() => window.__ll.goHearth()); await page.waitForTimeout(800); await shot('m-hearth');
-  await ll(() => { const g = window.__ll; g.setState('codex'); g.ui.show('x',''); }); 
-  await page.evaluate(() => document.querySelector('[data-act=title]')?.click());
-  await page.evaluate(() => { window.__ll.ui.root.querySelector('[data-act]'); });
+  await ll(() => window.__ll.goHearth()); await page.waitForTimeout(900); await shot('m-hearth');
+  await ll(() => { const g = window.__ll; g.hearthTab = 'hulls'; g.ui.root.querySelector('[data-act=htab][data-arg=hulls]').click(); }); await page.waitForTimeout(400); await shot('m-hulls');
   await ll(() => window.__ll.goTitle()); await page.waitForTimeout(300);
   await page.evaluate(() => document.querySelector('[data-act=settings]').click()); await page.waitForTimeout(500); await shot('m-settings');
+  await page.evaluate(() => document.querySelector('[data-act=stab][data-arg=access]').click()); await page.waitForTimeout(300); await shot('m-access');
+  await page.evaluate(() => document.querySelector('[data-act=back]').click()); await page.waitForTimeout(300);
+  await page.evaluate(() => document.querySelector('[data-act=codex]').click()); await page.waitForTimeout(500); await shot('m-codex');
+  await ll(() => { const g = window.__ll; g.startRun({ seed: 'MENU' }); });
+  await page.waitForTimeout(800);
+  await ll(() => { const g = window.__ll; g.world.player.light = 400; g.openDraft({ after: 'map' }); });
+  await page.waitForTimeout(1200); await shot('m-draft');
+  await ll(() => { const g = window.__ll; g.openShop(5); }); await page.waitForTimeout(700); await shot('m-shop');
+  await ll(() => { const g = window.__ll; g.openEvent(3); }); await page.waitForTimeout(700); await shot('m-event');
+  await ll(() => { const g = window.__ll; g.setState('forge'); window.__llS?.showForge?.(g); }); 
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 2); g.simulate(2); g.world.killPlayer('Gunship'); g.simulate(3); });
+  await page.waitForTimeout(1500); await shot('m-death');
 }
 console.log('ERRORS:\n' + (errors.slice(0, 30).join('\n') || 'none'));
 await browser.close();

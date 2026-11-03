@@ -110,7 +110,9 @@ export class Hud {
     this.debugEl.style.display = g.showDebug ? 'block' : 'none';
     // sector title (also on map)
     if (g.state === 'map') this.positionNodeLabels();
-    if (g.sectorTitle && (g.state === 'map' || g.state === 'combat')) {
+    const stEl = document.getElementById('sectortitle');
+    if (stEl && g.state !== 'map' && g.state !== 'combat') stEl.remove();
+    if (g.sectorTitle && g.sectorTitle.t > 0.5 && (g.state === 'map' || g.state === 'combat')) {
       if (!document.getElementById('sectortitle')) {
         const d = document.createElement('div');
         d.id = 'sectortitle';
@@ -335,12 +337,35 @@ export class Hud {
         c.fillText(label ?? String(n.v), p.x + n.vx * n.t, p.y + n.vy * n.t + 40 * n.t * n.t);
       }
     }
-    // derelict beacon labels
+    // derelict beacon labels + off-screen guides
     const dir = g.director;
     if (dir?.beacons.length) {
       for (const b of dir.beacons) {
         const p = this.project(b.pos.x, b.pos.y, b.pos.z);
-        if (!p.on) continue;
+        if (!p.on) {
+          if (b.lit) continue;
+          let dx = p.x - cx;
+          let dy = p.y - cy;
+          if (p.behind) {
+            dx = -dx;
+            dy = -dy;
+          }
+          const ang = Math.atan2(dy, dx);
+          const s = Math.min((W / 2 - margin) / Math.max(0.001, Math.abs(Math.cos(ang))), (H / 2 - margin) / Math.max(0.001, Math.abs(Math.sin(ang))));
+          c.save();
+          c.translate(cx + Math.cos(ang) * s, cy + Math.sin(ang) * s);
+          c.rotate(ang);
+          c.fillStyle = 'rgba(166,200,255,0.95)';
+          c.beginPath();
+          c.moveTo(12, 0);
+          c.lineTo(-6, 8);
+          c.lineTo(-2, 0);
+          c.lineTo(-6, -8);
+          c.closePath();
+          c.fill();
+          c.restore();
+          continue;
+        }
         c.font = '600 11px "Chakra Petch"';
         c.fillStyle = b.lit ? '#fff2b8' : '#a6c8ff';
         c.fillText(b.lit ? 'RELIT' : `BEACON ${Math.round(b.progress * 100)}%`, p.x, p.y - 22);

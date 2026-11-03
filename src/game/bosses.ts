@@ -1,7 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import type { World } from './world';
 import { raySphere } from './world';
-import type { Enemy } from './entities';
+import { Enemy } from './entities';
 import type { EnemyDef } from './types';
 import { BOSSES, type BossDef } from '../data/world';
 import { fireAt, ringBurst, faceDir } from './ai';
@@ -104,8 +104,8 @@ export class BossController {
       }
       case 'leviathan': {
         this.core = w.spawnEnemy(coreDef('hushDart', 5, 4.5, '#ff7030'), start.x, start.y, start.z);
-        this.core.dmgTaken = 0.15;
-        for (let i = 0; i < 14; i++) part('segment', 220, 3.2, 1.6 - i * 0.04, '#ff6020', new Vector3(0, 0, (i + 1) * 5.5), i);
+        this.core.dmgTaken = 0.25;
+        for (let i = 0; i < 14; i++) part('segment', 140, 3.2, 1.6 - i * 0.04, '#ff6020', new Vector3(0, 0, (i + 1) * 5.5), i);
         for (let i = 0; i < 60; i++) this.trail.push(new Vector3(start.x, start.y, start.z + i * 1.5));
         break;
       }
@@ -173,7 +173,18 @@ export class BossController {
       }
       return;
     }
-    if (e.parent !== this.core) return;
+    const idx = this.parts.indexOf(e);
+    if (idx < 0 || e.parent !== this.core) return;
+    // Enemies are pooled: detach the dead part so a recycled object (e.g. a
+    // summoned minion) is never mistaken for a piece of the boss.
+    const ghost = new Enemy();
+    ghost.def = e.def;
+    ghost.partIndex = e.partIndex;
+    ghost.pos.copy(e.pos);
+    ghost.prev.copy(e.pos);
+    ghost.maxHp = e.maxHp;
+    ghost.alive = false;
+    this.parts[idx] = ghost;
     const alive = this.parts.filter((p) => p.alive).length;
     const total = this.parts.length;
     switch (this.id) {
@@ -181,7 +192,7 @@ export class BossController {
         if (e.partIndex < 4) this.core.dmgTaken = 0.3 + 0.7 * (1 - this.parts.slice(0, 4).filter((p) => p.alive).length / 4);
         break;
       case 'leviathan':
-        this.core.dmgTaken = 0.15 + 0.85 * (1 - alive / total);
+        this.core.dmgTaken = 0.25 + 0.75 * (1 - alive / total);
         break;
       case 'glasschoir':
         if (alive <= 3) this.core.invuln = false;

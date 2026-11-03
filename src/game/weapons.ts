@@ -442,7 +442,7 @@ export function syncDrones(w: World): void {
     } else
       w.drones.push({
         kind: want[i]!.kind, src: want[i]!.src, pos: pl.pos.clone(), prev: pl.pos.clone(), vel: new Vector3(),
-        quat: new Quaternion(), cd: Math.random(), phase: i * 1.7, target: -1,
+        quat: new Quaternion(), cd: w.rng.next(), phase: i * 1.7, target: -1,
       });
   }
 }

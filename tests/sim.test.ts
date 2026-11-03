@@ -21,3 +21,42 @@ describe('combat sim', () => {
     expect(w.stats.kills).toBeGreaterThan(0);
   });
 });
+
+describe('regressions', () => {
+  it('chargers actually dash after their telegraph (faceDir must not alias its input)', () => {
+    const b = new Build(HULLS[0]!, meta());
+    const w = new World('CHG', b);
+    w.player.pos.set(0, 0, 0);
+    const e = w.spawnEnemy('gloom', 0, 0, -40);
+    e.spawnT = 0;
+    e.timer = 0;
+    const c = emptyControls();
+    let maxSpeed = 0;
+    for (let i = 0; i < 240; i++) {
+      w.update(c, 1 / 60);
+      w.player.hull = w.player.maxHull;
+      if (e.state === 2) maxSpeed = Math.max(maxSpeed, e.vel.length());
+    }
+    expect(maxSpeed).toBeGreaterThan(60);
+  });
+
+  it('nested area effects hit every enemy in range exactly once per explosion', () => {
+    const b = new Build(HULLS[0]!, meta());
+    const w = new World('NEST', b);
+    const es = Array.from({ length: 30 }, (_, i) => {
+      const e = w.spawnEnemy('mawspawn', (i % 6) * 3, Math.floor(i / 6) * 3, 0);
+      e.hp = e.maxHp = 1e6;
+      e.armor = 0;
+      return e;
+    });
+    w.rebuildHash();
+    let inner = 0;
+    let outer = 0;
+    w.forEnemiesNear(6, 6, 0, 40, () => {
+      outer++;
+      w.forEnemiesNear(6, 6, 0, 40, () => void inner++);
+    });
+    expect(outer).toBe(es.length);
+    expect(inner).toBe(es.length * es.length);
+  });
+});

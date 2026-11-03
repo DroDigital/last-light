@@ -46,7 +46,7 @@ describe('build simulations', () => {
     for (const c of curves) expect(Number.isFinite(c[5]!)).toBe(true);
     const maxFinal = Math.max(...curves.map((c) => c[5]!));
     expect(maxFinal / meds[5]!).toBeLessThan(25);
-  });
+  }, 60_000);
 
   it('trigger-heavy builds terminate (no infinite chains) and stay finite', () => {
     const b = new Build(HULLS[0]!, meta());

@@ -60,6 +60,10 @@ export interface RunState {
   draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector' };
   lore: string[];
   won: boolean;
+  /** an event choice queued a fight; the player may not leave the event */
+  pendingFight: boolean;
+  /** rewards already paid by an earlier finishRun (victory before endless) */
+  paid?: { embers: number; record: RunRecord };
 }
 
 const _v = new THREE.Vector3();
@@ -292,7 +296,7 @@ export class Game {
     this.run = {
       seed, rng, daily, heat, hull: hull.id, sector: 0, map: generateMap(Math.floor(rng.next() * 1e9), 0, { rifts: this.save.unlockLevel('p_curses') > 0, heat }),
       node: -1, rerolls: 0, freeRerolls: this.save.unlockLevel('b_reroll'), banishes: 1 + this.save.unlockLevel('b_banish'),
-      startTime: performance.now(), sectorLight: 0, endless: false, endlessWaves: 0, encounters: 0, lore: [], won: false,
+      startTime: performance.now(), sectorLight: 0, endless: false, endlessWaves: 0, encounters: 0, lore: [], won: false, pendingFight: false,
     };
     const primary = opts.primary ?? (this.save.unlockLevel('l_pick') > 0 && this.selectedPrimary ? this.selectedPrimary : undefined);
     const build = new Build(hull, { ...this.meta(), heat }, primary);
@@ -332,6 +336,7 @@ export class Game {
     const run = this.run!;
     run.sector = idx;
     run.sectorLight = 0;
+    run.freeRerolls = this.save.unlockLevel('b_reroll');
     if (!first) run.map = generateMap(Math.floor(run.rng.next() * 1e9), idx, { rifts: this.save.unlockLevel('p_curses') > 0, heat: run.heat });
     run.node = -1;
     const sec = SECTORS[idx]!;
@@ -448,6 +453,7 @@ export class Game {
     this.camPos.set(0, 3, 82);
     this.director = new Director(kind, run.sector, seed, w, run.heat);
     run.encounters++;
+    run.pendingFight = false;
     this.setState('combat');
     this.ui.clear();
     this.input.requestLock();
@@ -701,7 +707,7 @@ export class Game {
       outcome = 'It goes wrong.';
     }
     const res = this.applyEffect(eff);
-    run.eventOutcome = outcome + (res ? ' ' + res : '');
+    run.eventOutcome = outcome + (res ? ' ' + res : '') + (run.pendingFight ? ' Hostiles incoming!' : '');
     S.showEvent(this);
   }
 
@@ -756,7 +762,7 @@ export class Game {
     }
     w.refreshParams();
     if (eff.fight) {
-      run.eventOutcome = (run.eventOutcome ?? '') + ' Hostiles incoming!';
+      run.pendingFight = true;
       setTimeout(() => this.doWarp(SECTORS[run.sector]!.palette, () => this.startEncounter(eff.fight === 'elite' ? 'elite' : 'ambush', Math.floor(run.rng.next() * 1e9))), 900);
     }
     this.save.save();
@@ -837,10 +843,11 @@ export class Game {
     const run = this.run!;
     const w = this.world!;
     const d = this.save.data;
-    const embers = embersFor({ sector: run.sector + (won ? 1 : 0), kills: w.stats.kills, bosses: w.stats.bossKills, won, heat: run.heat, light: w.player.lightTotal }) + (run.endless ? run.endlessWaves * 10 : 0);
-    d.embers += embers;
+    const paid = run.paid;
+    const total = embersFor({ sector: run.sector + 1, kills: w.stats.kills, bosses: w.stats.bossKills, won, heat: run.heat, light: w.player.lightTotal }) + (run.endless ? run.endlessWaves * 10 : 0);
+    const embers = Math.max(0, total - (paid?.embers ?? 0));    d.embers += embers;
     d.totalEmbers += embers;
-    if (won) {
+    if (won && !paid) {
       d.wins++;
       d.heatUnlocked = true;
       d.maxHeat = Math.max(d.maxHeat, Math.min(10, run.heat + 1));
@@ -866,7 +873,11 @@ export class Game {
       weapons: w.build.weapons.map((x) => x.name), upgrades: [...w.build.upgrades.keys()], score: this.score(),
       timeSec: Math.round((performance.now() - run.startTime) / 1000),
     };
-    d.history.unshift(rec);
+    if (paid) {
+      // endless continuation: update the run's existing record instead of adding one
+      Object.assign(paid.record, rec, { embers: paid.embers + embers, won: true });
+    } else d.history.unshift(rec);
+    run.paid = { embers: (paid?.embers ?? 0) + embers, record: paid?.record ?? rec };
     d.history = d.history.slice(0, 30);
     d.hearthLevel = Object.values(d.unlocks).reduce((a, b) => a + b, 0) + d.wins * 2;
     this.lastRecord = rec;
@@ -1056,10 +1067,16 @@ export class Game {
     if (this.autopilot && this.world && this.state === 'combat') {
       const w = this.world;
       const pl = w.player;
-      const t = w.nearestEnemy(pl.pos.x, pl.pos.y, pl.pos.z, 300);
+      let t = w.nearestEnemy(pl.pos.x, pl.pos.y, pl.pos.z, 300);
+      const beacon = this.director?.beacons.find((b) => !b.lit);
+      if (beacon && (!t || t.pos.distanceTo(pl.pos) > 35)) t = { pos: beacon.pos, vel: new THREE.Vector3() } as unknown as typeof t;
       if (t) {
         const lead = t.pos.distanceTo(pl.pos) / Math.max(150, w.build.primary.params.speed);
         _v.copy(t.pos).addScaledVector(t.vel, lead).sub(pl.pos).applyQuaternion(_q.copy(pl.quat).invert()).normalize();
+        const dist = t.pos.distanceTo(pl.pos);
+        c.mz = beacon && t.pos === beacon.pos ? (dist > 6 ? 1 : 0) : dist > 60 ? 1 : dist < 25 ? -0.6 : 0.2;
+        c.mx = Math.sin(this.time * 0.7) * 0.6;
+        if (inp.pressed('dodge') || Math.random() < frameDt * 0.5) c.dodge = true;
         yaw += clamp(Math.atan2(_v.x, -_v.z) * 14, -4, 4) * frameDt;
         pitch += clamp(-Math.atan2(_v.y, -_v.z) * 14, -4, 4) * frameDt;
       }

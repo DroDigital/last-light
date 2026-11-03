@@ -124,6 +124,16 @@ export class UI {
       else dy = Math.sign(inp.padLY);
       this.navCd = 0.22;
     }
+    // left/right adjusts a focused slider (keyboard and gamepad) instead of moving focus
+    const fe = this.focusEl as HTMLInputElement | null;
+    if (dx && fe && fe.tagName === 'INPUT' && fe.type === 'range') {
+      const step = Number(fe.step) || 0.05;
+      const v = Math.min(Number(fe.max), Math.max(Number(fe.min), Number(fe.value) + dx * step));
+      fe.value = String(v);
+      fe.dispatchEvent(new Event('input', { bubbles: true }));
+      this.audio.play('uiMove', 0, 0.3);
+      dx = 0;
+    }
     if ((dx || dy) && els.length) {
       if (!this.focusEl || !els.includes(this.focusEl)) this.setFocus(els[0]!);
       else {
@@ -164,10 +174,6 @@ export class UI {
         this.audio.play('uiBack', 0, 0.6);
         this.fire(b);
       } else this.onBack?.();
-    }
-    // slider adjust via left/right on focused range
-    if (this.focusEl && this.focusEl.tagName === 'INPUT' && (dx !== 0)) {
-      /* handled by native */
     }
   }
 }

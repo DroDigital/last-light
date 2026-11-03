@@ -11,6 +11,7 @@ const _m = new Matrix4();
 const _up = new Vector3(0, 1, 0);
 const _o = new Vector3();
 const _qq = new Quaternion();
+const _fd = new Vector3();
 
 /** Aimed shot with partial lead. */
 export function fireAt(w: World, e: Enemy, speed: number, dmg: number, kind: number, count = 1, spread = 0, lead = 0.5, size = 0.7): void {
@@ -50,8 +51,9 @@ export function ringBurst(w: World, x: number, y: number, z: number, n: number, 
 
 export function faceDir(e: Enemy, dir: Vector3, dt: number, rate = 6): void {
   if (dir.lengthSq() < 1e-6) return;
-  _t.copy(e.pos).sub(dir);
-  _m.lookAt(e.pos, _t, _up);
+  // own scratch: callers often pass the module scratch vectors as `dir`
+  _fd.copy(e.pos).sub(dir);
+  _m.lookAt(e.pos, _fd, _up);
   _qq.setFromRotationMatrix(_m);
   e.quat.slerp(_qq, Math.min(1, dt * rate));
 }
@@ -168,7 +170,7 @@ export function updateEnemyAI(w: World, dt: number): void {
       }
       case 'sniper':
       case 'lancer': {
-        const pref = def.role === 'sniper' ? 80 : 60;
+        const pref = e.speedMul > 2 ? 22 : def.role === 'sniper' ? 80 : 60;
         _s.crossVectors(_d, _up).normalize().multiplyScalar(e.orbitDir);
         const want = dist > pref + 15 ? 1 : dist < pref - 15 ? -1 : 0;
         const moveK = e.state === 0 ? 1 : 0.15;
@@ -236,7 +238,7 @@ export function updateEnemyAI(w: World, dt: number): void {
       }
       case 'gunner':
       case 'orbiter': {
-        const pref = def.role === 'gunner' ? 48 : 38;
+        const pref = e.speedMul > 2 ? 20 : def.role === 'gunner' ? 48 : 38;
         _s.crossVectors(_d, _up).normalize().multiplyScalar(e.orbitDir);
         const want = dist > pref + 10 ? 1 : dist < pref - 8 ? -0.8 : 0;
         const tang = def.role === 'orbiter' ? 1.2 : 0.7;

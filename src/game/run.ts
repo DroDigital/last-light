@@ -124,6 +124,9 @@ export class Director {
   endlessWave = 0;
   private calm = 0;
   intensity = 0;
+  private straggleT = 0;
+  private lastKills = 0;
+  private noKillT = 0;
 
   constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number) {
     this.kind = kind;
@@ -239,8 +242,30 @@ export class Director {
       }
       if (all && this.spent < this.budget) this.spent = this.budget; // stop spawning once relit
     }
+    // stall guard: if nothing has died for a while, wrap the fight up
+    if (w.stats.kills !== this.lastKills) {
+      this.lastKills = w.stats.kills;
+      this.noKillT = 0;
+    } else this.noKillT += dt;
+    if (this.noKillT > 25 && this.kind !== 'endless' && this.spent > this.budget * 0.5) {
+      this.spent = this.budget;
+      this.elitesLeft = 0;
+    }
     const exhausted = this.kind !== 'endless' && this.spent >= this.budget && this.elitesLeft <= 0;
     if (exhausted) {
+      // safety net: stragglers hunt the player, then retreat into the dark
+      this.straggleT += dt;
+      if (this.straggleT > 18) {
+        for (const e of w.enemies) {
+          if (!e.alive || e.def.role === 'inert' || e.def.role === 'part' || e.def.role === 'boss') continue;
+          e.speedMul = 2.2;
+          if (e.def.role === 'turret' || this.straggleT > 32) {
+            e.dying = e.def.faction === 'hush' ? 0.4 : 0;
+            e.alive = false;
+            w.events.emit('explosion', { x: e.pos.x, y: e.pos.y, z: e.pos.z, radius: 4, r: 0.6, g: 0.5, b: 1, enemy: false });
+          }
+        }
+      }
       if (w.liveEnemyCount() === 0 && (this.kind !== 'derelict' || this.beacons.every((b) => b.lit))) {
         this.calm += dt;
         if (this.calm > 1.2) {

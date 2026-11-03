@@ -51,10 +51,10 @@ export interface BossDef {
 
 export const BOSSES: Record<string, BossDef> = {
   foreman: { id: 'foreman', name: 'THE FOREMAN', title: 'Salvage Overseer of the Cradle', hp: 2400, desc: 'A mining rig that strips dying stars for parts. Its drill arms come off first.', phases: ['Drill arms and turrets', 'Spinning sweep', 'Overheated core'] },
-  leviathan: { id: 'leviathan', name: 'CINDER LEVIATHAN', title: 'Coiled Around Antares Pyre', hp: 4200, desc: 'A star-eating serpent armored in molten plates. Crack them open, plate by plate.', phases: ['Coiled volley', 'Burning dives', 'Molten fury'] },
+  leviathan: { id: 'leviathan', name: 'CINDER LEVIATHAN', title: 'Coiled Around Antares Pyre', hp: 3400, desc: 'A star-eating serpent armored in molten plates. Crack them open, plate by plate.', phases: ['Coiled volley', 'Burning dives', 'Molten fury'] },
   glasschoir: { id: 'glasschoir', name: 'THE GLASS CHOIR', title: 'Cathedral of the White Dwarf', hp: 5600, desc: 'A cathedral of singing crystal. Silence the choir shards to expose the heart.', phases: ['Hymn of beams', 'Refraction', 'Requiem'] },
-  pulsarheart: { id: 'pulsarheart', name: 'PULSAR HEART', title: 'The Lighthouse at the End', hp: 7000, desc: 'A spinning neutron heart whose beams sweep in time with the music.', phases: ['Lighthouse', 'Twin beams', 'Magnetar'] },
-  lastdark: { id: 'lastdark', name: 'THE LAST DARK', title: 'The Hush Made Whole', hp: 9000, desc: 'The dark that eats light. It drinks the color from the world as it fights.', phases: ['The Swallowing', 'Colorless', 'Relight the Last Star'] },
+  pulsarheart: { id: 'pulsarheart', name: 'PULSAR HEART', title: 'The Lighthouse at the End', hp: 6000, desc: 'A spinning neutron heart whose beams sweep in time with the music.', phases: ['Lighthouse', 'Twin beams', 'Magnetar'] },
+  lastdark: { id: 'lastdark', name: 'THE LAST DARK', title: 'The Hush Made Whole', hp: 7800, desc: 'The dark that eats light. It drinks the color from the world as it fights.', phases: ['The Swallowing', 'Colorless', 'Relight the Last Star'] },
 };
 
 export const HULLS: HullDef[] = [
