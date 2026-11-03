@@ -1,0 +1,43 @@
+{
+  "name": "last-light",
+  "version": "0.1.0",
+  "description": "LAST LIGHT — a 3D roguelite space shooter in the Dithered Cosmos style",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint src tests",
+    "format": "prettier --write src tests",
+    "typecheck": "tsc --noEmit",
+    "sim": "vitest run tests/buildsim.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DroDigital/last-light.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/DroDigital/last-light/issues"
+  },
+  "homepage": "https://github.com/DroDigital/last-light#readme",
+  "dependencies": {
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/three": "^0.187.0",
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^6.4.5",
+    "vitest": "^3.2.7"
+  },
+  "private": true,
+  "type": "module"
+}

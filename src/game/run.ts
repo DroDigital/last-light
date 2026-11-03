@@ -1,0 +1,351 @@
+import { Rng } from '../core/rng';
+import { SECTORS, type SectorDef } from '../data/world';
+import { ENEMY_BY_ID, ELITE_MODS, type EliteMod } from '../data/enemies';
+import type { World } from './world';
+import { Vector3 } from 'three';
+import { BossController } from './bosses';
+
+export type NodeType = 'combat' | 'elite' | 'derelict' | 'shop' | 'event' | 'forge' | 'rest' | 'rift' | 'boss' | 'start';
+
+export interface MapNode {
+  id: number;
+  row: number;
+  col: number;
+  type: NodeType;
+  links: number[];
+  x: number;
+  y: number;
+  z: number;
+  visited: boolean;
+  seed: number;
+}
+
+export interface SectorMap {
+  sector: number;
+  nodes: MapNode[];
+  rows: number;
+}
+
+export const NODE_INFO: Record<NodeType, { name: string; desc: string; icon: string }> = {
+  start: { name: 'Arrival', desc: 'Where you warped in.', icon: '◇' },
+  combat: { name: 'Combat', desc: 'A wave arena. Reward: upgrade draft, Light.', icon: '✶' },
+  elite: { name: 'Elite', desc: 'Tougher arena with elite modifiers. Reward: guaranteed rare.', icon: '✷' },
+  derelict: { name: 'Derelict', desc: 'Relight a wreck\'s beacons while ambushed. Reward: loot, lore.', icon: '⌬' },
+  shop: { name: 'Shop', desc: 'Ash\'s trading post. Spend Light.', icon: '⛁' },
+  event: { name: 'Event', desc: 'Something strange in the dark.', icon: '?' },
+  forge: { name: 'Forge', desc: 'Fuse, upgrade or reroll items.', icon: '⚒' },
+  rest: { name: 'Rest', desc: 'Repair the hull or train a weapon.', icon: '☾' },
+  rift: { name: 'Rift', desc: 'Optional high-risk challenge. Reward: legendary + a curse.', icon: '✺' },
+  boss: { name: 'Dying Star', desc: 'The sector boss guards the star.', icon: '☀' },
+};
+
+/** Deterministic branching map: 5 rows (4 choice rows + boss). */
+export function generateMap(seed: number, sector: number, opts: { rifts: boolean; heat: number }): SectorMap {
+  const rng = new Rng(seed);
+  const rowsN = 5;
+  const nodes: MapNode[] = [];
+  let id = 0;
+  const rowNodes: MapNode[][] = [];
+  const weights: Record<number, [NodeType, number][]> = {
+    0: [['combat', 1]],
+    1: [['combat', 4], ['event', 2.5], ['derelict', 1.5], ['shop', 1.5]],
+    2: [['elite', 2], ['shop', 2], ['forge', 1.5], ['event', 2], ['rest', 1], ['combat', 2], ...(opts.rifts ? ([['rift', 1.2]] as [NodeType, number][]) : [])],
+    3: [['combat', 3], ['rest', opts.heat >= 7 ? 0.8 : 2], ['shop', 1.5], ['elite', 1.5], ['derelict', 1], ['forge', 1]],
+  };
+  for (let r = 0; r < rowsN; r++) {
+    const count = r === rowsN - 1 ? 1 : r === 0 ? 2 + rng.int(0, 1) : 2 + rng.int(0, 2);
+    const row: MapNode[] = [];
+    for (let c = 0; c < count; c++) {
+      let type: NodeType;
+      if (r === rowsN - 1) type = 'boss';
+      else {
+        const w = weights[r]!;
+        type = w[rng.weighted(w.map((x) => x[1]))]![0];
+      }
+      const spread = count > 1 ? (c / (count - 1) - 0.5) * 2 : 0;
+      const n: MapNode = {
+        id: id++, row: r, col: c, type, links: [],
+        x: spread * 34 + rng.range(-4, 4), y: rng.range(-8, 8), z: -r * 26 + 40,
+        visited: false, seed: Math.floor(rng.next() * 1e9),
+      };
+      row.push(n);
+      nodes.push(n);
+    }
+    rowNodes.push(row);
+  }
+  // guarantee at least one shop in rows 1-3
+  if (!nodes.some((n) => n.type === 'shop')) rowNodes[2]![0]!.type = 'shop';
+  // links: each node connects to the nearest 1-2 nodes in the next row; every node gets an incoming link.
+  for (let r = 0; r < rowsN - 1; r++) {
+    const a = rowNodes[r]!;
+    const b = rowNodes[r + 1]!;
+    for (const n of a) {
+      const sorted = [...b].sort((p, q) => Math.abs(p.x - n.x) - Math.abs(q.x - n.x));
+      n.links.push(sorted[0]!.id);
+      if (sorted[1] && rng.chance(0.55)) n.links.push(sorted[1].id);
+    }
+    for (const m of b) {
+      if (!a.some((n) => n.links.includes(m.id))) {
+        const nearest = [...a].sort((p, q) => Math.abs(p.x - m.x) - Math.abs(q.x - m.x))[0]!;
+        nearest.links.push(m.id);
+      }
+    }
+  }
+  return { sector, nodes, rows: rowsN };
+}
+
+export type EncounterKind = 'combat' | 'elite' | 'derelict' | 'rift' | 'boss' | 'endless' | 'ambush' | 'tutorial';
+
+export interface Beacon {
+  pos: Vector3;
+  progress: number;
+  lit: boolean;
+}
+
+/**
+ * Combat director: authored formations mixed procedurally, paced as
+ * build-up -> peak -> breather -> peak. Adapts to build power and health.
+ */
+export class Director {
+  kind: EncounterKind;
+  sector: SectorDef;
+  sectorIdx: number;
+  budget: number;
+  spent = 0;
+  time = 0;
+  done = false;
+  cleared = false;
+  elitesLeft = 0;
+  wave = 0;
+  private spawnCd = 1.5;
+  private rng: Rng;
+  beacons: Beacon[] = [];
+  boss: BossController | null = null;
+  endlessWave = 0;
+  private calm = 0;
+  intensity = 0;
+  private straggleT = 0;
+  private lastKills = 0;
+  private noKillT = 0;
+
+  constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number) {
+    this.kind = kind;
+    this.sectorIdx = sectorIdx;
+    this.sector = SECTORS[Math.min(sectorIdx, SECTORS.length - 1)]!;
+    this.rng = new Rng(seed);
+    const base = 34 + sectorIdx * 20;
+    const heatMul = 1 + (heat >= 9 ? 0.25 : 0);
+    this.budget = Math.round(
+      {
+        combat: base,
+        tutorial: 22,
+        elite: base * 1.15,
+        derelict: base * 0.8,
+        rift: base * 1.6,
+        boss: 0,
+        endless: base * 1.2,
+        ambush: base * 0.6,
+      }[kind] * heatMul,
+    );
+    this.elitesLeft = kind === 'elite' ? 2 + Math.floor(sectorIdx / 2) : kind === 'rift' ? 4 : 0;
+    if (w.build.flags.has('hunted')) this.elitesLeft += 1;
+    if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
+    w.maxTokens = 3 + Math.floor(sectorIdx / 2) + (kind === 'rift' ? 2 : 0);
+    w.sectorHpScale = 1 + sectorIdx * 0.34 + (kind === 'endless' ? 0.3 : 0);
+    this.dress();
+    if (kind === 'boss') {
+      this.boss = new BossController(this.sector.boss, w, 1 + (heat >= 5 ? 0.25 : 0), this.sector.music.bpm);
+      w.boss = this.boss;
+    }
+    if (kind === 'derelict') {
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + this.rng.next();
+        this.beacons.push({ pos: new Vector3(Math.cos(a) * 70, this.rng.range(-20, 20), Math.sin(a) * 70), progress: 0, lit: false });
+      }
+    }
+  }
+
+  /** Arena dressing: asteroids (and turret rigs bolted to some). */
+  private dress(): void {
+    const w = this.w;
+    const n = this.kind === 'boss' ? 10 : this.sector.asteroids;
+    for (let i = 0; i < n; i++) {
+      const p = new Vector3(this.rng.range(-1, 1), this.rng.range(-0.5, 0.5), this.rng.range(-1, 1)).normalize().multiplyScalar(this.rng.range(30, w.arenaRadius * 0.9));
+      if (p.distanceTo(w.player.pos) < 25) continue;
+      const a = w.spawnEnemy('asteroid', p.x, p.y, p.z);
+      const s = this.rng.range(0.6, 2.2);
+      a.scale *= s;
+      a.radius *= s;
+      a.hp = a.maxHp = 60 * s * s;
+      a.spawnT = 0;
+      a.spin = this.rng.next() * 6;
+      a.vel.set(this.rng.range(-1, 1), this.rng.range(-0.5, 0.5), this.rng.range(-1, 1));
+      if (this.kind !== 'boss' && this.sector.pool.some(([id]) => id === 'turretrig') && this.rng.chance(0.12)) {
+        const t = w.spawnEnemy('turretrig', p.x, p.y + a.radius + 1, p.z);
+        t.spawnT = 0;
+      }
+    }
+  }
+
+  private expectedDps(): number {
+    return 90 * Math.pow(1.55, this.sectorIdx);
+  }
+
+  /** target live threat for the current point in the timeline */
+  private targetThreat(): number {
+    const t = this.time;
+    const frac = this.spent / Math.max(1, this.budget);
+    let k: number;
+    if (this.kind === 'endless') k = 1 + Math.sin(t * 0.15) * 0.3;
+    else if (frac < 0.3) k = 0.45 + frac * 1.5;
+    else if (frac < 0.55) k = 1.0;
+    else if (frac < 0.65) k = 0.35; // breather
+    else k = 1.25;
+    const w = this.w;
+    const power = Math.max(0.7, Math.min(1.7, w.build.dpsEstimate() / this.expectedDps()));
+    const health = w.player.hull / w.player.maxHull;
+    const hk = health < 0.3 ? 0.65 : health < 0.55 ? 0.85 : 1;
+    this.intensity = k;
+    return (6 + this.sectorIdx * 3.5) * k * power * hk * (this.kind === 'tutorial' ? 0.5 : 1);
+  }
+
+  liveThreat(): number {
+    let t = 0;
+    for (const e of this.w.enemies) if (e.alive && e.def.role !== 'inert' && e.def.role !== 'part' && e.def.role !== 'boss') t += e.def.threat * (e.elite ? 2.5 : 1);
+    return t;
+  }
+
+  update(dt: number): void {
+    const w = this.w;
+    this.time += dt;
+    if (this.kind === 'boss') {
+      if (this.boss?.dead) {
+        this.calm += dt;
+        if (this.calm > 3.5) this.done = true;
+      }
+      return;
+    }
+    if (this.kind === 'derelict') {
+      let all = true;
+      for (const b of this.beacons) {
+        if (!b.lit) {
+          all = false;
+          if (b.pos.distanceTo(w.player.pos) < 14) {
+            b.progress += dt / 2.5;
+            if (b.progress >= 1) {
+              b.lit = true;
+              w.dropMotes(b.pos.x, b.pos.y, b.pos.z, 30, 4);
+              w.events.emit('explosion', { x: b.pos.x, y: b.pos.y, z: b.pos.z, radius: 16, r: 1, g: 0.95, b: 0.6, enemy: false });
+            }
+          } else b.progress = Math.max(0, b.progress - dt * 0.1);
+        }
+      }
+      if (all && this.spent < this.budget) this.spent = this.budget; // stop spawning once relit
+    }
+    // stall guard: if nothing has died for a while, wrap the fight up
+    if (w.stats.kills !== this.lastKills) {
+      this.lastKills = w.stats.kills;
+      this.noKillT = 0;
+    } else this.noKillT += dt;
+    if (this.noKillT > 25 && this.kind !== 'endless' && this.spent > this.budget * 0.5) {
+      this.spent = this.budget;
+      this.elitesLeft = 0;
+    }
+    const exhausted = this.kind !== 'endless' && this.spent >= this.budget && this.elitesLeft <= 0;
+    if (exhausted) {
+      // safety net: stragglers hunt the player, then retreat into the dark
+      this.straggleT += dt;
+      if (this.straggleT > 18) {
+        for (const e of w.enemies) {
+          if (!e.alive || e.def.role === 'inert' || e.def.role === 'part' || e.def.role === 'boss') continue;
+          e.speedMul = 2.2;
+          if (e.def.role === 'turret' || this.straggleT > 32) {
+            e.dying = e.def.faction === 'hush' ? 0.4 : 0;
+            e.alive = false;
+            w.events.emit('explosion', { x: e.pos.x, y: e.pos.y, z: e.pos.z, radius: 4, r: 0.6, g: 0.5, b: 1, enemy: false });
+          }
+        }
+      }
+      if (w.liveEnemyCount() === 0 && (this.kind !== 'derelict' || this.beacons.every((b) => b.lit))) {
+        this.calm += dt;
+        if (this.calm > 1.2) {
+          this.cleared = true;
+          this.done = true;
+        }
+      }
+      return;
+    }
+    this.spawnCd -= dt;
+    if (this.spawnCd > 0) return;
+    const live = this.liveThreat();
+    const target = this.targetThreat();
+    if (live < target) {
+      this.spawnGroup(target - live);
+      this.spawnCd = 1.2 + this.rng.next() * 1.4;
+    } else this.spawnCd = 0.5;
+    if (this.kind === 'endless' && this.spent > this.budget * (this.endlessWave + 1)) {
+      this.endlessWave++;
+      w.sectorHpScale *= 1.08;
+    }
+  }
+
+  private pickEnemy(): string {
+    const pool = this.sector.pool.filter(([id]) => (ENEMY_BY_ID[id]!.minSector ?? 0) <= this.sectorIdx + 1);
+    // early tutorial: only simple roles
+    const p = this.kind === 'tutorial' ? pool.filter(([id]) => ['swarmer', 'charger'].includes(ENEMY_BY_ID[id]!.role)) : pool;
+    const list = p.length ? p : pool;
+    return list[this.rng.weighted(list.map((x) => x[1]))]![0];
+  }
+
+  /** Spawn an authored formation for the chosen enemy type. */
+  private spawnGroup(need: number): void {
+    const w = this.w;
+    const id = this.pickEnemy();
+    const def = ENEMY_BY_ID[id]!;
+    const pl = w.player;
+    // spawn mostly in the front hemisphere so threats are readable
+    const fwd = pl.forward(new Vector3());
+    const side = new Vector3().crossVectors(fwd, new Vector3(0, 1, 0)).normalize();
+    const ang = this.rng.range(-1.1, 1.1);
+    const dir = fwd.clone().applyAxisAngle(new Vector3(0, 1, 0), ang).add(new Vector3(0, this.rng.range(-0.35, 0.35), 0)).normalize();
+    if (this.rng.chance(0.2)) dir.negate(); // occasional flank from behind
+    const dist = this.rng.range(80, 120);
+    const center = pl.pos.clone().addScaledVector(dir, dist);
+    if (center.length() > w.arenaRadius) center.setLength(w.arenaRadius * 0.9);
+    let count = Math.max(1, Math.min(def.role === 'swarmer' ? 22 : 6, Math.round(need / Math.max(1, def.threat))));
+    if (this.w.heat >= 9 && def.role === 'swarmer') count = Math.round(count * 1.3);
+    const formation = def.role === 'swarmer' ? this.rng.pick(['cluster', 'ring', 'line'] as const) : this.rng.pick(['cluster', 'line'] as const);
+    let elite: EliteMod | null = null;
+    if (this.elitesLeft > 0 && (this.spent / this.budget > 0.25 || this.kind === 'rift') && def.role !== 'swarmer' && this.rng.chance(0.5)) {
+      elite = this.rng.pick(ELITE_MODS);
+      this.elitesLeft--;
+      count = 1;
+    }
+    for (let i = 0; i < count; i++) {
+      const p = center.clone();
+      if (formation === 'ring') {
+        const a = (i / count) * Math.PI * 2;
+        p.addScaledVector(side, Math.cos(a) * 18).add(new Vector3(0, Math.sin(a) * 18, 0));
+      } else if (formation === 'line') {
+        p.addScaledVector(side, (i - count / 2) * 5).y += this.rng.range(-2, 2);
+      } else p.add(new Vector3(this.rng.range(-10, 10), this.rng.range(-8, 8), this.rng.range(-10, 10)));
+      const e = w.spawnEnemy(def, p.x, p.y, p.z, i === 0 ? elite : null);
+      e.vel.copy(dir).multiplyScalar(-10);
+      e.timer += i * 0.15;
+      this.spent += def.threat * (elite ? 2.5 : 1);
+    }
+    this.wave++;
+  }
+}
+
+/** Shop pricing. */
+export function priceFor(rarity: string, sector: number, discount: number, heat: number): number {
+  const base: Record<string, number> = { common: 45, uncommon: 70, rare: 110, epic: 160, legendary: 220, artifact: 200, weapon: 120 };
+  return Math.round((base[rarity] ?? 80) * (1 + sector * 0.18) * (1 - discount) * (heat >= 4 ? 1.25 : 1));
+}
+
+/** Embers earned from a run — based on progress, not just wins. */
+export function embersFor(r: { sector: number; kills: number; bosses: number; won: boolean; heat: number; light: number }): number {
+  const base = r.sector * 12 + Math.floor(r.kills / 25) + r.bosses * 15 + Math.floor(r.light / 200) + (r.won ? 60 : 0);
+  return Math.round(base * (1 + r.heat * 0.12));
+}
