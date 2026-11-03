@@ -241,3 +241,7 @@ textarea { width: 100%; height: 80px; background: var(--panel2); color: var(--fg
 .cue { position: absolute; top: 50%; font-family: var(--display); font-weight: 900; font-size: var(--s4); color: var(--signal); animation: cue 0.6s forwards; pointer-events: none; }
 @keyframes cue { to { opacity: 0; } }
 .loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: flex-start; padding-left: 6vw; font-family: var(--display); font-weight: 900; font-size: 64px; letter-spacing: -0.04em; color: #ebe8e1; background: #000; border-left: 8px solid var(--signal); z-index: 10; transition: opacity 0.5s steps(4); }
+
+/* 1st person: the instrument cluster around the reticle replaces the side panels
+   and the screen-corner brackets */
+.hud.cockpit .bl, .hud.cockpit .br, .hud.cockpit .brackets { display: none; }

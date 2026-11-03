@@ -144,6 +144,29 @@ if (scenario === 'fullrun') {
   });
   console.log(log.join('\n'));
 }
+if (scenario === 'cam') {
+  // camera must stay on the ship (3rd/1st person) in every in-run state
+  await ll(() => window.__ll.startRun({ seed: 'CAM' }));
+  await page.waitForTimeout(800);
+  const dist = () => ll(() => { const g = window.__ll; return { state: g.state, d: +g.view.camera.position.distanceTo(g.world.player.pos).toFixed(1) }; });
+  const out = [];
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 3); g.autopilot = true; g.godMode = true; g.input.synthetic.add('fire1'); g.simulate(4); });
+  await page.waitForTimeout(600); out.push(await dist());
+  await ll(() => window.__ll.openDraft({ after: 'map' })); await page.waitForTimeout(800); out.push(await dist());
+  await ll(() => window.__ll.openShop(4)); await page.waitForTimeout(800); out.push(await dist());
+  await ll(() => window.__ll.openEvent(4)); await page.waitForTimeout(800); out.push(await dist());
+  await ll(() => { const g = window.__ll; g.setState('rest'); }); await page.waitForTimeout(600); out.push(await dist());
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 5); g.world.killPlayer('Test'); g.simulate(3); }); await page.waitForTimeout(800); out.push(await dist());
+  console.log(JSON.stringify(out));
+  await ll(() => { const g = window.__ll; g.startRun({ seed: 'CAM2' }); });
+  await page.waitForTimeout(500);
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 9); g.godMode = false; g.camMode = 'cockpit'; g.input.synthetic.add('forward'); g.simulate(5); g.world.player.hull = 25; g.world.player.lumen = 100; g.world.player.shockCd = 4.2; });
+  await page.waitForTimeout(1200);
+  await shot('cockpit');
+  await ll(() => { const g = window.__ll; g.camMode = 'chase'; });
+  await page.waitForTimeout(800);
+  await shot('chase');
+}
 if (scenario === 'stress') {
   await ll(() => window.__ll.startRun({ seed: 'STRESS' }));
   await page.waitForTimeout(3000);

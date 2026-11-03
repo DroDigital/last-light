@@ -73,6 +73,11 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 - **Everything synthesized** (no samples): layered transient/body/tail, randomized pitch, per-sound voice limits, stereo pan by screen position, distance attenuation, music ducking, master limiter.
 - **Procedural adaptive soundtrack:** pad / bass / drums / arp stems faded by intensity (live enemies, Flare, boss). Each sector has its own root, scale, tempo and timbre. Silence before boss reveals. Pulsar Heart's ring bursts are scheduled from the sector BPM so they land on the beat.
 
+## Camera
+
+- **Only two cameras in a run: 3rd-person chase and 1st-person cockpit.** Bug fixed: every in-run screen except combat/pause/death (draft, shop, event, forge, rest, victory, and warps leaving them) fell back to the title screen's free-drifting camera, parked at a fixed point in the arena — it looked like the camera randomly jumped to a far, free location. The ship camera now persists through all of them; the death orbit cam was removed too. The sector map remains a star-chart screen.
+- **Cockpit HUD redesigned** as a minimal instrument cluster around the reticle (hull/shield and Lumen/boost arc gauges with 10% ticks, heading tape, roll/pitch horizon bars, flight-path marker, one systems line, target readout). The old cockpit frame lines, screen-corner brackets and side panels are hidden in 1st person, and target brackets collapse to a single lock diamond on the aimed target.
+
 ## Changes from the brief (and why)
 
 - **No downloaded models/samples.** Procedural assets fit the posterized style better than restyled free packs and keep the build < 1 MB gzipped.

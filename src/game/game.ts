@@ -1153,10 +1153,16 @@ export class Game {
     this.loop.timeScale = this.settings.gameSpeed * slow * (this.state === 'combat' ? 1 : 1);
     if (this.state !== 'combat' && this.state !== 'warp' && this.world) this.loop.timeScale = 0;
 
-    const w = this.state === 'combat' || this.state === 'pause' || this.state === 'death' || (this.state === 'warp' && this.prevState === 'combat') ? this.world : null;
+    // During a run the camera only ever exists in 3rd or 1st person on the ship.
+    // (Previously every in-run screen except combat/pause/death — draft, shop,
+    // event, forge, rest, victory, warps out of them — fell through to the title
+    // screen's free-drifting camera parked at a fixed spot in the arena.)
+    // The sector map is the one exception: it is a star-chart screen.
+    const mapView = this.state === 'map' || (this.state === 'warp' && this.prevState === 'map');
+    const w = this.run && this.world && !mapView ? this.world : null;
     // fx state
     this.updatePostFx(frameDt);
-    this.juice.frame(frameDt, w);
+    this.juice.frame(frameDt, this.state === 'combat' ? w : null);
     this.view.particles.now += frameDt;
     this.view.cockpit = this.camMode === 'cockpit';
     this.updateCamera(w, alpha, frameDt);
@@ -1269,16 +1275,10 @@ export class Game {
         this.camQuat.setFromRotationMatrix(_m);
         cam.quaternion.copy(this.camQuat);
       }
-      if (!pl.alive) {
-        // death cam: slow orbit around the wreck
-        const t = this.loop.realTime * 0.3;
-        cam.position.set(pl.pos.x + Math.cos(t) * 22, pl.pos.y + 8, pl.pos.z + Math.sin(t) * 22);
-        cam.lookAt(pl.pos);
-      }
     } else {
       // menus / map: slow cinematic drift
       const t = this.loop.realTime;
-      if (this.state === 'map' || (this.state === 'warp' && this.run)) {
+      if (this.run) {
         cam.position.set(Math.sin(t * 0.07) * 18, 52 + Math.sin(t * 0.11) * 4, 92);
         cam.lookAt(0, 0, -12);
       } else {
