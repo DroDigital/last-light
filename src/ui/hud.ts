@@ -200,6 +200,7 @@ export class Hud {
       r.hint!.innerHTML = hint ? `<div class="hint">${hint}</div>` : '';
     }
     this.el.classList.toggle('glitch', j.damageGlitch > 0.5 && !g.settings.reducedMotion);
+    this.el.classList.toggle('cockpit', g.camMode === 'cockpit');
   }
 
   private project(x: number, y: number, z: number): { x: number; y: number; on: boolean; behind: boolean } {
@@ -246,11 +247,26 @@ export class Hud {
     brackets.sort((x, y) => x.d - y.d);
     c.font = '800 11px Archivo';
     c.textAlign = 'left';
+    const cockpit = g.camMode === 'cockpit';
     for (let i = 0; i < Math.min(5, brackets.length); i++) {
       const { e } = brackets[i]!;
       const p = this.project(e.pos.x, e.pos.y, e.pos.z);
       if (!p.on) continue;
       const aimed = e.id === pl.aimTarget;
+      if (cockpit) {
+        // 1st person stays minimal: a lock diamond on the aimed target only
+        if (!aimed) continue;
+        c.strokeStyle = '#ff4f00';
+        c.lineWidth = 1.5;
+        c.beginPath();
+        c.moveTo(p.x, p.y - 11);
+        c.lineTo(p.x + 11, p.y);
+        c.lineTo(p.x, p.y + 11);
+        c.lineTo(p.x - 11, p.y);
+        c.closePath();
+        c.stroke();
+        continue;
+      }
       const dist = Math.sqrt(Math.max(1, e.pos.distanceToSquared(pl.pos)));
       const m = clamp((e.radius * e.scale * 260) / dist, 9, 60);
       c.strokeStyle = aimed ? '#ff4f00' : 'rgba(235,232,225,0.75)';
@@ -403,21 +419,7 @@ export class Hud {
         c.fillText(b.lit ? 'RELIT' : `BEACON ${Math.round(b.progress * 100)}%`, p.x, p.y - 22);
       }
     }
-    // cockpit frame
-    if (g.camMode === 'cockpit') {
-      c.strokeStyle = 'rgba(255,240,200,0.18)';
-      c.lineWidth = 2;
-      c.beginPath();
-      c.moveTo(0, H * 0.82);
-      c.lineTo(W * 0.22, H * 0.7);
-      c.lineTo(W * 0.78, H * 0.7);
-      c.lineTo(W, H * 0.82);
-      c.moveTo(W * 0.12, 0);
-      c.lineTo(W * 0.2, H * 0.7);
-      c.moveTo(W * 0.88, 0);
-      c.lineTo(W * 0.8, H * 0.7);
-      c.stroke();
-    }
+    if (g.camMode === 'cockpit') this.drawCockpit(w, W, H, fwdP.x, fwdP.y);
     // mini map (Tab): top-down radar
     if (this.miniMap) {
       const R = 90;
@@ -446,6 +448,219 @@ export class Hud {
       c.fillStyle = '#c8fff4';
       c.fillRect(ox - 2, oy - 2, 4, 4);
     }
+  }
+
+  /**
+   * 1st-person instrument cluster: minimal, technical, centered on the reticle.
+   * Left arcs = hull (outer) + shield (inner); right arcs = Lumen (outer) + boost
+   * (inner); heading tape above; roll/pitch horizon bars; flight-path marker;
+   * systems readout below; target readout beside the right arcs.
+   */
+  private drawCockpit(w: World, W: number, H: number, cx: number, cy: number): void {
+    const c = this.ctx;
+    const pl = w.player;
+    const s = w.build.ship;
+    const t = this.t;
+    const PAPER = 'rgba(235,232,225,0.88)';
+    const DIM = 'rgba(235,232,225,0.22)';
+    const SIG = '#ff4f00';
+    const R = Math.min(W, H) * 0.19;
+    const deg = Math.PI / 180;
+    c.save();
+    c.lineCap = 'butt';
+    c.textBaseline = 'middle';
+
+    // --- arc gauges: each spans 70 degrees, filling from the bottom up
+    const arc = (side: -1 | 1, r: number, frac: number, color: string, width: number) => {
+      const mid = side < 0 ? Math.PI : 0;
+      const a0 = mid + side * -35 * deg; // bottom end
+      const a1 = mid + side * 35 * deg; // top end
+      // track
+      c.strokeStyle = DIM;
+      c.lineWidth = width;
+      c.beginPath();
+      c.arc(cx, cy, r, Math.min(a0, a1), Math.max(a0, a1));
+      c.stroke();
+      // ticks every 10%
+      c.lineWidth = 1;
+      for (let i = 0; i <= 10; i++) {
+        const a = a0 + (a1 - a0) * (i / 10);
+        const k = i % 5 === 0 ? 7 : 4;
+        c.beginPath();
+        c.moveTo(cx + Math.cos(a) * (r + width / 2 + 2), cy + Math.sin(a) * (r + width / 2 + 2));
+        c.lineTo(cx + Math.cos(a) * (r + width / 2 + 2 + k), cy + Math.sin(a) * (r + width / 2 + 2 + k));
+        c.stroke();
+      }
+      // value
+      const f = clamp(frac, 0, 1);
+      if (f > 0.001) {
+        c.strokeStyle = color;
+        c.lineWidth = width;
+        c.beginPath();
+        const end = a0 + (a1 - a0) * f;
+        c.arc(cx, cy, r, Math.min(a0, end), Math.max(a0, end));
+        c.stroke();
+      }
+    };
+    const hullF = pl.hull / pl.maxHull;
+    const critical = hullF < 0.3;
+    const blink = Math.floor(t * 4) % 2 === 0;
+    arc(-1, R, hullF, critical && blink ? SIG : PAPER, 3);
+    arc(-1, R - 9, pl.maxShield > 0 ? pl.shield / pl.maxShield : 0, '#8fe3ff', 2);
+    const flare = pl.flareT > 0;
+    const lum = flare ? pl.flareT / s.flareDur : pl.lumen / 100;
+    arc(1, R, lum, flare ? '#ffffff' : pl.lumen >= 100 ? (blink ? SIG : '#ffd27a') : '#ffd27a', 3);
+    arc(1, R - 9, pl.boostEnergy, '#9fd8ff', 2);
+
+    // arc labels (mono, tabular)
+    c.font = '700 10px "JetBrains Mono"';
+    const lx = cx - R * Math.cos(35 * deg);
+    const ly = cy + R * Math.sin(35 * deg) + 16;
+    const rx = cx + R * Math.cos(35 * deg);
+    c.textAlign = 'right';
+    c.fillStyle = critical ? SIG : PAPER;
+    c.fillText(`HULL ${String(Math.ceil(pl.hull)).padStart(3, '0')}`, lx, ly);
+    c.fillStyle = '#8fe3ff';
+    c.fillText(`SHD ${String(Math.ceil(pl.shield)).padStart(3, '0')}`, lx, ly + 13);
+    c.textAlign = 'left';
+    c.fillStyle = pl.lumen >= 100 && !flare ? SIG : '#ffd27a';
+    c.fillText(flare ? `FLARE ${pl.flareT.toFixed(1)}S` : pl.lumen >= 100 ? 'LUM RDY · F' : `LUM ${String(Math.floor(pl.lumen)).padStart(3, '0')}%`, rx, ly);
+    c.fillStyle = '#9fd8ff';
+    c.fillText(`BST ${String(Math.round(pl.boostEnergy * 100)).padStart(3, '0')}%`, rx, ly + 13);
+
+    // --- roll / pitch horizon bars outside the arcs
+    pl.forward(_v);
+    pl.right(_w);
+    const roll = Math.asin(clamp(_w.y, -1, 1));
+    const pitch = Math.asin(clamp(_v.y, -1, 1));
+    const off = clamp(pitch / (40 * deg), -1, 1) * R * 0.6;
+    c.strokeStyle = PAPER;
+    c.lineWidth = 1.5;
+    for (const side of [-1, 1]) {
+      const r0 = R + 26;
+      const r1 = R + 62;
+      const ca = Math.cos(roll);
+      const sa = Math.sin(roll);
+      const ox = side * r0;
+      const ox2 = side * r1;
+      const y0 = off;
+      c.beginPath();
+      c.moveTo(cx + ox * ca - y0 * sa, cy + ox * sa + y0 * ca);
+      c.lineTo(cx + ox2 * ca - y0 * sa, cy + ox2 * sa + y0 * ca);
+      // end tick pointing toward the sky
+      c.lineTo(cx + ox2 * ca - (y0 + 6) * sa, cy + ox2 * sa + (y0 + 6) * ca);
+      c.stroke();
+    }
+    c.font = '400 10px "JetBrains Mono"';
+    c.fillStyle = PAPER;
+    c.textAlign = 'left';
+    c.fillText(`PIT ${pitch >= 0 ? '+' : '-'}${String(Math.abs(Math.round(pitch / deg))).padStart(2, '0')}°`, cx + R + 26, cy + off - 12);
+    c.textAlign = 'right';
+    c.fillText(`ROL ${roll >= 0 ? '+' : '-'}${String(Math.abs(Math.round(roll / deg))).padStart(2, '0')}°`, cx - R - 26, cy + off - 12);
+
+    // --- heading tape
+    const hdg = ((Math.atan2(_v.x, -_v.z) / deg) % 360 + 360) % 360;
+    const tapeY = cy - R - 46;
+    const tapeW = R * 1.6;
+    const span = 60;
+    c.strokeStyle = PAPER;
+    c.fillStyle = PAPER;
+    c.lineWidth = 1;
+    c.textAlign = 'center';
+    c.font = '400 9px "JetBrains Mono"';
+    for (let d = Math.ceil((hdg - span / 2) / 5) * 5; d <= hdg + span / 2; d += 5) {
+      const x = cx + ((d - hdg) / span) * tapeW;
+      const major = ((d % 30) + 30) % 30 === 0;
+      c.globalAlpha = 1 - Math.abs(d - hdg) / (span / 2) * 0.8;
+      c.beginPath();
+      c.moveTo(x, tapeY);
+      c.lineTo(x, tapeY + (major ? 8 : 4));
+      c.stroke();
+      if (major) c.fillText(String(((d % 360) + 360) % 360).padStart(3, '0'), x, tapeY - 7);
+    }
+    c.globalAlpha = 1;
+    c.fillStyle = SIG;
+    c.beginPath();
+    c.moveTo(cx, tapeY + 10);
+    c.lineTo(cx - 5, tapeY + 17);
+    c.lineTo(cx + 5, tapeY + 17);
+    c.closePath();
+    c.fill();
+    c.font = '700 11px "JetBrains Mono"';
+    c.fillStyle = PAPER;
+    c.fillText(`HDG ${String(Math.round(hdg) % 360).padStart(3, '0')}`, cx, tapeY + 29);
+
+    // --- flight-path marker (where the ship is actually going)
+    const spd = pl.vel.length();
+    if (spd > 4) {
+      const p = this.project(pl.pos.x + pl.vel.x * 2, pl.pos.y + pl.vel.y * 2, pl.pos.z + pl.vel.z * 2);
+      if (p.on) {
+        c.strokeStyle = '#8fe3ff';
+        c.lineWidth = 1.5;
+        c.beginPath();
+        c.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        c.moveTo(p.x - 5, p.y);
+        c.lineTo(p.x - 13, p.y);
+        c.moveTo(p.x + 5, p.y);
+        c.lineTo(p.x + 13, p.y);
+        c.moveTo(p.x, p.y - 5);
+        c.lineTo(p.x, p.y - 10);
+        c.stroke();
+      }
+    }
+
+    // --- systems readout
+    const ab = (label: string, cd: number) => (cd <= 0 ? `${label} RDY` : `${label} ${cd.toFixed(1).padStart(4, '0')}`);
+    const sw = w.build.secondary;
+    const items: [string, boolean][] = [
+      [`SPD ${String(Math.round(spd)).padStart(3, '0')}`, true],
+      [`DGE ${'■'.repeat(pl.dodgeCharges)}${'□'.repeat(Math.max(0, s.dodges - pl.dodgeCharges))}`, pl.dodgeCharges > 0],
+      [ab('Q', pl.shockCd), pl.shockCd <= 0],
+      [ab('E', pl.stasisCd), pl.stasisCd <= 0],
+      [ab('RMB', sw.cd), sw.cd <= 0],
+    ];
+    c.font = '700 11px "JetBrains Mono"';
+    c.textAlign = 'left';
+    const gap = 18;
+    const widths = items.map(([txt]) => c.measureText(txt).width);
+    let x = cx - (widths.reduce((a2, b2) => a2 + b2, 0) + gap * (items.length - 1)) / 2;
+    const by = cy + R + 44;
+    items.forEach(([txt, ready], i) => {
+      c.fillStyle = ready ? PAPER : 'rgba(235,232,225,0.35)';
+      c.fillText(txt, x, by);
+      if (ready && i > 1) {
+        c.fillStyle = SIG;
+        c.fillRect(x, by + 8, widths[i]!, 2);
+      }
+      x += widths[i]! + gap;
+    });
+
+    // --- target readout
+    const tgt = pl.aimTarget >= 0 ? w.enemies.find((e) => e.id === pl.aimTarget) : undefined;
+    if (tgt && tgt.alive) {
+      const tx = cx + R + 70;
+      const ty = cy + 22;
+      const dist = Math.round(tgt.pos.distanceTo(pl.pos));
+      c.fillStyle = SIG;
+      c.fillRect(tx, ty - 9, 2, 40);
+      c.fillStyle = PAPER;
+      c.font = '900 12px Archivo';
+      c.fillText(tgt.def.name.toUpperCase(), tx + 8, ty);
+      c.font = '400 10px "JetBrains Mono"';
+      c.fillText(`TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.elite ? ' · ' + tgt.elite.toUpperCase() : ''}`, tx + 8, ty + 14);
+      const hf = clamp(tgt.hp / tgt.maxHp, 0, 1);
+      c.fillStyle = DIM;
+      c.fillRect(tx + 8, ty + 24, 90, 3);
+      c.fillStyle = PAPER;
+      c.fillRect(tx + 8, ty + 24, 90 * hf, 3);
+    }
+    if (critical) {
+      c.font = '900 13px Archivo';
+      c.textAlign = 'center';
+      c.fillStyle = blink ? SIG : PAPER;
+      c.fillText('HULL CRITICAL', cx, cy - R - 82);
+    }
+    c.restore();
   }
 
   private positionNodeLabels(): void {
