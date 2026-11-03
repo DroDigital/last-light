@@ -131,13 +131,13 @@ h1 { font-size: var(--s5); } h2 { font-size: var(--s4); } h3 { font-size: var(--
 .bossbar { margin-top: 6px; }
 .bossbar .name { font-family: var(--display); font-size: var(--s4); letter-spacing: 0.3em; color: #ffd8c8; }
 .bossbar .bar { height: 8px; color: #ff6a4a; }
-.toasts { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); text-align: center; }
-.toast { font-family: var(--display); font-size: var(--s5); letter-spacing: 0.3em; animation: toastIn 2.2s forwards; text-shadow: 0 0 20px currentColor; }
+.toasts { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); text-align: center; }
+.toast { font-family: var(--display); text-transform: uppercase; white-space: nowrap; font-size: var(--s4); letter-spacing: 0.3em; animation: toastIn 2.2s forwards; text-shadow: 0 0 20px currentColor; }
 @keyframes toastIn { 0% { opacity: 0; transform: scale(1.6); } 10% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px); } }
-.hint { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); font-size: var(--s3); letter-spacing: 0.1em; padding: 8px 16px; background: rgba(0,0,0,0.45); border: 1px solid var(--line); animation: hintIn 0.4s; }
+.hint { position: absolute; left: 50%; bottom: 4%; transform: translateX(-50%); font-size: var(--s3); letter-spacing: 0.1em; padding: 8px 16px; background: rgba(0,0,0,0.45); border: 1px solid var(--line); animation: hintIn 0.4s; }
 @keyframes hintIn { from { opacity: 0; transform: translate(-50%, 10px); } }
-.sector-title { position: absolute; left: 50%; top: 38%; transform: translateX(-50%); text-align: center; animation: sectorIn 4.5s forwards; }
-.sector-title .n { font-family: var(--display); font-size: var(--s6); letter-spacing: 0.3em; }
+.sector-title { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); text-align: center; animation: sectorIn 4.5s forwards; }
+.sector-title .n { font-family: var(--display); font-size: var(--s6); letter-spacing: 0.3em; text-transform: uppercase; white-space: nowrap; }
 .sector-title .s { color: var(--dim); letter-spacing: 0.2em; margin-top: 8px; }
 @keyframes sectorIn { 0% { opacity: 0; letter-spacing: 0.6em; } 15% { opacity: 1; letter-spacing: 0.3em; } 75% { opacity: 1; } 100% { opacity: 0; } }
 .glitch { animation: glitch 0.25s steps(2) infinite; }

@@ -98,7 +98,7 @@ export class Juice {
     this.unsub.push(
       ev.on('shot', (s) => {
         const c = hexToRgb(s.w.color);
-        lights.spawn(s.x, s.y, s.z, c[0] * 30, c[1] * 30, c[2] * 30, 12, 0.06);
+        lights.spawn(s.x, s.y, s.z, c[0] * 5, c[1] * 5, c[2] * 5, 7, 0.05);
         for (let i = 0; i < 3; i++)
           P().spawn(s.x, s.y, s.z, s.dx * 40 + (r() - 0.5) * 20, s.dy * 40 + (r() - 0.5) * 20, s.dz * 40 + (r() - 0.5) * 20, 0.1, c[0] * 4, c[1] * 4, c[2] * 4, 2.5, 0.5, 6);
         // energy ejecta

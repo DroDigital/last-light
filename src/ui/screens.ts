@@ -35,7 +35,7 @@ function cardDesc(c: DraftCard): string {
     case 'weapon':
       return `<span class="dim">${c.def.family} · ${c.def.slot}</span><br>${c.def.desc}<br><span class="faint">Evolves at Lv 5 with <b>${c.def.evolve.tag}</b>.</span>`;
     case 'level':
-      return `Level ${c.weapon.level} → ${c.weapon.level + 1}. +15% damage, faster fire${c.weapon.level + 1 >= 3 ? ', more projectiles' : ''}.${c.weapon.level + 1 >= MAX_LEVEL ? `<br><span class="light">Max level: evolves with the ${c.weapon.def.evolve.tag} tag.</span>` : ''}`;
+      return `Level ${c.weapon.level} → ${c.weapon.level + 1}. +20% damage, faster fire${c.weapon.level + 1 >= 3 ? ', more projectiles' : ''}.${c.weapon.level + 1 >= MAX_LEVEL ? `<br><span class="light">Max level: evolves with the ${c.weapon.def.evolve.tag} tag.</span>` : ''}`;
     case 'evolve':
       return `${c.weapon.def.evolve.desc}<br><span class="faint">${c.weapon.def.name} becomes something new.</span>`;
   }

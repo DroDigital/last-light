@@ -242,8 +242,8 @@ export class Build {
     const p: WeaponParams = { ...DEFAULT_PARAMS, ...w.def.base };
     if (w.evolved) Object.assign(p, w.def.evolve.mods);
     const lv = w.level - 1;
-    p.damage *= 1 + 0.15 * lv;
-    p.rate *= 1 + 0.05 * lv;
+    p.damage *= 1 + 0.2 * lv;
+    p.rate *= 1 + 0.06 * lv;
     if (w.level >= 3 && p.count > 1) p.count += 1;
     if (w.level >= 5 && p.pierce > 0) p.pierce += 1;
     if (w.level >= 4 && (w.def.behavior === 'halo' || w.def.behavior === 'drone')) p.special += 1;

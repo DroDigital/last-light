@@ -41,8 +41,8 @@ function tiers(spec: TierSpec): UpgradeDef[] {
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 const WEAPON_MODS: TierSpec[] = [
-  { id: 'barrels', name: 'Calibrated Barrels', tags: [], values: [0.12, 0.2, 0.3], desc: (v) => `+${pct(v)} damage. Shots burn brighter.`, mods: (v) => [{ s: 'damage', mul: 1 + v }], visual: 'projectile' },
-  { id: 'overclock', name: 'Overclock', tags: ['rapid', 'heat'], values: [0.1, 0.18, 0.28], desc: (v) => `+${pct(v)} fire rate. Barrels glow with heat.`, mods: (v) => [{ s: 'rate', mul: 1 + v }], visual: 'ship' },
+  { id: 'barrels', name: 'Calibrated Barrels', tags: [], values: [0.15, 0.25, 0.4], desc: (v) => `+${pct(v)} damage. Shots burn brighter.`, mods: (v) => [{ s: 'damage', mul: 1 + v }], visual: 'projectile' },
+  { id: 'overclock', name: 'Overclock', tags: ['rapid', 'heat'], values: [0.12, 0.22, 0.35], desc: (v) => `+${pct(v)} fire rate. Barrels glow with heat.`, mods: (v) => [{ s: 'rate', mul: 1 + v }], visual: 'ship' },
   { id: 'twinfeed', name: 'Twin Feed', tags: ['split'], rarityStart: 1, values: [1, 2], desc: (v) => `+${v} projectile per shot, -10% damage.`, mods: (v) => [{ s: 'count', add: v }, { s: 'damage', mul: 0.9 }], visual: 'projectile' },
   { id: 'rails', name: 'Railed Accelerator', tags: ['speed'], values: [0.15, 0.25, 0.4], desc: (v) => `+${pct(v)} projectile speed and range.`, mods: (v) => [{ s: 'speed', mul: 1 + v }, { s: 'range', mul: 1 + v * 0.6 }], visual: 'trail' },
   { id: 'heavy', name: 'Heavy Rounds', tags: ['kinetic'], values: [0.2, 0.35, 0.5], desc: (v) => `+${pct(v)} projectile size, +${pct(v / 3)} damage, more knockback.`, mods: (v) => [{ s: 'size', mul: 1 + v }, { s: 'damage', mul: 1 + v / 3 }, { s: 'knock', mul: 1 + v * 2 }], visual: 'projectile' },
@@ -71,7 +71,7 @@ const MASTERY: TierSpec[] = FAMILIES.map(([tag, label]) => ({
   name: `${label} Mastery`,
   tags: [tag],
   requires: [tag],
-  values: [0.15, 0.25, 0.4],
+  values: [0.2, 0.35, 0.55],
   desc: (v: number) => `${label} weapons: +${pct(v)} damage, +${pct(v / 2)} fire rate.`,
   mods: (v: number) => [
     { s: 'damage', mul: 1 + v, tag },

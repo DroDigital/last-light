@@ -1153,7 +1153,7 @@ export class Game {
         _w.set(0, 0, 4).applyQuaternion(w.player.quat).add(p);
         const f = w.player.flareT > 0 ? 2.5 : 1;
         const t = this.view.trailColor;
-        push(_w.x, _w.y, _w.z, t.x * 2.2 * f, t.y * 2.2 * f, t.z * 2.2 * f, 9 + w.player.thrust * 5);
+        push(_w.x, _w.y, _w.z, t.x * 1.4 * f, t.y * 1.4 * f, t.z * 1.4 * f, 9 + w.player.thrust * 5);
       }
     });
     this.pipe.update(frameDt, this.loop.realTime);
@@ -1220,8 +1220,8 @@ export class Game {
         _q.setFromEuler(new THREE.Euler(0, 0, (pl.bank + pl.roll) * 0.3));
         cam.quaternion.multiply(_q);
       } else {
-        const back = 9.5 + (pl.boosting ? 2.5 : 0);
-        _w.set(0, 2.7, back).applyQuaternion(_q).add(_v);
+        const back = 12 + (pl.boosting ? 3 : 0);
+        _w.set(0, 3.3, back).applyQuaternion(_q).add(_v);
         const k = 1 - Math.exp(-dt * 16);
         this.camPos.lerp(_w, k);
         // never lag more than a few units: keeps aim and ship tightly coupled
@@ -1229,7 +1229,7 @@ export class Game {
         cam.position.copy(this.camPos);
         const fwd = _w.set(0, 0, -1).applyQuaternion(_q);
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_q);
-        const look = _v.clone().addScaledVector(fwd, 40).addScaledVector(up, 1.5);
+        const look = _v.clone().addScaledVector(fwd, 40).addScaledVector(up, 2.2);
         _m.lookAt(cam.position, look, up);
         this.camQuat.setFromRotationMatrix(_m);
         cam.quaternion.copy(this.camQuat);

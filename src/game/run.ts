@@ -148,7 +148,7 @@ export class Director {
     if (w.build.flags.has('hunted')) this.elitesLeft += 1;
     if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
     w.maxTokens = 3 + Math.floor(sectorIdx / 2) + (kind === 'rift' ? 2 : 0);
-    w.sectorHpScale = 1 + sectorIdx * 0.42 + (kind === 'endless' ? 0.3 : 0);
+    w.sectorHpScale = 1 + sectorIdx * 0.34 + (kind === 'endless' ? 0.3 : 0);
     this.dress();
     if (kind === 'boss') {
       this.boss = new BossController(this.sector.boss, w, 1 + (heat >= 5 ? 0.25 : 0), this.sector.music.bpm);

@@ -102,10 +102,12 @@ void main() {
   float ndl = dot(n, uStarDir);
   vec3 diffuse = vAlbedo * (uStarColor * max(ndl, 0.0) * 0.55 + uAmbient);
   // Strong rim from the nearest star: back-lit edges glow
-  float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+  float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
+  // rim only on edges that face the star (back-lit silhouettes)
+  float facing = clamp(dot(n, uStarDir) + 0.2, 0.0, 1.0);
   float back = clamp(0.35 + 0.65 * dot(-v, uStarDir), 0.0, 1.0);
-  vec3 rim = uStarColor * fres * uRim * (0.4 + back * 1.6);
-  vec3 pl = pointLights(vWorld, n, 0.3) * (vAlbedo * 1.5 + 0.25 + fres * 1.5);
+  vec3 rim = uStarColor * fres * uRim * facing * (0.5 + back * 1.5);
+  vec3 pl = pointLights(vWorld, n, 0.3) * (vAlbedo * 2.0 + 0.035 + fres * 0.45);
   vec3 emiss = vTint * vEmit * uEmissive * (1.0 + vFx.z);
   vec3 col = diffuse + rim + pl + emiss;
   // Hit flash: blow out to hot white
@@ -412,7 +414,7 @@ void main() {
   c += texture2D(tSrc, vUv + uTexel * vec2(-0.7, 0.7)).rgb * 0.5;
   c += texture2D(tSrc, vUv + uTexel * vec2(0.7, 0.7)).rgb * 0.5;
   c /= 6.0;
-  gl_FragColor = vec4(c + texture2D(tBase, vUv).rgb, 1.0);
+  gl_FragColor = vec4(c * 0.55 + texture2D(tBase, vUv).rgb, 1.0);
 }
 `;
 

@@ -83,6 +83,37 @@ if (scenario === 'diag') {
   const st = await ll(() => { const g = window.__ll; return { kills: g.world.stats.kills, live: g.world.liveEnemyCount(), proj: g.world.proj.n, hp: g.world.player.hull, pos: g.world.player.pos.toArray().map(Math.round), cam: g.view.camera.position.toArray().map(Math.round) }; });
   console.log(JSON.stringify(st));
 }
+if (scenario === 'look') {
+  await ll(() => window.__ll.startRun({ seed: 'LOOK' }));
+  await page.waitForTimeout(1200);
+  await shot('l0-map');
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 11); g.input.synthetic.add('fire1'); g.autopilot = true; g.godMode = true; });
+  await ll(() => window.__ll.simulate(9));
+  await page.waitForTimeout(1200);
+  await shot('l1-combat');
+  await ll(() => window.__ll.simulate(3));
+  await page.waitForTimeout(400);
+  await shot('l2-combat');
+  await ll(() => { const g = window.__ll; g.world.player.lumen = 100; g.controls.flare = true; g.simulate(1.0); });
+  await page.waitForTimeout(500);
+  await shot('l3-flare');
+  for (const s of [1, 2, 3, 4]) {
+    await ll((s) => { const g = window.__ll; g.enterSector(s, true); }, s);
+    await page.waitForTimeout(400);
+    await ll(() => { const g = window.__ll; g.startEncounter('boss', 9); g.input.synthetic.add('fire1'); g.autopilot = true; g.godMode = true; g.simulate(7); });
+    await page.waitForTimeout(1200);
+    await shot('l-boss' + s);
+  }
+}
+if (scenario === 'ship') {
+  await ll(() => window.__ll.startRun({ seed: 'LOOK' }));
+  await page.waitForTimeout(800);
+  for (const h of ['lantern', 'moth', 'bastion', 'prism', 'ember', 'wraith']) {
+    await ll((h) => { const g = window.__ll; g.view.setHull(h, '#fff0c0'); g.startEncounter('combat', 11); g.director.spawnCd = 999; g.world.enemies.forEach((e) => { if (e.def.role !== 'inert') e.alive = false; }); g.input.syntheticAimX = 0.15; g.simulate(1); }, h);
+    await page.waitForTimeout(700);
+    await shot('s-' + h);
+  }
+}
 if (scenario === 'stress') {
   await ll(() => window.__ll.startRun({ seed: 'STRESS' }));
   await page.waitForTimeout(3000);

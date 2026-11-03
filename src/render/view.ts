@@ -258,7 +258,7 @@ export class View {
     const fx = this.shipMat.uniforms.uFx!.value as THREE.Vector4;
     const heatGlow = w.build.flags.has('emberHull') ? pl.heat : 0;
     const rateGlow = Math.min(1, (w.build.primary.params.rate / Math.max(1, w.build.primary.def.base.rate)) - 1) * 0.6;
-    fx.set(pl.hurtT > 0.2 ? 1 : 0, 0, (pl.flareT > 0 ? 1.5 : 0) + heatGlow + Math.max(0, rateGlow) * (pl.firingT < 0.2 ? 1 : 0.3), pl.iframeT > 0 && pl.dodgeT <= 0 ? 0.3 : 0);
+    fx.set(pl.hurtT > 0.2 ? 1 : 0, 0, (pl.flareT > 0 ? 0.6 : 0) + heatGlow + Math.max(0, rateGlow) * (pl.firingT < 0.2 ? 1 : 0.3), pl.iframeT > 0 && pl.dodgeT <= 0 ? 0.3 : 0);
 
     // afterimages during dodge
     this.trailTimer += frameDt;
@@ -282,7 +282,11 @@ export class View {
       const ex = this.ship.position.x + fwd.x * 1.5 * scale;
       const ey = this.ship.position.y + fwd.y * 1.5 * scale;
       const ez = this.ship.position.z + fwd.z * 1.5 * scale;
-      if (this.trailTimer > 1 / 60) {
+      // sample by distance travelled (relative to the ship's own motion) so a
+      // stationary ship never stacks additive segments on one spot
+      const li = ((this.trailHead - 1 + 48) % 48) * 6;
+      const moved = this.trailCount === 0 ? 99 : Math.hypot(this.trail[li]! - (ex + right.x * 0.55 * scale), this.trail[li + 1]! - (ey + right.y * 0.55 * scale), this.trail[li + 2]! - (ez + right.z * 0.55 * scale));
+      if (this.trailTimer > 1 / 60 && moved > 0.6) {
         this.trailTimer = 0;
         const i = this.trailHead * 6;
         this.trail[i] = ex + right.x * 0.55 * scale;
@@ -294,7 +298,8 @@ export class View {
         this.trailHead = (this.trailHead + 1) % 48;
         this.trailCount = Math.min(48, this.trailCount + 1);
       }
-      const len = Math.min(this.trailCount, Math.round(14 + 20 * w.build.ship.speed * (pl.boosting ? 1.5 : 1) - 14));
+      if (pl.vel.lengthSq() < 4 && this.trailCount > 2) this.trailCount -= 1;
+      const len = Math.min(this.trailCount, Math.round(20 * w.build.ship.speed * (pl.boosting ? 1.5 : 1)));
       const tc = this.trailColor;
       const boost = pl.boosting ? 2.2 : 1;
       for (let e = 0; e < 2; e++) {
@@ -325,7 +330,7 @@ export class View {
           const a1 = ((i + 0.6) / n) * Math.PI * 2 + time * 0.5;
           _v.set(Math.cos(a0) * rad, 0, Math.sin(a0) * rad).applyQuaternion(_q).add(this.ship.position);
           _w.set(Math.cos(a1) * rad, 0, Math.sin(a1) * rad).applyQuaternion(_q).add(this.ship.position);
-          const k = sf * 0.25;
+          const k = sf * 0.12;
           this.streaks.push(_v.x, _v.y, _v.z, _w.x, _w.y, _w.z, 0.3 * k, 0.9 * k, 1 * k, 0.05);
         }
       }
