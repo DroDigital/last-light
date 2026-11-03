@@ -52,8 +52,9 @@ export function showTitle(g: Game): void {
   const best = d.dailyBest[daily];
   g.ui.show(
     'title',
-    `<div class="title-screen">
-      <div class="logo">LAST LIGHT<small>THE UNIVERSE IS GOING DARK</small></div>
+    `<div class="numeral">${String(d.bossesKilled.length).padStart(2, '0')}</div>
+    <div class="title-screen">
+      <div class="logo">Last<br>Light<small>THE UNIVERSE IS GOING DARK — ${String(d.bossesKilled.length).padStart(2, '0')}/05 STARS RELIT</small></div>
       <div class="menu">
         <button class="primary" data-nav data-autofocus data-act="hearth">The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
         <button data-nav data-act="quickdive">Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
@@ -147,13 +148,14 @@ export function showMap(g: Game): void {
     .map((n) => {
       const info = NODE_INFO[n.type];
       const cls = n.id === run.node ? 'cur' : reach.has(n.id) ? 'reach' : n.visited ? 'done' : '';
-      return `<div class="node-label ${cls}" ${reach.has(n.id) ? 'data-nav' : ''} data-act="node" data-arg="${n.id}" data-node="${n.id}"><span class="ic">${info.icon}</span>${info.name}</div>`;
+      return `<div class="node-label ${cls}" ${reach.has(n.id) ? 'data-nav' : ''} data-act="node" data-arg="${n.id}" data-node="${n.id}"><span class="ic">${info.icon} ${String(n.row + 1).padStart(2, '0')}</span>${info.name}</div>`;
     })
     .join('');
   const b = w.build;
   g.ui.show(
     'map',
-    `<div class="map-ui screen passthrough" style="position:absolute;inset:0;display:flex">
+    `<div class="numeral" style="left:2vw;right:auto">${String(run.sector + 1).padStart(2, '0')}</div>
+    <div class="map-ui screen passthrough" style="position:absolute;inset:0;display:flex">
       <div class="side panel col">
         <h2>${esc(sec.name)}</h2>
         <div class="dim">${esc(sec.star)} · ${esc(BOSSES[sec.boss]!.name)} waits at the dying star.</div>
@@ -188,7 +190,8 @@ export function showDraft(g: Game): void {
        .map((c, i) => {
          const r = cardRarity(c);
          return `<div class="card r-${r}" style="--rc:var(--c-${r})" data-nav ${i === 0 ? 'data-autofocus' : ''} data-act="pick" data-arg="${i}">
-          <div class="glow"></div>${c.combo >= 2 ? '<div class="combo">COMBO</div>' : ''}
+          <div class="glow"></div>${c.combo >= 2 ? '<div class="combo"></div>' : ''}
+          <div class="idx">${String(i + 1).padStart(2, '0')}</div>
           <div class="rar">${c.kind === 'evolve' ? 'Evolution' : c.kind === 'weapon' ? 'New weapon' : c.kind === 'level' ? 'Weapon level' : r}</div>
           <div class="icon">${cardIcon(c)}</div>
           <div class="nm">${esc(cardTitle(c))}</div>
@@ -306,7 +309,7 @@ export function showDeath(g: Game): void {
     'death',
     `<div class="row center" style="gap:3vw;align-items:flex-start">
       <div class="col" style="width:360px">
-        <div class="display" style="font-size:var(--s6);color:#d8d0e8">The light fades</div>
+        <div class="display" style="font-size:var(--s6);line-height:.85">The light<br>fades</div><span class="sigbar"></span>
         <div class="dim">Killed by <span style="color:var(--danger)">${esc(w.player.deathCause)}</span> in ${esc(SECTORS[g.run!.sector]!.name)}</div>
         <div class="panel col" style="margin-top:12px">
           <div class="stat"><span>Kills</span><b>${fmtInt(w.stats.kills)}</b></div>

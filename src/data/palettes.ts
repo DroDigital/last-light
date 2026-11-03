@@ -97,11 +97,23 @@ export function paletteById(id: string): PaletteDef {
   return PALETTES.find((p) => p.id === id) ?? PALETTES[0]!;
 }
 
-/** Reserved readability tones. Index 0 = default, others colorblind-safe variants. */
+/**
+ * Ink print (brutalist style A): ink, warm gray, paper. Used wherever light has
+ * died: the menus/Hearth (as a paper negative), the death screen, the Hush.
+ */
+export const INK = ['#141414', '#968f84', '#ebe8e1'];
+/** Signal orange: the one accent that is never dithered or quantized (HUD signals, hot light in ink scenes). */
+export const SIGNAL = '#ff4f00';
+
+/**
+ * Reserved readability tones. Player fire is a cyan-white vector core with a
+ * dithered halo; enemy fire is hot crimson rings/diamonds; signal orange is
+ * reserved for UI and never used by either. Index 0 = default, others colorblind-safe.
+ */
 export const RESERVED_TONES = {
-  default: { player: '#c8fff4', enemy: '#ff4a2e', pickup: '#fff6a0' },
+  default: { player: '#bff6ff', enemy: '#ff2e63', pickup: '#ffe9a0' },
   deuteranopia: { player: '#8fd8ff', enemy: '#ffb000', pickup: '#ffffff' },
   protanopia: { player: '#9fe8ff', enemy: '#ffd200', pickup: '#ffffff' },
-  tritanopia: { player: '#c8fff4', enemy: '#ff3a7a', pickup: '#fff6a0' },
+  tritanopia: { player: '#c8fff4', enemy: '#ff3a7a', pickup: '#ffe9a0' },
 } as const;
 export type ColorblindMode = keyof typeof RESERVED_TONES;

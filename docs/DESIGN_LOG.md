@@ -27,6 +27,17 @@ One line of reasoning per decision. Newest decisions at the bottom of each secti
 - Fixed: engine ribbon trail stacked dozens of additive segments when stationary; trail now samples by distance travelled.
 - **Palette as atmosphere:** each sector has a base "hush" (chroma drain + palette desaturation) that recedes as you harvest Light and vanishes when the boss dies and the star relights. The Last Dark boss drains it back during its Colorless phase.
 
+## Art direction v2: Chroma Dither (three styles, one rule each)
+
+The style brief evolved into a fusion of three explored directions. Each owns one job so they never fight:
+
+- **Dithered Cosmos owns the world.** Painterly brushed-stroke nebula, explosion light, per-sector OKLab palettes, ordered dither. Unchanged base layer.
+- **Dither-bloom vector owns energy.** Ships, enemies, drones, halos and afterimages draw their `EdgesGeometry` twice from the *same instance buffers as the hulls*: a halo into the low-res HDR scene (bloom + dither make it part of the painting) and a crisp 1px core at native resolution after the post pass. A native-res depth prepass of the hulls (layer 1, override material) gives the cores proper hidden-line occlusion. Player bolts became crisp vector cores with dithered HDR halos; kills spawn a yellow/cyan double vector shock ring and vector sparks; speed lines and the arena wall (a magenta lat/long grid that materializes near the boundary) are vectors too. Asteroids and debris stay pure silhouettes — dead rock has no energy.
+- **Dithered brutalism owns information and the absence of light.** Swiss grotesk (Archivo 900, tight tracking, flush-left), hard rules, giant background numerals (stars relit on the title, sector number on the map), card index numerals, mono readouts (coordinates, mission clock, kill counter), TGT-xx target brackets and `DESTROYED / 042` kill confirmations. **Signal orange (#ff4f00) is the only UI accent and is never dithered.** Its 3-tone ink print (ink / warm gray / paper) appears where light dies: the death screen dissolves into it, and the Hush sector / Last Dark boss drown the palette in it via a *dithered dissolve between the two posterizations* (a second, offset Bayer threshold picks cosmos or ink per pixel). Hot light (fire, stars, explosions) prints as undithered signal orange inside ink scenes.
+- **No paper-white backgrounds** (direction from the user): the brutalist style contributes its accents and ink tones only; menus stay on the dark cosmos and UI focus states use dark fills with signal-orange bars instead of inverted paper blocks.
+- **Reserved tones re-cut for the fusion:** player fire cyan-white, enemy fire hot crimson (#ff2e63) rings/diamonds, pickups pale gold; signal orange is reserved for UI so it can never be confused with enemy fire.
+- Fonts changed to Archivo + JetBrains Mono (both OFL); the previous faces were removed.
+
 ## Feel and juice
 
 - **Trauma-based shake** (trauma², smooth value noise) plus separate recoil micro-kick, FOV kicks on boost/dodge.

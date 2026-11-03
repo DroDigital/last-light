@@ -24,9 +24,8 @@
   },
   "homepage": "https://github.com/DroDigital/last-light#readme",
   "dependencies": {
-    "@fontsource/chakra-petch": "^5.3.0",
-    "@fontsource/syne-mono": "^5.3.0",
-    "@fontsource/unica-one": "^5.3.0",
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "three": "^0.187.0"
   },
   "devDependencies": {

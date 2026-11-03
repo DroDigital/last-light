@@ -8,6 +8,7 @@ import { makeHullMaterial } from './materials';
 import { haloPositions } from '../game/weapons';
 import { hexToRgb } from '../core/math';
 import { fxRng } from '../core/rng';
+import { EdgeBatch } from './edges';
 
 const KINDS: MeshKind[] = [
   'hushSpike', 'hushDart', 'hushBlob', 'hushEye', 'salvBox', 'salvRam', 'salvGun', 'salvHauler', 'salvTurret',
@@ -28,6 +29,8 @@ class InstancedKind {
   mesh: THREE.InstancedMesh;
   fx: THREE.InstancedBufferAttribute;
   count = 0;
+  /** vector edge lines sharing this kind's instance data (style C) */
+  edges: EdgeBatch | null = null;
   constructor(geo: THREE.BufferGeometry, mat: THREE.Material, cap: number) {
     this.fx = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
     this.fx.setUsage(THREE.DynamicDrawUsage);
@@ -38,6 +41,13 @@ class InstancedKind {
     this.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
+    this.mesh.layers.enable(1); // native-res depth prepass for hidden-line edges
+  }
+  withEdges(view: View, opts: { haloGain?: number; coreGain?: number } = {}): this {
+    this.edges = new EdgeBatch(this.mesh.geometry, { matrix: this.mesh.instanceMatrix, color: this.mesh.instanceColor!, fx: this.fx }, opts);
+    view.world.add(this.edges.halo);
+    view.tele.add(this.edges.core);
+    return this;
   }
   begin(): void {
     this.count = 0;
@@ -60,7 +70,36 @@ class InstancedKind {
     this.fx.clearUpdateRanges();
     this.fx.addUpdateRange(0, Math.max(1, this.count) * 4);
     this.fx.needsUpdate = true;
+    this.edges?.end(this.count);
   }
+}
+
+interface VecRing {
+  x: number;
+  y: number;
+  z: number;
+  r0: number;
+  r1: number;
+  t: number;
+  dur: number;
+  r: number;
+  g: number;
+  b: number;
+}
+interface VecSpark {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  t: number;
+  dur: number;
+  len: number;
+  r: number;
+  g: number;
+  b: number;
+  drag: number;
 }
 
 /** Renders a World into the pipeline scenes. */
@@ -80,6 +119,11 @@ export class View {
   private halos: InstancedKind;
   private ghosts: InstancedKind;
   ship: THREE.Mesh;
+  private shipEdges: EdgeBatch;
+  private rings: VecRing[] = [];
+  private sparks: VecSpark[] = [];
+  /** reserved player tone (LDR) for crisp bolt cores */
+  private playerTone = new THREE.Vector3(0.75, 0.96, 1);
   private shipMat: THREE.ShaderMaterial;
   private shipHull = '';
   hullMat: THREE.ShaderMaterial;
@@ -104,19 +148,26 @@ export class View {
       const ik = new InstancedKind(buildEnemyMesh(k, k.length * 13), this.hullMat, k === 'asteroid' ? 120 : 400);
       this.kinds.set(k, ik);
       this.world.add(ik.mesh);
+      // living things get vector edges; dead rock stays a pure silhouette
+      if (k !== 'asteroid') ik.withEdges(this, k === 'segment' || k === 'bossCore' ? { haloGain: 0.9, coreGain: 0.5 } : { haloGain: 1.1, coreGain: 0.5 });
     }
     this.debris = new InstancedKind(buildEnemyMesh('debris', 7), this.hullMat, 900);
     this.world.add(this.debris.mesh);
     this.drones = new InstancedKind(buildEnemyMesh('drone', 3), this.hullMat, 16);
     this.world.add(this.drones.mesh);
+    this.drones.withEdges(this, { haloGain: 2, coreGain: 0.7 });
     this.halos = new InstancedKind(buildEnemyMesh('halo', 5), this.hullMat, 24);
     this.world.add(this.halos.mesh);
+    this.halos.withEdges(this, { haloGain: 2.4, coreGain: 0.8 });
     this.shipMat = makeHullMaterial(pipe.lights, { rim: 1.8, emissive: 2.2 });
     this.ship = new THREE.Mesh(buildPlayerShip('lantern'), this.shipMat);
     this.ship.frustumCulled = false;
+    this.ship.layers.enable(1);
     this.world.add(this.ship);
+    this.shipEdges = this.makeShipEdges('lantern');
     this.ghosts = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 3, emissive: 4 }), 12);
     this.world.add(this.ghosts.mesh);
+    this.ghosts.withEdges(this, { haloGain: 0.8, coreGain: 0.45 });
 
     this.particles = new Particles(65536, pipe.pixelScaleUniform);
     this.world.add(this.particles.points);
@@ -128,11 +179,37 @@ export class View {
     this.tele.add(this.telegraphs.lines);
   }
 
+  private makeShipEdges(id: string): EdgeBatch {
+    const e = new EdgeBatch(buildPlayerShip(id), 1, { haloGain: 0.7, coreGain: 0.7 });
+    this.world.add(e.halo);
+    this.tele.add(e.core);
+    return e;
+  }
+
+  /** Vector shock ring (style C): crisp native-res circle facing the camera. */
+  addRing(x: number, y: number, z: number, r0: number, r1: number, dur: number, r: number, g: number, b: number): void {
+    if (this.rings.length > 160) this.rings.shift();
+    this.rings.push({ x, y, z, r0, r1, t: 0, dur, r, g, b });
+  }
+
+  /** Vector spark: a short crisp line flying along its velocity. */
+  addSpark(x: number, y: number, z: number, vx: number, vy: number, vz: number, dur: number, len: number, r: number, g: number, b: number, drag = 3): void {
+    if (this.sparks.length > 900) this.sparks.shift();
+    this.sparks.push({ x, y, z, vx, vy, vz, t: 0, dur, len, r, g, b, drag });
+  }
+
+  setPlayerTone(r: number, g: number, b: number): void {
+    this.playerTone.set(r, g, b);
+  }
+
   setHull(id: string, accent: string): void {
     if (this.shipHull === id) return;
     this.shipHull = id;
     this.ship.geometry.dispose();
     this.ship.geometry = buildPlayerShip(id);
+    this.world.remove(this.shipEdges.halo);
+    this.tele.remove(this.shipEdges.core);
+    this.shipEdges = this.makeShipEdges(id);
     const g = this.ghosts.mesh.geometry;
     const fx = g.getAttribute('aFx');
     const ng = buildPlayerShip(id);
@@ -155,6 +232,7 @@ export class View {
     this.drones.begin();
     this.halos.begin();
     this.ghosts.begin();
+    this.shipEdges.begin();
     this.streaks.begin();
     this.bullets.begin();
     this.telegraphs.begin();
@@ -170,6 +248,7 @@ export class View {
     } else {
       this.ship.visible = false;
     }
+    this.syncVectors(frameDt);
     for (const mk of this.markers) {
       const k = mk.lit;
       this.telegraphs.ring(mk.x, mk.y, mk.z, mk.r, 0, 1, 0, 0.5 + k * 0.5, 0.9, 0.5 * (1 - k) + k, 0.6);
@@ -181,6 +260,7 @@ export class View {
     this.drones.end();
     this.halos.end();
     this.ghosts.end();
+    this.shipEdges.end();
     this.streaks.end();
     this.bullets.end();
     this.telegraphs.end();
@@ -255,6 +335,11 @@ export class View {
     this.ship.quaternion.copy(_q);
     const scale = w.build.hull.id === 'moth' ? 0.8 : w.build.hull.id === 'bastion' ? 1.2 : 1;
     this.ship.scale.setScalar(scale);
+    if (this.ship.visible) {
+      _m.compose(this.ship.position, this.ship.quaternion, _s.setScalar(scale));
+      const flare = pl.flareT > 0 ? 1.2 : 0;
+      this.shipEdges.push(_m, 0.45 + flare * 0.4, 0.9, 1, pl.hurtT > 0.2 ? 1 : 0, 0, flare, 0);
+    }
     const fx = this.shipMat.uniforms.uFx!.value as THREE.Vector4;
     const heatGlow = w.build.flags.has('emberHull') ? pl.heat : 0;
     const rateGlow = Math.min(1, (w.build.primary.params.rate / Math.max(1, w.build.primary.def.base.rate)) - 1) * 0.6;
@@ -353,7 +438,23 @@ export class View {
       const y = P.y[i]! - vy * inv / 60;
       const z = P.z[i]! - vz * inv / 60;
       const sz = P.size[i]! * (P.explode[i]! > 6 ? 1.5 : 1);
-      this.bullets.push(x, y, z, sz, vx, vy, vz, P.kind[i]!);
+      const kind = P.kind[i]!;
+      const sp2 = vx * vx + vy * vy + vz * vz;
+      if (sp2 < 400) {
+        // mines and slow orbs stay solid readable shapes
+        this.bullets.push(x, y, z, sz, vx, vy, vz, kind);
+        continue;
+      }
+      const k = kind === 5 ? 0.05 : 0.035;
+      const bx = x - vx * k;
+      const by = y - vy * k;
+      const bz = z - vz * k;
+      const t = this.playerTone;
+      this.telegraphs.seg(x, y, z, bx, by, bz, t.x, t.y, t.z, 1);
+      // halo goes into the HDR scene: bloom + dither make it part of the painting
+      const h = kind === 5 ? 1.6 : 1.1;
+      this.streaks.push(x, y, z, bx - vx * k, by - vy * k, bz - vz * k, 0.5 * h, 1.6 * h, 2.4 * h, sz * 1.6, sz * 0.6);
+      if (kind === 5) this.bullets.push(x, y, z, sz * 0.8, 0, 0, 0, 5);
     }
     const E = w.eproj;
     for (let i = 0; i < E.n; i++) {
@@ -468,6 +569,41 @@ export class View {
     for (const d of w.decoys) this.telegraphs.ring(d.pos.x, d.pos.y, d.pos.z, 2 + Math.sin(time * 10), 0, 1, 0, 0.3, 1, 0.9, 0.6, 16);
   }
 
+  private syncVectors(dt: number): void {
+    const T = this.telegraphs;
+    const cam = this.camera;
+    _v.set(0, 0, 1).applyQuaternion(cam.quaternion); // ring normal faces the camera
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const g = this.rings[i]!;
+      g.t += dt;
+      const k = g.t / g.dur;
+      if (k >= 1) {
+        this.rings.splice(i, 1);
+        continue;
+      }
+      const e = 1 - Math.pow(1 - k, 3);
+      const a = (1 - k) * (1 - k);
+      T.ring(g.x, g.y, g.z, g.r0 + (g.r1 - g.r0) * e, _v.x, _v.y, _v.z, g.r * a, g.g * a, g.b * a, 1, 48);
+    }
+    for (let i = this.sparks.length - 1; i >= 0; i--) {
+      const s = this.sparks[i]!;
+      s.t += dt;
+      if (s.t >= s.dur) {
+        this.sparks.splice(i, 1);
+        continue;
+      }
+      const f = Math.exp(-s.drag * dt);
+      s.vx *= f;
+      s.vy *= f;
+      s.vz *= f;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.z += s.vz * dt;
+      const a = 1 - s.t / s.dur;
+      T.seg(s.x, s.y, s.z, s.x - s.vx * s.len, s.y - s.vy * s.len, s.z - s.vz * s.len, s.r * a, s.g * a, s.b * a, 1);
+    }
+  }
+
   private syncTelegraphs(w: World, time: number): void {
     const T = this.telegraphs;
     for (const t of w.telegraphs) {
@@ -507,9 +643,32 @@ export class View {
     const R = w.arenaRadius;
     if (d > R * 0.82) {
       const k = Math.min(1, (d - R * 0.82) / (R * 0.18));
+      // the arena wall materializes as a magenta vector grid (style C)
       _v.copy(pl.pos).normalize();
-      _w.copy(_v).multiplyScalar(R);
-      for (let i = 1; i <= 3; i++) T.ring(_w.x, _w.y, _w.z, 10 * i + Math.sin(time * 6) * 2, _v.x, _v.y, _v.z, 1, 0.4, 0.2, k * 0.6, 32);
+      const ux = new THREE.Vector3(0, 1, 0).cross(_v);
+      if (ux.lengthSq() < 0.01) ux.set(1, 0, 0);
+      ux.normalize();
+      const uy = new THREE.Vector3().crossVectors(_v, ux).normalize();
+      const pulse = 0.75 + 0.25 * Math.sin(time * 5);
+      const cr = 1 * k * pulse;
+      const cg = 0.17 * k * pulse;
+      const cb = 0.84 * k * pulse;
+      const N = 8;
+      const step = 9;
+      const onSphere = (a: number, b: number, out: THREE.Vector3) => out.copy(_v).multiplyScalar(R).addScaledVector(ux, a).addScaledVector(uy, b).setLength(R);
+      const pa = new THREE.Vector3();
+      const pb = new THREE.Vector3();
+      for (let i = -N; i <= N; i++) {
+        for (let j = -N; j < N; j++) {
+          const fade = 1 - Math.max(Math.abs(i), Math.abs(j)) / N;
+          onSphere(i * step, j * step, pa);
+          onSphere(i * step, (j + 1) * step, pb);
+          T.seg(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z, cr * fade, cg * fade, cb * fade, 1);
+          onSphere(j * step, i * step, pa);
+          onSphere((j + 1) * step, i * step, pb);
+          T.seg(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z, cr * fade, cg * fade, cb * fade, 1);
+        }
+      }
     }
     void _col;
   }

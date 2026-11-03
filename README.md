@@ -2,7 +2,12 @@
 
 A browser-based 3D roguelite space shooter in the **Dithered Cosmos** style. The universe is going dark. You fly the Lantern, the last lightship, diving through five dying star systems to harvest the light they have left before the Hush swallows it.
 
-Painterly HDR space is rendered at low internal resolution, tonemapped, then posterized through ordered dithering into per-sector OKLab palettes and upscaled with nearest-neighbor. Player and enemy shots live on an undithered readability layer in reserved tones; telegraphs draw at native resolution on top.
+The look is **Chroma Dither**, three styles with one job each:
+- **The world** is a painterly HDR space, posterized through ordered dithering into per-sector OKLab palettes at low internal resolution.
+- **Everything with energy** (ships, enemies, bolts, shock rings) draws crisp native-res vector cores, with bloom halos rendered as dither.
+- **Information** follows Swiss brutalism: bold grotesk type, target brackets, kill confirmations, and a signal-orange accent that is never dithered.
+
+Where light dies, the world prints in three inks.
 
 ## Run it
 

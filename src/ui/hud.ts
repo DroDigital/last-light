@@ -67,9 +67,9 @@ export class Hud {
     if (this.refs.hull) return;
     const scan = this.g.settings.scanlines ? '<div class="scanlines"></div>' : '';
     this.el.innerHTML = `${scan}<div class="brackets"><i></i><i></i><i></i><i></i></div>
-      <div class="tl"><div class="display" data-r="sector" style="font-size:var(--s3);letter-spacing:.3em"></div><div class="dim" data-r="enc" style="font-size:var(--s1)"></div></div>
+      <div class="tl"><div class="display" data-r="sector" style="font-size:var(--s3)"></div><span class="sigbar" style="width:48px"></span><div class="readout" data-r="enc"></div><div class="readout" data-r="coords" style="margin-top:4px;opacity:.6"></div></div>
       <div class="tc"><div data-r="boss" class="bossbar" style="display:none"><div class="name" data-r="bossname"></div><div class="bar"><b data-r="bossghost"></b><i data-r="bosshp"></i></div><div class="dim" data-r="bossphase"></div></div></div>
-      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="dim" style="font-size:var(--s1);letter-spacing:.2em">LIGHT</div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
+      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
       <div class="bl">
         <div class="label"><span>Hull</span><b data-r="hullt"></b></div><div class="bar hull"><b data-r="hullghost"></b><i data-r="hull"></i></div>
         <div class="label"><span>Shield</span><b data-r="shieldt"></b></div><div class="bar shield"><i data-r="shield"></i></div>
@@ -153,6 +153,8 @@ export class Hud {
       this.lastLight = light;
     }
     r.boost!.style.width = `${pl.boostEnergy * 100}%`;
+    r.kills!.textContent = String(w.stats.kills).padStart(3, '0');
+    r.coords!.textContent = `[ x ${pl.pos.x.toFixed(1).padStart(6)}  y ${pl.pos.y.toFixed(1).padStart(6)}  z ${pl.pos.z.toFixed(1).padStart(6)} ]  T+${String(Math.floor(w.time / 60)).padStart(2, '0')}:${String(Math.floor(w.time % 60)).padStart(2, '0')}`;
     const s = w.build.ship;
     r.cddodge!.style.height = pl.dodgeCharges >= s.dodges ? '0%' : `${(1 - pl.dodgeRecharge / s.dodgeCd) * 100}%`;
     r.ndodge!.textContent = `DODGE ×${pl.dodgeCharges}`;
@@ -170,7 +172,7 @@ export class Hud {
       r.weapons!.innerHTML = w.build.weapons.map((x, i) => `${i === 0 ? 'LMB' : i === 1 ? 'RMB' : 'SYS'} <b>${esc(x.name)}</b> ${'▮'.repeat(x.level)}${x.evolved ? ' ❂' : ''}`).join('<br>');
       const run = g.run;
       if (run) {
-        r.sector!.textContent = run.endless ? 'BEYOND · ENDLESS' : SECTORS[run.sector]!.name;
+        r.sector!.textContent = run.endless ? 'SECTOR ∞ — BEYOND' : `SECTOR ${String(run.sector + 1).padStart(2, '0')} — ${SECTORS[run.sector]!.name.replace(/^[IVX]+ · /, '')}`;
         const dir = g.director;
         r.enc!.textContent = dir ? (dir.kind === 'derelict' ? `Relight the beacons · ${dir.beacons.filter((b) => b.lit).length}/3` : dir.kind === 'endless' ? `Wave ${dir.endlessWave + 1}` : `${dir.kind.toUpperCase()} · ${w.liveEnemyCount()} hostiles`) : '';
       }
@@ -233,22 +235,52 @@ export class Hud {
     c.stroke();
     c.fillStyle = 'rgba(200,255,244,0.95)';
     c.fillRect(a.x - 1.5, a.y - 1.5, 3, 3);
-    // target bracket
-    if (pl.aimTarget >= 0) {
-      const t = w.enemies.find((e) => e.id === pl.aimTarget);
-      if (t) {
-        const p = this.project(t.pos.x, t.pos.y, t.pos.z);
-        if (p.on) {
-          const s = 14;
-          c.strokeStyle = 'rgba(255,240,180,0.8)';
-          c.beginPath();
-          c.moveTo(p.x - s, p.y - s + 5); c.lineTo(p.x - s, p.y - s); c.lineTo(p.x - s + 5, p.y - s);
-          c.moveTo(p.x + s - 5, p.y - s); c.lineTo(p.x + s, p.y - s); c.lineTo(p.x + s, p.y - s + 5);
-          c.moveTo(p.x - s, p.y + s - 5); c.lineTo(p.x - s, p.y + s); c.lineTo(p.x - s + 5, p.y + s);
-          c.moveTo(p.x + s - 5, p.y + s); c.lineTo(p.x + s, p.y + s); c.lineTo(p.x + s, p.y + s - 5);
-          c.stroke();
-        }
+    // Swiss target brackets: the aim target plus the nearest few on-screen threats
+    const brackets: { e: import('../game/entities').Enemy; d: number }[] = [];
+    for (const e of w.enemies) {
+      if (!e.alive || !e.revealed || e.def.role === 'inert' || e.def.role === 'part') continue;
+      const d = e.pos.distanceToSquared(pl.pos);
+      if (e.id === pl.aimTarget) brackets.unshift({ e, d: -1 });
+      else if (d < 110 * 110) brackets.push({ e, d });
+    }
+    brackets.sort((x, y) => x.d - y.d);
+    c.font = '800 11px Archivo';
+    c.textAlign = 'left';
+    for (let i = 0; i < Math.min(5, brackets.length); i++) {
+      const { e } = brackets[i]!;
+      const p = this.project(e.pos.x, e.pos.y, e.pos.z);
+      if (!p.on) continue;
+      const aimed = e.id === pl.aimTarget;
+      const dist = Math.sqrt(Math.max(1, e.pos.distanceToSquared(pl.pos)));
+      const m = clamp((e.radius * e.scale * 260) / dist, 9, 60);
+      c.strokeStyle = aimed ? '#ff4f00' : 'rgba(235,232,225,0.75)';
+      c.lineWidth = aimed ? 2 : 1.25;
+      c.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+        c.moveTo(p.x + sx * m, p.y + sy * m - sy * 7);
+        c.lineTo(p.x + sx * m, p.y + sy * m);
+        c.lineTo(p.x + sx * m - sx * 7, p.y + sy * m);
       }
+      c.stroke();
+      c.fillStyle = aimed ? '#ff4f00' : 'rgba(235,232,225,0.85)';
+      c.fillText(`TGT-${String(e.id % 100).padStart(2, '0')}${aimed ? ' · ' + Math.round(dist) + 'M' : ''}`, p.x + m + 5, p.y - m + 9);
+    }
+    // kill confirmations: DESTROYED / 042 with a signal rule
+    for (const k of g.juice.killTags) {
+      const p = this.project(k.x, k.y, k.z);
+      if (!p.on) continue;
+      const a = Math.max(0, 1 - k.t / 1.4);
+      const y = p.y - 26 - k.t * 16;
+      c.globalAlpha = a;
+      c.fillStyle = '#ebe8e1';
+      c.font = '900 13px Archivo';
+      c.fillText(`DESTROYED / ${String(k.n).padStart(3, '0')}`, p.x + 26, y);
+      c.fillStyle = '#ff4f00';
+      c.fillRect(p.x + 26, y + 4, 110 * Math.min(1, k.t * 6), 3);
+      c.font = '400 10px "JetBrains Mono"';
+      c.fillStyle = '#ebe8e1';
+      c.fillText(k.label.toUpperCase(), p.x + 26, y + 18);
+      c.globalAlpha = 1;
     }
     // threat indicators: off-screen enemies at the screen edge
     const cx = W / 2;
@@ -269,7 +301,7 @@ export class Hud {
         c.fillStyle = e.elite ? '#ffc24a' : '#ff8a6a';
         c.fillRect(p.x - bw / 2, p.y - 26, bw * clamp(e.hp / e.maxHp, 0, 1), 4);
         if (e.elite) {
-          c.font = '600 10px "Chakra Petch"';
+          c.font = '600 10px Archivo';
           c.textAlign = 'center';
           c.fillStyle = '#ffc24a';
           c.fillText(e.elite.toUpperCase(), p.x, p.y - 30);
@@ -332,7 +364,7 @@ export class Hud {
         const pop = n.t < 0.08 ? 1 + (0.08 - n.t) * 8 : 1;
         const label = (n as unknown as { label?: string }).label;
         const size = (label ? 15 : n.crit ? 17 : 12) * pop;
-        c.font = `600 ${size}px "Chakra Petch"`;
+        c.font = `600 ${size}px Archivo`;
         c.fillStyle = label ? `rgba(255,154,208,${1 - k})` : n.crit ? `rgba(255,236,150,${1 - k})` : `rgba(255,255,255,${0.85 - k * 0.85})`;
         c.fillText(label ?? String(n.v), p.x + n.vx * n.t, p.y + n.vy * n.t + 40 * n.t * n.t);
       }
@@ -366,7 +398,7 @@ export class Hud {
           c.restore();
           continue;
         }
-        c.font = '600 11px "Chakra Petch"';
+        c.font = '600 11px Archivo';
         c.fillStyle = b.lit ? '#fff2b8' : '#a6c8ff';
         c.fillText(b.lit ? 'RELIT' : `BEACON ${Math.round(b.progress * 100)}%`, p.x, p.y - 22);
       }

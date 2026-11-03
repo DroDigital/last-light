@@ -38,6 +38,9 @@ export class Juice {
   damageGlitch = 0;
   breath = 0;
   numbers: DamageNumber[] = [];
+  /** Swiss kill confirmations: "DESTROYED / 042" with a signal-orange rule */
+  killTags: { x: number; y: number; z: number; n: number; t: number; label: string }[] = [];
+  private killTagT = 0;
   private lastHitStop = 0;
   private unsub: (() => void)[] = [];
   private killSoundT = 0;
@@ -130,6 +133,12 @@ export class Juice {
           if (this.numbers.length > 80) this.numbers.shift();
         }
         this.sfx(h.crit ? 'crit' : 'hit', h.x, h.y, h.z, 0.5);
+        // crisp vector sparks along the impact normal
+        const vs = h.crit ? 4 : 2;
+        for (let i = 0; i < vs; i++) {
+          const sp = 40 + r() * 60;
+          this.view.addSpark(h.x, h.y, h.z, (h.nx + (r() - 0.5)) * sp, (h.ny + (r() - 0.5)) * sp, (h.nz + (r() - 0.5)) * sp, 0.22, 0.03, 1, h.crit ? 1 : 0.85, h.crit ? 0.6 : 0.4, 4);
+        }
       }),
       ev.on('block', (b) => {
         for (let i = 0; i < 4; i++) P().spawn(b.x, b.y, b.z, (r() - 0.5) * 50, (r() - 0.5) * 50, (r() - 0.5) * 50, 0.15, 1.5, 1.5, 2, 1.5, 0.5, 5);
@@ -145,6 +154,20 @@ export class Juice {
         const big = k.big;
         const tint = e.tint;
         this.explosionFx(k.x, k.y, k.z, e.radius * e.scale * 1.2, tint.x, tint.y, tint.z, e.def.faction, big);
+        // vector double shock ring: hot yellow outer, cyan inner (style C)
+        const rr = e.radius * e.scale;
+        this.view.addRing(k.x, k.y, k.z, rr * 0.4, rr * 4 + big * 6, 0.5 + big * 0.15, 1, 0.95, 0.36);
+        this.view.addRing(k.x, k.y, k.z, rr * 0.2, rr * 2.4 + big * 4, 0.42, 0.16, 0.94, 1);
+        for (let i = 0; i < 6 + big * 4; i++) {
+          _v.set(r() - 0.5, r() - 0.5, r() - 0.5).normalize().multiplyScalar(40 + r() * 80);
+          this.view.addSpark(k.x, k.y, k.z, _v.x, _v.y, _v.z, 0.5 + r() * 0.4, 0.06, 0.16, 0.94, 1, 2.5);
+        }
+        // Swiss kill confirmation for anything that matters (throttled in swarms)
+        if (big > 0.55 || e.elite || this.killTagT <= 0) {
+          this.killTagT = 0.35;
+          this.killTags.push({ x: k.x, y: k.y, z: k.z, n: w.stats.kills, t: 0, label: e.elite ? `${e.def.name} / ${e.elite}` : e.def.name });
+          if (this.killTags.length > 8) this.killTags.shift();
+        }
         // hit-stop scaled by size (30–80 ms)
         const hs = clamp(25 + big * 20, 30, 80);
         if (big > 0.6 || w.killsThisTick === 1) this.hitStop(big > 0.6 ? hs : 18);
@@ -313,6 +336,7 @@ export class Juice {
     const budget = clamp(P.budgetScale, 0.3, 1);
     // flash
     P.spawn(x, y, z, 0, 0, 0, 0.07, 30, 28, 24, s * 10, s * 14, 0);
+    if (faction === 'none' && big > 0.4) this.view.addRing(x, y, z, s * 0.5, s * 3.2, 0.4, Math.min(1, tr), Math.min(1, tg), Math.min(1, tb));
     // dynamic light that lights the nebula and hulls nearby
     this.pipe.lights.spawn(x, y, z, 40 + tr * 40, 25 + tg * 30, 10 + tb * 25, 18 + s * 9, 0.35 + big * 0.15);
     const hot = faction === 'choir' ? [2.6, 1.6, 2.6] : faction === 'hush' ? [1.6, 0.7, 2.8] : [3.2, 1.6, 0.5];
@@ -371,6 +395,11 @@ export class Juice {
     this.damageGlitch = Math.max(0, this.damageGlitch - dt * 2.5);
     this.breath = damp(this.breath, 0, 3, dt);
     this.killSoundT -= dt;
+    this.killTagT -= dt;
+    for (let i = this.killTags.length - 1; i >= 0; i--) {
+      this.killTags[i]!.t += dt;
+      if (this.killTags[i]!.t > 1.4) this.killTags.splice(i, 1);
+    }
     for (let i = this.numbers.length - 1; i >= 0; i--) {
       const n = this.numbers[i]!;
       n.t += dt;

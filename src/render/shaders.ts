@@ -452,6 +452,11 @@ uniform float uReduceFlash;
 uniform mat3 uCamRot;
 uniform vec2 uTanHalf;    // tan(fov/2) * aspect, tan(fov/2)
 uniform float uSkyScale;
+// Ink print (style A): 3-tone ink world, optional paper inversion, signal orange exempt
+uniform vec3 uInkPal[3];
+uniform float uInk;       // 0 = cosmos palette, 1 = ink print (dithered dissolve between)
+uniform float uPaper;     // 1 = paper-white negative print
+uniform vec3 uSignal;     // signal orange (sRGB), never dithered
 
 vec3 srgbToLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
 vec3 linearToSrgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
@@ -532,6 +537,7 @@ void main() {
   vec3 lab = toOklab(col);
 
   // Juice: Flare pushes toward bright tones, low hp/hush drains chroma
+  vec3 labRaw = lab;
   float drain = clamp(max(uHush * 0.85, uLowHp * 0.6), 0.0, 1.0);
   lab.yz *= (1.0 - drain);
   lab.x = lab.x + uFlare * 0.12 * (1.0 - lab.x);
@@ -570,6 +576,34 @@ void main() {
   float t = s1 / max(s1 + s2, 1e-5); // 0 = exactly p1, 0.5 = halfway
   vec3 q = (uMatrix == 3) ? lab : ((th < t * spread) ? p2 : p1);
   vec3 outc = clamp(linearToSrgb(max(fromOklab(q), 0.0)), 0.0, 1.0);
+
+  // --- Ink print: where light dies the world prints in three inks.
+  if (uInk > 0.001) {
+    float L = labRaw.x;
+    // paper negative: push the empty sky to clean paper so only real forms print
+    if (uPaper > 0.0) L = mix(L, 1.0 - clamp((L - 0.08) * 1.6, 0.0, 1.0), uPaper);
+    // ink tones are near-neutral: quantize on lightness with ordered dither
+    float i1 = 1e9; float i2 = 1e9; float l1 = 0.0; float l2 = 0.0; int k1 = 0; int k2 = 0;
+    for (int i = 0; i < 3; i++) {
+      float d = abs(L - uInkPal[i].x);
+      if (d < i1) { i2 = i1; l2 = l1; k2 = k1; i1 = d; l1 = uInkPal[i].x; k1 = i; }
+      else if (d < i2) { i2 = d; l2 = uInkPal[i].x; k2 = i; }
+    }
+    float ti = i1 / max(i1 + i2, 1e-5);
+    int ki = (th < ti * mix(1.4, 0.9, uPaper)) ? k2 : k1;
+    vec3 inkLab = uInkPal[0];
+    if (ki == 1) inkLab = uInkPal[1];
+    if (ki == 2) inkLab = uInkPal[2];
+    vec3 inkc = clamp(linearToSrgb(max(fromOklab(inkLab), 0.0)), 0.0, 1.0);
+    // hot light (fire, explosions, stars) prints as signal orange, undithered
+    float chroma = length(labRaw.yz);
+    float hot = step(0.13, chroma) * step(0.66, labRaw.x) * step(0.0, labRaw.y + labRaw.z * 0.5);
+    inkc = mix(inkc, uSignal, hot * step(0.5, uInk));
+    // dithered dissolve between the two posterizations (shifted pattern so it
+    // does not correlate with the color dither)
+    float th2 = bayer4(dp + ivec2(2, 1));
+    if (th2 < uInk) outc = inkc;
+  }
 
   // Readability overlay: reserved tones, never quantized
   vec4 ov = texture2D(tOverlay, (lowPx + 0.5) / uLowRes);

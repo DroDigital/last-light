@@ -6,7 +6,7 @@ import {
   MAX_LIGHTS,
   POST_FRAG,
 } from './shaders';
-import { PaletteDef, RESERVED_TONES, ColorblindMode } from '../data/palettes';
+import { PaletteDef, RESERVED_TONES, ColorblindMode, INK, SIGNAL } from '../data/palettes';
 import { hexToRgb, rgbToOklab, srgbToLinear } from '../core/math';
 
 export interface LookSettings {
@@ -169,6 +169,7 @@ export class Pipeline {
   private upMat: THREE.ShaderMaterial;
   readonly postMat: THREE.ShaderMaterial;
   readonly lights = new LightRig();
+  private depthMat = new THREE.MeshBasicMaterial({ colorWrite: false });
   readonly bulletUniforms = {
     uPlayerTone: { value: new THREE.Vector3() },
     uEnemyTone: { value: new THREE.Vector3() },
@@ -184,7 +185,7 @@ export class Pipeline {
   private palT = 1;
   private palDur = 1;
   /** juice state written by game each frame */
-  fx = { hush: 0, flare: 0, lowHp: 0, damage: 0, warp: 0, flash: 0, breath: 0 };
+  fx = { hush: 0, flare: 0, lowHp: 0, damage: 0, warp: 0, flash: 0, breath: 0, ink: 0, paper: 0 };
   reduceFlash = 1;
   drawCalls = 0;
   triangles = 0;
@@ -252,6 +253,10 @@ export class Pipeline {
         uCamRot: { value: new THREE.Matrix3() },
         uTanHalf: { value: new THREE.Vector2(1, 1) },
         uSkyScale: { value: 200 },
+        uInkPal: { value: INK.map((h) => { const [r, g, b] = hexToRgb(h); const [L, A, B] = rgbToOklab(r, g, b); return new THREE.Vector3(L, A, B); }) },
+        uInk: { value: 0 },
+        uPaper: { value: 0 },
+        uSignal: { value: new THREE.Vector3(...hexToRgb(SIGNAL)) },
       },
       depthTest: false,
       depthWrite: false,
@@ -425,6 +430,8 @@ export class Pipeline {
     u.uWarp!.value = this.fx.warp;
     u.uFlash!.value = this.fx.flash;
     u.uBreath!.value = this.fx.breath;
+    u.uInk!.value = this.fx.ink;
+    u.uPaper!.value = this.fx.paper;
     u.uTime!.value = time;
     u.uReduceFlash!.value = this.reduceFlash;
     u.uCamRot!.value.setFromMatrix4(camera.matrixWorld);
@@ -435,8 +442,18 @@ export class Pipeline {
     r.setClearColor(0x000000, 1);
     r.clear(true, true, false);
     this.blit(this.postMat, null);
-    // 5) Full-res telegraphs on top
-    if (tele) r.render(tele, camera);
+    // 5) Native-res depth prepass of hulls (layer 1) so vector edge cores are
+    //    hidden-line occluded, then crisp vector cores + telegraphs on top.
+    if (tele) {
+      r.clear(false, true, false);
+      const mask = camera.layers.mask;
+      camera.layers.set(1);
+      world.overrideMaterial = this.depthMat;
+      r.render(world, camera);
+      world.overrideMaterial = null;
+      camera.layers.mask = mask;
+      r.render(tele, camera);
+    }
     this.drawCalls = r.info.render.calls;
     this.triangles = r.info.render.triangles;
   }

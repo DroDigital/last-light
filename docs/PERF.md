@@ -5,7 +5,7 @@ Budgets from the brief and how the build measures against them. Numbers marked *
 | Target | Budget | Measured | Notes |
 | --- | --- | --- | --- |
 | Simulation | ≤ 4 ms | **0.74 ms/tick** *(node)* with 300 enemies, 3000 enemy bullets, primary+secondary+drones+halo firing | `tests/perf.test.ts` asserts < 6 ms |
-| Draw calls | ≤ 250 | **19–25** in combat; **25** in the stress scene *(headless)* | everything instanced: one draw per enemy mesh kind, debris, drones, halos, particles, streaks, bullets, telegraphs + 9 post passes |
+| Draw calls | ≤ 250 | **46** in the stress scene *(headless)* | everything instanced: one draw per enemy mesh kind, plus its vector-edge halo and core (sharing the hull instance buffers), a native-res depth prepass, debris, drones, halos, particles, streaks, bullets, telegraphs + 9 post passes |
 | Particles | 50,000+ | **65,536-slot GPU ring buffer** | analytic motion in the vertex shader; CPU writes only spawned slots |
 | Projectiles | 3,000+ | **4,096 player + 3,072 enemy** pooled SoA | instanced quads in the readability layer |
 | Enemies | 300+ | **325** live in the stress scene | spatial hash broadphase |

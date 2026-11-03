@@ -12,9 +12,8 @@ LAST LIGHT ships **no third-party art or audio assets**. Every model is procedur
 
 | Name | Author | Source | License | Use / changes |
 | --- | --- | --- | --- | --- |
-| Unica One | Eduardo Tunni | https://fonts.google.com/specimen/Unica+One (via @fontsource/unica-one) | SIL Open Font License 1.1 | Display face (titles, boss names). Unmodified. |
-| Chakra Petch | Cadson Demak | https://fonts.google.com/specimen/Chakra+Petch (via @fontsource/chakra-petch) | SIL Open Font License 1.1 | UI face. Unmodified. |
-| Syne Mono | Bonjour Monde | https://fonts.google.com/specimen/Syne+Mono (via @fontsource/syne-mono) | SIL Open Font License 1.1 | Numbers, seeds, perf overlay. Unmodified. |
+| Archivo | Omnibus-Type | https://fonts.google.com/specimen/Archivo (via @fontsource/archivo) | SIL Open Font License 1.1 | Swiss grotesk for all UI and display type (weights 400/600/800/900). Unmodified. |
+| JetBrains Mono | JetBrains | https://fonts.google.com/specimen/JetBrains+Mono (via @fontsource/jetbrains-mono) | SIL Open Font License 1.1 | Readouts, coordinates, labels, perf overlay. Unmodified. |
 
 ## Dev tooling (not shipped)
 

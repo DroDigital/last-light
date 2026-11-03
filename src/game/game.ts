@@ -210,6 +210,8 @@ export class Game {
     this.input.holdToggle.boost = s.boostToggle;
     document.documentElement.style.setProperty('--ui-scale', String(s.uiScale));
     this.pipe.setTones(s.colorblind);
+    const pt = this.pipe.bulletUniforms.uPlayerTone.value;
+    this.view.setPlayerTone(pt.x, pt.y, pt.z);
     this.audio.volumes = { ...s.volumes };
     this.audio.applyVolumes();
     this.audio.setMono(s.mono);
@@ -245,6 +247,8 @@ export class Game {
     this.state = s;
     if (s !== 'combat') this.input.releaseLock();
     this.hud.setMode(s);
+    // menus print ink-on-paper over the paper-negative world (style A)
+    document.body.classList.remove('print');
   }
 
   goTitle(): void {
@@ -1026,7 +1030,8 @@ export class Game {
       _w.set(fxRng.next() - 0.5, fxRng.next() - 0.5, 0).normalize().multiplyScalar(4 + fxRng.next() * 14);
       _w.z = -20 - fxRng.next() * 40;
       _w.applyQuaternion(cam.quaternion).add(cam.position);
-      this.view.particles.spawn(_w.x, _w.y, _w.z, -_v.x * 200 * len, -_v.y * 200 * len, -_v.z * 200 * len, 0.25, 2, 2.2, 2.6, 1.2, 1.2, 0);
+      // vector speed lines (style C star streaks), crisp at native res
+      this.view.addSpark(_w.x, _w.y, _w.z, -_v.x * 160 * len, -_v.y * 160 * len, -_v.z * 160 * len, 0.22, 0.04, 0.55, 0.9, 1, 0);
     }
   }
 
@@ -1207,6 +1212,19 @@ export class Game {
     }
     if (this.relight > 0) this.relight = Math.max(0, this.relight - dt * 0.1);
     fx.hush = damp(fx.hush, hush, 2, dt);
+    // Ink print (style A) wherever light is absent: menus print on paper, the
+    // dead fade to ink, and the Hush drowns the palette.
+    const menu = !run && this.state !== 'warp';
+    let ink = 0;
+    let paper = 0;
+    // (no paper-white negative: the user wants style A's accents, not its paper background)
+    if (menu) {
+      ink = 0;
+      paper = 0;
+    } else if (this.state === 'death' || (w && !w.player.alive)) ink = 1;
+    else ink = clamp((hush - 0.4) / 0.4, 0, 1);
+    fx.ink = damp(fx.ink, ink, this.state === 'death' ? 1.4 : 3, dt);
+    fx.paper = damp(fx.paper, paper, 3, dt);
     const flare = w && w.player.flareT > 0 ? 1 : 0;
     fx.flare = damp(fx.flare, flare, 6, dt);
     if (this.audio.ctx && this.state === 'combat') {
