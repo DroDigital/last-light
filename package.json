@@ -1,7 +1,7 @@
 {
   "name": "last-light",
   "version": "0.1.0",
-  "description": "LAST LIGHT — a 3D roguelite space shooter in the Dithered Cosmos style",
+  "description": "LAST LIGHT \u2014 a 3D roguelite space shooter in the Dithered Cosmos style",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -10,7 +10,8 @@
     "lint": "eslint src tests",
     "format": "prettier --write src tests",
     "typecheck": "tsc --noEmit",
-    "sim": "vitest run tests/buildsim.test.ts"
+    "sim": "vitest run tests/buildsim.test.ts",
+    "balance": "vite-node scripts/balance.ts"
   },
   "repository": {
     "type": "git",

@@ -120,6 +120,44 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 - **Dialogue slide-in:** dialogue boxes reused the centred-hint keyframe (`translate(-50%)`) and slid in from outside their panel. They now have their own keyframe.
 - **Short screens:** at 720p the death summary overflowed the viewport top. A max-height query tightens it.
 
+## Balance pass (the Lantern was far too strong)
+
+- **Measured first:** `npm run balance [runs] [good|ok|poor] [hull]` plays complete runs headlessly through the real sim. Each run is 5 sectors × (combat, combat, elite, combat, boss), a random draft pick after every fight, one 50% repair per sector, no meta upgrades and no shop.
+- **Before:** the "ok" bot won 6/6 and the "poor" bot 3/3 without losing a single hull point. About 3 raw damage per fight, about 25 per boss.
+- **Causes:**
+  - Enemy damage never scaled with sector; only Heat 8 added any.
+  - Enemy shots were slow (22–60 m/s) and half-led the player.
+  - A 0.35 s post-hit grace let a whole volley land as one hit.
+  - The director kept only about 3 enemies alive, each dying in about 3 s.
+  - Shields fully reset per encounter and regenerated fast.
+- **Levers:** all of them live in `src/data/balance.ts`, so tuning is one file.
+  - **Enemy fire:** damage ×1.4 and +18% per sector; shot speed ×1.7; lead ×1.6 (capped at full lead); fire cadence ×1.5.
+  - **Grace window:** 0.2 s.
+  - **Attackers:** 4 + 1 per sector may attack at once.
+  - **Density:** live threat 15 + 5 per sector; encounter budget 46 + 26 per sector.
+  - **Toughness:** enemy HP ×1.35. Boss HP ×1.3, with bosses getting 60% of the per-sector HP growth so late fights don't turn into sponges. Boss fights deal ×1.5 damage.
+  - **Ship:** shield 40, regen 10/s after 3 s.
+- **Beams hit once:** lancer and boss beams go through `hurtPlayerBeam`, at most one hit per 0.5 s. With the shorter grace window, a lancer beam had been landing three hits for about 130 damage, a one-shot rather than pressure.
+- **After** (10 runs each, random picks, no meta):
+
+  | Bot skill | Wins | Notes |
+  | --- | --- | --- |
+  | Good | about 55% (8/10 and 3/10 across two batches) | dies in sectors 4–5 |
+  | Ok | about 30% | deaths spread across sectors 2–4 |
+  | Poor | 0% | dies in sector 2 |
+
+  Sector 1 stays a gentle on-ramp, and bosses now cost 7–14 hull. Human players also have smart picks, shops, the forge and Hearth unlocks, so "hard but winnable" is the intent. Heat levels stack on top.
+- **Known shape:** sector 2 (Salvage snipers and gunships) is a sharper step than sector 3. Worth a second look once real players have been through it.
+
+## Dithered 3D props
+
+- Beacons, star-map nodes, Hearth lanterns, gravity wells and decoys were rings or particle blobs. They are now instanced meshes in the same hull material as the ships: dithered by the post pass, vector-edged, lit parts tinted per instance (`View.queueProp`).
+  - **Derelict beacons:** lattice lighthouses (hex plinth, three legs, mast, lamp house) with a turning lens crown. They brighten and spin up as they are relit, and throw a real point light once lit. The relight radius stays a crisp ring for the gameplay read.
+  - **Star map:** every node type has its own landmark (rock station, spiked elite, ringed dying star, trading post, wreck, lamp post, forge, rift portal). Reachable nodes light up and turn. The player's actual ship is parked at the current node instead of a sprite.
+  - **Hearth / title:** the ship rests by the fire, ringed by lamp pylons that light up with Hearth level.
+  - **Wells and decoys:** wells get a dark singularity with a spinning accretion disc. Decoys are a flickering, half-dissolved ghost of the ship.
+- **HUD fix:** combat HUD marks (target brackets, beacon labels, threat arrows) could stay frozen on the Hearth after leaving a run. The HUD now resets its transform and clears its full backing store every frame. `node scripts/play.mjs <out> props` checks that the Hearth HUD canvas is empty.
+
 ## Changes from the brief (and why)
 
 - **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.

@@ -16,7 +16,8 @@ import { SYNERGIES } from '../data/upgrades';
 import { Build, cardRarity, cardTitle, type DraftCard } from './build';
 import { World } from './world';
 import { emptyControls, type Controls } from './player';
-import { Director, generateMap, embersFor, priceFor, type EncounterKind, type MapNode, type SectorMap } from './run';
+import { Director, generateMap, embersFor, priceFor, type EncounterKind, type MapNode, type NodeType, type SectorMap } from './run';
+import type { MeshKind } from '../render/meshes';
 import { Juice } from './juice';
 import { aim } from './weapons';
 import * as S from '../ui/screens';
@@ -67,6 +68,12 @@ export interface RunState {
   /** rewards already paid by an earlier finishRun (victory before endless) */
   paid?: { embers: number; record: RunRecord };
 }
+
+/** star-chart landmark for each map node type */
+const NODE_MESH: Record<NodeType, MeshKind> = {
+  start: 'navStart', combat: 'navCombat', elite: 'navElite', derelict: 'beacon', shop: 'navShop', event: 'navWreck',
+  forge: 'navForge', rest: 'navRest', rift: 'navRift', boss: 'navBoss',
+};
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -1364,9 +1371,15 @@ export class Game {
       const reach = new Set(this.reachable().map((n) => n.id));
       for (const n of nodes) {
         const cur = n.id === this.run.node;
-        const k = cur ? 3 : reach.has(n.id) ? 2 + Math.sin(t * 4) * 0.6 : n.visited ? 0.5 : 1;
+        const can = reach.has(n.id);
+        const k = cur ? 3 : can ? 2 + Math.sin(t * 4) * 0.6 : n.visited ? 0.5 : 1;
         const col = n.type === 'boss' ? [3, 1.6, 0.8] : n.type === 'elite' || n.type === 'rift' ? [2.6, 0.9, 0.8] : n.type === 'shop' ? [2.2, 2, 0.8] : [1.4, 1.6, 2.2];
-        if (fxRng.next() < 0.6) P.spawn(n.x + (fxRng.next() - 0.5) * 2, n.y + (fxRng.next() - 0.5) * 2, n.z, 0, 0.5, 0, 0.5, col[0]! * k, col[1]! * k, col[2]! * k, n.type === 'boss' ? 14 : 7, 2, 0);
+        // each node is a small dithered 3D landmark; reachable ones light up and turn
+        const mesh = NODE_MESH[n.type];
+        const lit = cur || can ? 1 : n.visited ? 0.25 : 0.55;
+        const sc = n.type === 'boss' ? 1.6 : n.type === 'derelict' ? 0.42 : 1.15;
+        this.view.queueProp(mesh, n.x, n.y, n.z, sc * (can ? 1 + Math.sin(t * 4) * 0.04 : 1), t * (can ? 0.6 : 0.15) + n.id, col[0]! * lit, col[1]! * lit, col[2]! * lit, can ? 0.8 + Math.sin(t * 4) * 0.4 : cur ? 0.6 : 0, 0.25);
+        if (fxRng.next() < (can ? 0.35 : 0.12)) P.spawn(n.x + (fxRng.next() - 0.5) * 3, n.y + (fxRng.next() - 0.5) * 3, n.z, 0, 0.5, 0, 0.5, col[0]! * k, col[1]! * k, col[2]! * k, n.type === 'boss' ? 10 : 4, 2, 0);
         for (const l of n.links) {
           const m = nodes[l]!;
           const on = (cur && reach.has(m.id)) || (this.run.node < 0 && n.row === 0);
@@ -1374,14 +1387,16 @@ export class Game {
           this.view.streaks.push(n.x, n.y, n.z, m.x, m.y, m.z, 1.2 * kk, 1.1 * kk, 0.9 * kk, 0.15);
         }
       }
-      // the Lantern drifting at the current node
+      // the Lantern itself, parked beside the current node
       const cur = this.run.node >= 0 ? nodes[this.run.node]! : null;
-      const px = cur ? cur.x : 0;
-      const pz = cur ? cur.z + 10 : 56;
-      P.spawn(px, 2 + Math.sin(t * 2), pz, 0, 0, 0, 0.3, 3, 3, 2.2, 5, 3, 0);
+      const px = cur ? cur.x + 4 : 0;
+      const pz = cur ? cur.z + 8 : 56;
+      this.view.showcase = { x: px, y: (cur ? cur.y : 0) + 3, z: pz, yaw: 0, scale: 1.6 };
       void dt;
       return;
     }
+    // title / hearth: the ship rests by the fire
+    this.view.showcase = { x: 11, y: 2.4, z: 21, yaw: Math.atan2(11, 21), scale: 1.5 };
     // Hearth: a flickering fire at the heart of the dark, ringed by lanterns that relight with progress
     const lvl = this.save.data.hearthLevel;
     for (let i = 0; i < 8; i++) {
@@ -1393,7 +1408,13 @@ export class Game {
     for (let i = 0; i < lanterns; i++) {
       const a = (i / lanterns) * Math.PI * 2 + t * 0.05;
       const lit = i < 3 + lvl;
-      if (fxRng.next() < 0.3) P.spawn(Math.cos(a) * 18, Math.sin(a * 3) * 1.5, Math.sin(a) * 18, 0, 0, 0, 0.6, lit ? 3 : 0.4, lit ? 2.2 : 0.4, lit ? 1 : 0.6, 4, 2, 0);
+      const x = Math.cos(a) * 18;
+      const y = Math.sin(a * 3) * 1.5 - 0.5;
+      const z = Math.sin(a) * 18;
+      // a dithered lamp post on a slow orbit; lit ones glow and throw a little flame
+      const fl = lit ? 0.85 + Math.sin(t * 9 + i * 1.7) * 0.15 : 0;
+      this.view.queueProp('pylon', x, y, z, 1.2, -a, lit ? 2.6 * fl : 0.3, lit ? 1.8 * fl : 0.32, lit ? 0.8 * fl : 0.42, lit ? 1.2 * fl : 0);
+      if (lit && fxRng.next() < 0.25) P.spawn(x, y + 1.1, z, 0, 1.2, 0, 0.5, 3, 2.2, 1, 3, 2, 0, -1);
     }
     this.pipe.lights.spawn(0, 0, 0, 30, 18, 8, 40, 0.1);
   }

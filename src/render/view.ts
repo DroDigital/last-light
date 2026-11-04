@@ -15,6 +15,12 @@ const KINDS: MeshKind[] = [
   'choirShard', 'choirPrism', 'choirHalo', 'choirSeraph', 'asteroid', 'plate', 'segment', 'bossCore',
 ];
 
+/** world props: beacons, map nodes, hearth lanterns, well singularities */
+const PROP_KINDS: MeshKind[] = [
+  'beacon', 'beaconCrown', 'wellCore', 'wellDisc', 'navCombat', 'navElite', 'navBoss', 'navShop', 'navWreck', 'navRest', 'navForge', 'navRift', 'navStart', 'pylon',
+];
+const PROP_CAP = 48;
+
 const _m = new THREE.Matrix4();
 const _p = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -152,6 +158,12 @@ export class View {
   /** extra visual markers (derelict beacons etc.) drawn as rings */
   markers: { x: number; y: number; z: number; r: number; lit: number }[] = [];
   shipAccent = new THREE.Vector3(1, 0.9, 0.7);
+  private props = new Map<MeshKind, InstancedKind>();
+  /** queued props (filled before sync by the map/hearth scenes), flushed in sync */
+  private propQ: { k: MeshKind; m: THREE.Matrix4; r: number; g: number; b: number; boost: number }[] = [];
+  private propN = 0;
+  /** where to show the player's ship when there is no world (map, hearth, title) */
+  showcase: { x: number; y: number; z: number; yaw: number; scale: number } | null = null;
 
   constructor(public pipe: Pipeline) {
     this.space = new Space(pipe.lights);
@@ -183,6 +195,13 @@ export class View {
     this.world.add(this.ghosts.mesh);
     this.ghosts.withEdges(this, { haloGain: 0.8, coreGain: 0.45 });
 
+    for (const k of PROP_KINDS) {
+      const ik = new InstancedKind(buildEnemyMesh(k, k.length * 7), this.hullMat, PROP_CAP);
+      this.props.set(k, ik);
+      this.world.add(ik.mesh);
+      ik.withEdges(this, k === 'wellDisc' || k === 'beaconCrown' ? { haloGain: 1.6, coreGain: 0.6 } : { haloGain: 0.9, coreGain: 0.55 });
+    }
+
     this.particles = new Particles(65536, pipe.pixelScaleUniform);
     this.world.add(this.particles.points);
     this.streaks = new Streaks(6000, pipe.resUniform);
@@ -210,6 +229,23 @@ export class View {
   addSpark(x: number, y: number, z: number, vx: number, vy: number, vz: number, dur: number, len: number, r: number, g: number, b: number, drag = 3): void {
     if (this.sparks.length > 900) this.sparks.shift();
     this.sparks.push({ x, y, z, vx, vy, vz, t: 0, dur, len, r, g, b, drag });
+  }
+
+  /**
+   * Queue a dithered 3D prop for this frame. Lit parts take the (HDR) tint;
+   * `boost` adds emissive on top for things that are switched on.
+   */
+  queueProp(k: MeshKind, x: number, y: number, z: number, scale: number, yaw: number, r: number, g: number, b: number, boost = 0, pitch = 0): void {
+    let q = this.propQ[this.propN];
+    if (!q) this.propQ.push((q = { k, m: new THREE.Matrix4(), r, g, b, boost }));
+    this.propN++;
+    q.k = k;
+    q.r = r;
+    q.g = g;
+    q.b = b;
+    q.boost = boost;
+    _e.set(pitch, yaw, 0);
+    q.m.compose(_p.set(x, y, z), _q.setFromEuler(_e), _s.setScalar(scale));
   }
 
   setPlayerTone(r: number, g: number, b: number): void {
@@ -248,6 +284,7 @@ export class View {
     this.ghosts.begin();
     this.shipEdges.begin();
     this.streaks.begin();
+    for (const k of this.props.values()) k.begin();
     this.bullets.begin();
     this.telegraphs.begin();
 
@@ -259,15 +296,38 @@ export class View {
       this.syncDrones(w, alpha, time);
       this.syncFx(w, time);
       this.syncTelegraphs(w, time);
+    } else if (this.showcase) {
+      // map / hearth / title: the real ship, parked in the scene
+      const sc = this.showcase;
+      this.ship.visible = true;
+      this.ship.position.set(sc.x, sc.y + Math.sin(time * 1.3) * 0.25, sc.z);
+      this.ship.quaternion.setFromEuler(_e.set(Math.sin(time * 0.7) * 0.05, sc.yaw, Math.sin(time * 0.9) * 0.08));
+      this.ship.scale.setScalar(sc.scale);
+      _m.compose(this.ship.position, this.ship.quaternion, _s.setScalar(sc.scale));
+      this.shipEdges.push(_m, 0.45, 0.9, 1, 0, 0, 0, 0);
     } else {
       this.ship.visible = false;
     }
     this.syncVectors(frameDt);
     for (const mk of this.markers) {
       const k = mk.lit;
-      this.telegraphs.ring(mk.x, mk.y, mk.z, mk.r, 0, 1, 0, 0.5 + k * 0.5, 0.9, 0.5 * (1 - k) + k, 0.6);
-      this.telegraphs.ring(mk.x, mk.y, mk.z, mk.r * (0.3 + k * 0.7), 1, 0, 0, 1, 0.95, 0.7, 0.8);
+      // relight radius stays a crisp ring (gameplay read); the beacon itself is a dithered lighthouse
+      this.telegraphs.ring(mk.x, mk.y, mk.z, mk.r, 0, 1, 0, 0.35 + k * 0.4, 0.7, 0.4 * (1 - k) + k * 0.7, 0.45);
+      const lit = k >= 1;
+      const r = lit ? 1.5 : 0.35 + k * 0.9;
+      const g = lit ? 1.1 : 0.42 + k * 0.6;
+      const b = lit ? 0.55 : 0.55 + k * 0.05;
+      const boost = lit ? 0.7 : k * 0.5 + (Math.sin(time * 6) > 0.7 ? 0.2 : 0);
+      this.queueProp('beacon', mk.x, mk.y, mk.z, 1.3, 0, r, g, b, boost);
+      this.queueProp('beaconCrown', mk.x, mk.y + 5.25 * 1.3, mk.z, 1.3, time * (0.25 + k * 2.5), r, g, b, boost);
+      if (lit) this.pipe.lights.spawn(mk.x, mk.y + 7, mk.z, 40, 30, 14, 34, 0.05);
+      if (lit && fxRng.next() < 0.3) this.particles.spawn(mk.x, mk.y + 7, mk.z, (fxRng.next() - 0.5) * 4, 3, (fxRng.next() - 0.5) * 4, 0.8, 3, 2.2, 1, 3, 1, 0);
     }
+    for (let i = 0; i < this.propN; i++) {
+      const q = this.propQ[i]!;
+      this.props.get(q.k)?.push(q.m, q.r, q.g, q.b, 0, 0, q.boost, 0);
+    }
+    this.propN = 0;
 
     for (const k of this.kinds.values()) k.end();
     this.debris.end();
@@ -278,6 +338,7 @@ export class View {
     this.streaks.end();
     this.bullets.end();
     this.telegraphs.end();
+    for (const k of this.props.values()) k.end();
     this.particles.flush();
   }
 
@@ -583,11 +644,14 @@ export class View {
         pz = qz;
       }
     }
-    // wells: swirling rings
+    // wells: a dark singularity with a spinning accretion disc, plus swirling rings
     for (const wl of w.wells) {
       const f = Math.min(1, wl.life / 0.4);
       const c = w.colorOf(wl.src);
-      for (let i = 0; i < 3; i++) {
+      const cs = wl.radius * 0.12 * f;
+      this.queueProp('wellCore', wl.x, wl.y, wl.z, cs, time * 0.8, c[0] * 0.8, c[1] * 0.8, c[2] * 0.8, 0);
+      this.queueProp('wellDisc', wl.x, wl.y, wl.z, cs * 1.4, time * 2.4, c[0] * 0.9, c[1] * 0.9, c[2] * 0.9, 0.25 * f, 0.45);
+      for (let i = 0; i < 2; i++) {
         const rr = wl.radius * (0.3 + ((time * 0.8 + i / 3) % 1) * 0.7);
         this.telegraphs.ring(wl.x, wl.y, wl.z, rr, Math.sin(time + i), 1, Math.cos(time * 0.7 + i), c[0] * 0.5 * f, c[1] * 0.5 * f, c[2] * 0.5 * f, 0.5, 32);
       }
@@ -596,8 +660,13 @@ export class View {
         this.particles.spawn(wl.x + _v.x, wl.y + _v.y, wl.z + _v.z, -_v.x * 2, -_v.y * 2, -_v.z * 2, 0.5, c[0] * 2, c[1] * 2, c[2] * 2, 2, 0.5, 0, 0);
       }
     }
-    // decoys
-    for (const d of w.decoys) this.telegraphs.ring(d.pos.x, d.pos.y, d.pos.z, 2 + Math.sin(time * 10), 0, 1, 0, 0.3, 1, 0.9, 0.6, 16);
+    // decoys: a flickering ghost of the ship (the enemy sees a Lantern)
+    for (const d of w.decoys) {
+      _e.set(0, time * 1.5, Math.sin(time * 3) * 0.2);
+      _m.compose(d.pos, _q.setFromEuler(_e), _s.setScalar(1));
+      if (Math.floor(time * 14) % 5 !== 0) this.ghosts.push(_m, 0.5, 0.9, 1, 0, 0.35, 0.8, 0);
+      this.telegraphs.ring(d.pos.x, d.pos.y, d.pos.z, 2.5 + Math.sin(time * 10) * 0.5, 0, 1, 0, 0.2, 0.7, 0.6, 0.4, 16);
+    }
   }
 
   private syncVectors(dt: number): void {

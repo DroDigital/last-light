@@ -137,7 +137,22 @@ export type MeshKind =
   | 'segment'
   | 'bossCore'
   | 'drone'
-  | 'halo';
+  | 'halo'
+  // world props (beacons, map nodes, hearth lanterns, wells)
+  | 'beacon'
+  | 'beaconCrown'
+  | 'wellCore'
+  | 'wellDisc'
+  | 'navCombat'
+  | 'navElite'
+  | 'navBoss'
+  | 'navShop'
+  | 'navWreck'
+  | 'navRest'
+  | 'navForge'
+  | 'navRift'
+  | 'navStart'
+  | 'pylon';
 
 function displaced(geo: THREE.BufferGeometry, rng: Rng, amt: number): THREE.BufferGeometry {
   const g = geo.index ? geo : geo;
@@ -294,6 +309,124 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
     }
     case 'halo': {
       b.add(new THREE.OctahedronGeometry(0.5, 0), '#ffffff', 1, tr(0, 0, 0, 0, 0, 0, 0.4, 0.4, 1.6));
+      break;
+    }
+    // --- props: lit parts are white emissive so the instance tint colours them
+    case 'beacon': {
+      // a lattice lighthouse: hex plinth, three leaning legs, a mast and a lamp house
+      b.add(new THREE.CylinderGeometry(2.6, 3.2, 0.8, 6), HULL2, 0, tr(0, -5, 0));
+      b.add(new THREE.CylinderGeometry(3.3, 3.3, 0.12, 6), '#ffffff', 0.35, tr(0, -4.55, 0));
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        b.add(new THREE.BoxGeometry(0.32, 8.6, 0.32), HULL, 0, tr(Math.cos(a) * 1.15, -0.6, Math.sin(a) * 1.15, Math.sin(a) * 0.24, 0, -Math.cos(a) * 0.24));
+      }
+      b.add(new THREE.CylinderGeometry(0.28, 0.42, 9, 6), HULL2, 0, tr(0, -0.5, 0));
+      for (const y of [-3, -0.6, 1.8]) b.add(new THREE.TorusGeometry(1.7 - (y + 3) * 0.2, 0.09, 3, 6), HULL2, 0, tr(0, y, 0, Math.PI / 2));
+      b.add(new THREE.CylinderGeometry(0.95, 1.25, 1.1, 6), HULL2, 0, tr(0, 3.9, 0));
+      b.add(new THREE.OctahedronGeometry(0.95, 0), '#ffffff', 1, tr(0, 5.25, 0, 0, 0, 0, 1, 1.25, 1));
+      b.add(new THREE.ConeGeometry(1.2, 1.3, 6), HULL, 0, tr(0, 6.75, 0));
+      b.add(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 3), HULL2, 0, tr(0, 8.4, 0));
+      b.add(new THREE.SphereGeometry(0.16, 6, 4), '#ffffff', 1, tr(0, 9.5, 0));
+      break;
+    }
+    case 'beaconCrown': {
+      // the turning lens ring around the lamp
+      b.add(new THREE.TorusGeometry(2.3, 0.09, 3, 24), '#ffffff', 0.7, tr(0, 0, 0, Math.PI / 2));
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        b.add(new THREE.BoxGeometry(0.55, 1.2, 0.12), '#ffffff', 1, tr(Math.cos(a) * 2.3, 0, Math.sin(a) * 2.3, 0, -a, 0));
+      }
+      break;
+    }
+    case 'wellCore': {
+      b.add(new THREE.IcosahedronGeometry(1, 1), DARK, 0);
+      b.add(new THREE.IcosahedronGeometry(1.18, 0), '#ffffff', 0.25, tr(0, 0, 0, 0.4, 0.2, 0, 1, 1, 1));
+      break;
+    }
+    case 'wellDisc': {
+      b.add(new THREE.TorusGeometry(1.9, 0.07, 3, 36), '#ffffff', 1, tr(0, 0, 0, Math.PI / 2));
+      b.add(new THREE.TorusGeometry(2.6, 0.04, 3, 36), '#ffffff', 0.6, tr(0, 0, 0, Math.PI / 2));
+      b.add(new THREE.TorusGeometry(3.4, 0.03, 3, 36), '#ffffff', 0.35, tr(0, 0, 0, Math.PI / 2));
+      break;
+    }
+    case 'navCombat': {
+      b.add(displaced(new THREE.IcosahedronGeometry(1.4, 0), rng, 0.35), HULL2, 0);
+      b.add(new THREE.TorusGeometry(2.2, 0.08, 3, 16), '#ffffff', 0.8, tr(0, 0, 0, 1.2, 0, 0.3));
+      b.add(new THREE.SphereGeometry(0.3, 6, 4), '#ffffff', 1, tr(0.9, 0.7, 0.6));
+      break;
+    }
+    case 'navElite': {
+      b.add(new THREE.OctahedronGeometry(1.3, 0), HULL2, 0);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        b.add(new THREE.ConeGeometry(0.22, 1.6, 4), '#ffffff', 0.9, tr(Math.cos(a) * 1.5, Math.sin(a) * 1.5, 0, 0, 0, a - Math.PI / 2));
+      }
+      break;
+    }
+    case 'navBoss': {
+      // the dying star: a bright core under a cracked dark shell, ringed
+      b.add(new THREE.IcosahedronGeometry(2.6, 2), '#ffffff', 1);
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.39996;
+        const y = 1 - (i / 8) * 2;
+        const r = Math.sqrt(1 - y * y);
+        b.add(new THREE.BoxGeometry(1.5, 1.5, 0.35), DARK, 0, tr(Math.cos(a) * r * 2.75, y * 2.75, Math.sin(a) * r * 2.75, y * 1.2, -a, 0));
+      }
+      b.add(new THREE.TorusGeometry(4.3, 0.12, 3, 40), '#ffffff', 0.7, tr(0, 0, 0, 1.25, 0, 0.2));
+      break;
+    }
+    case 'navShop': {
+      b.add(new THREE.CylinderGeometry(0.9, 0.9, 1.8, 8), HULL2, 0);
+      b.add(new THREE.TorusGeometry(2.2, 0.32, 4, 12), HULL, 0, tr(0, 0, 0, Math.PI / 2));
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        b.add(new THREE.BoxGeometry(0.15, 0.15, 1.5), HULL2, 0, tr(Math.cos(a) * 1.4, 0, Math.sin(a) * 1.4, 0, -a + Math.PI / 2, 0));
+        b.add(new THREE.BoxGeometry(0.4, 0.2, 0.1), '#ffffff', 1, tr(Math.cos(a) * 2.25, 0.3, Math.sin(a) * 2.25, 0, -a + Math.PI / 2, 0));
+      }
+      b.add(new THREE.CylinderGeometry(0.04, 0.04, 2, 3), HULL2, 0, tr(0, 1.9, 0));
+      b.add(new THREE.SphereGeometry(0.18, 6, 4), '#ffffff', 1, tr(0, 2.9, 0));
+      break;
+    }
+    case 'navWreck': {
+      b.add(new THREE.BoxGeometry(2.6, 0.9, 1.1), HULL2, 0, tr(-0.4, 0, 0, 0.2, 0.3, 0.5));
+      b.add(new THREE.BoxGeometry(1.2, 0.7, 1.4), HULL, 0, tr(1.4, 0.5, 0.2, -0.4, 0.8, -0.3));
+      b.add(new THREE.BoxGeometry(0.2, 1.8, 0.2), HULL, 0, tr(-1.3, 0.9, 0.2, 0, 0, 0.5));
+      b.add(new THREE.SphereGeometry(0.22, 6, 4), '#ffffff', 1, tr(-1.75, 1.7, 0.2));
+      break;
+    }
+    case 'navRest': {
+      b.add(new THREE.CylinderGeometry(0.15, 0.2, 2.4, 6), HULL, 0, tr(0, -0.8, 0));
+      b.add(new THREE.CylinderGeometry(0.6, 0.6, 1, 6, 1, true), HULL2, 0, tr(0, 0.9, 0));
+      b.add(new THREE.SphereGeometry(0.4, 8, 6), '#ffffff', 1, tr(0, 0.9, 0));
+      b.add(new THREE.ConeGeometry(0.75, 0.6, 6), HULL, 0, tr(0, 1.7, 0));
+      b.add(new THREE.TorusGeometry(1.6, 0.05, 3, 20), '#ffffff', 0.5, tr(0, -2, 0, Math.PI / 2));
+      break;
+    }
+    case 'navForge': {
+      b.add(new THREE.BoxGeometry(2.2, 0.6, 1), HULL2, 0, tr(0, 0.4, 0));
+      b.add(new THREE.BoxGeometry(1, 1, 0.8), HULL, 0, tr(0, -0.4, 0));
+      b.add(new THREE.ConeGeometry(0.5, 0.9, 4), HULL2, 0, tr(1.5, 0.4, 0, 0, 0, -Math.PI / 2));
+      b.add(new THREE.BoxGeometry(1.3, 0.12, 0.6), '#ffffff', 1, tr(0, 0.76, 0));
+      break;
+    }
+    case 'navRift': {
+      b.add(new THREE.TorusGeometry(2, 0.35, 4, 14), '#ffffff', 1);
+      b.add(new THREE.CircleGeometry(1.7, 14), DARK, 0);
+      b.add(new THREE.CircleGeometry(1.7, 14), DARK, 0, tr(0, 0, 0, 0, Math.PI, 0));
+      break;
+    }
+    case 'navStart': {
+      b.add(new THREE.OctahedronGeometry(0.8, 0), HULL2, 0);
+      b.add(new THREE.TorusGeometry(1.4, 0.05, 3, 16), '#ffffff', 0.7, tr(0, 0, 0, Math.PI / 2));
+      break;
+    }
+    case 'pylon': {
+      // Hearth lantern: a post, an open cage and a lamp
+      b.add(new THREE.CylinderGeometry(0.12, 0.2, 3.2, 6), HULL, 0, tr(0, -1.4, 0));
+      b.add(new THREE.CylinderGeometry(0.5, 0.5, 0.9, 6, 1, true), HULL2, 0, tr(0, 0.6, 0));
+      b.add(new THREE.SphereGeometry(0.32, 8, 6), '#ffffff', 1, tr(0, 0.6, 0));
+      b.add(new THREE.ConeGeometry(0.62, 0.5, 6), HULL, 0, tr(0, 1.3, 0));
+      b.add(new THREE.CylinderGeometry(0.62, 0.62, 0.08, 6), HULL2, 0, tr(0, 0.12, 0));
       break;
     }
   }

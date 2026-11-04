@@ -3,6 +3,7 @@ import type { World } from './world';
 import { raySphere } from './world';
 import type { Enemy } from './entities';
 import { damp } from '../core/math';
+import { BAL } from '../data/balance';
 
 const _d = new Vector3();
 const _t = new Vector3();
@@ -18,7 +19,7 @@ export function fireAt(w: World, e: Enemy, speed: number, dmg: number, kind: num
   const pl = w.player;
   const tgt = w.decoys.length ? w.decoys[0]!.pos : pl.pos;
   const dist = e.pos.distanceTo(tgt);
-  const tt = (dist / Math.max(speed, 1)) * lead;
+  const tt = (dist / Math.max(speed * BAL.enemyShotSpeed, 1)) * Math.min(1, lead * BAL.enemyLead);
   _t.copy(tgt).addScaledVector(pl.vel, w.decoys.length ? 0 : tt).sub(e.pos).normalize();
   // perpendicular basis for spread
   _s.crossVectors(_t, _up);
@@ -221,7 +222,7 @@ export function updateEnemyAI(w: World, dt: number): void {
           const az = e.pos.z;
           w.beams.push({ ax, ay, az, bx: ax + e.aimDir.x * 160, by: ay + e.aimDir.y * 160, bz: az + e.aimDir.z * 160, width: 1.6, r: 1, g: 0.3, b: 0.2, enemy: true });
           const t = raySphere(ax, ay, az, e.aimDir.x, e.aimDir.y, e.aimDir.z, pl.pos.x, pl.pos.y, pl.pos.z, pl.radius + 1.4);
-          if (t >= 0 && t < 160) w.hurtPlayer(f.damage * e.dmgMul, def.name + ' beam', e);
+          if (t >= 0 && t < 160) w.hurtPlayerBeam(f.damage * e.dmgMul, def.name + ' beam', e);
           if (e.timer <= 0) {
             e.state = 3;
             e.timer = 0.5;
@@ -231,7 +232,7 @@ export function updateEnemyAI(w: World, dt: number): void {
           if (e.timer <= 0) {
             w.releaseToken(e);
             e.state = 0;
-            e.timer = (1 / (f.rate * e.fireMul)) * (0.7 + w.rng.next() * 0.6);
+            e.timer = (1 / (f.rate * e.fireMul * BAL.enemyFireRate)) * (0.7 + w.rng.next() * 0.6);
           }
         }
         break;
@@ -251,7 +252,7 @@ export function updateEnemyAI(w: World, dt: number): void {
             fireAt(w, e, f.speed, f.damage, f.kind, f.count, f.spread, 0.6);
             w.releaseToken(e);
             e.emissive = 0;
-            e.timer = (1 / (f.rate * e.fireMul)) * (0.8 + w.rng.next() * 0.5);
+            e.timer = (1 / (f.rate * e.fireMul * BAL.enemyFireRate)) * (0.8 + w.rng.next() * 0.5);
           } else e.timer = 0.3;
         }
         break;
@@ -274,7 +275,7 @@ export function updateEnemyAI(w: World, dt: number): void {
             w.releaseToken(e);
             e.state = 0;
             e.emissive = 0;
-            e.timer = 1 / (f.rate * e.fireMul);
+            e.timer = 1 / (f.rate * e.fireMul * BAL.enemyFireRate);
           }
         }
         break;
@@ -290,7 +291,7 @@ export function updateEnemyAI(w: World, dt: number): void {
           ringBurst(w, e.pos.x, e.pos.y, e.pos.z, f.count, f.speed, f.damage * e.dmgMul, f.kind, e.spin * 2, _o.clone().cross(_d).normalize());
           fireAt(w, e, f.speed * 1.5, f.damage * e.dmgMul, 1, 1, 0, 0.7);
           e.emissive = 0;
-          e.timer = 1 / (f.rate * e.fireMul);
+          e.timer = 1 / (f.rate * e.fireMul * BAL.enemyFireRate);
         }
         break;
       }

@@ -28,9 +28,9 @@ const ADDITIVE_SHIP = new Set<ShipStat>(['hull', 'shield', 'dodges', 'armor', 'r
 
 export const BASE_SHIP: Record<ShipStat, number> = {
   hull: 100,
-  shield: 50,
-  shieldRegen: 14,
-  shieldDelay: 2.4,
+  shield: 40,
+  shieldRegen: 10,
+  shieldDelay: 3,
   armor: 0,
   speed: 1,
   boost: 1,
