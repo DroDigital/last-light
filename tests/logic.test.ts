@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Rng, dailySeed } from '../src/core/rng';
-import { generateMap } from '../src/game/run';
+import { generateMap, MAP_ROWS } from '../src/game/run';
 import { migrate, SAVE_VERSION, defaultSave, STARTER_WEAPONS } from '../src/meta/save';
 import { Build, MAX_LEVEL } from '../src/game/build';
 import { HULLS } from '../src/data/world';
@@ -56,6 +56,11 @@ describe('sector map', () => {
         if (n.type !== 'boss') expect(n.links.length).toBeGreaterThan(0);
       }
       expect(m.nodes.some((n) => n.type === 'shop')).toBe(true);
+      expect(m.nodes.some((n) => n.type === 'rest')).toBe(true);
+      expect(m.nodes.some((n) => n.type === 'elite')).toBe(true);
+      // a sector is long enough to build in: the boss is MAP_ROWS - 1 jumps away
+      expect(boss[0]!.row).toBe(MAP_ROWS - 1);
+      expect(MAP_ROWS).toBeGreaterThanOrEqual(8);
     }
   });
 });

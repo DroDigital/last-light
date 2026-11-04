@@ -407,6 +407,7 @@ export class Game {
     run.sector = idx;
     run.sectorLight = 0;
     run.freeRerolls = this.save.unlockLevel('b_reroll');
+    this.mapFocusZ = null;
     if (!first) run.map = generateMap(Math.floor(run.rng.next() * 1e9), idx, { rifts: this.save.unlockLevel('p_curses') > 0, heat: run.heat });
     run.node = -1;
     const sec = SECTORS[idx]!;
@@ -442,6 +443,7 @@ export class Game {
   }
 
   mapFocus = -1;
+  private mapFocusZ: number | null = null;
 
   reachable(): MapNode[] {
     const run = this.run!;
@@ -1350,8 +1352,13 @@ export class Game {
       // menus / map: slow cinematic drift
       const t = this.loop.realTime;
       if (this.run) {
-        cam.position.set(Math.sin(t * 0.07) * 18, 52 + Math.sin(t * 0.11) * 4, 92);
-        cam.lookAt(0, 0, -12);
+        // the chart is long: follow the row you are on
+        const nodes = this.run.map.nodes;
+        const cur = this.run.node >= 0 ? nodes[this.run.node] : undefined;
+        const fz = (cur ? cur.z : 40) - 34;
+        this.mapFocusZ = this.mapFocusZ === null ? fz : damp(this.mapFocusZ, fz, 2.5, dt);
+        cam.position.set(Math.sin(t * 0.07) * 18, 56 + Math.sin(t * 0.11) * 4, this.mapFocusZ + 100);
+        cam.lookAt(0, 0, this.mapFocusZ);
       } else {
         cam.position.set(Math.sin(t * 0.05) * 20 + 30, 8 + Math.sin(t * 0.08) * 3, 60);
         cam.lookAt(-6, 2, 0);

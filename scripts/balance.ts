@@ -26,7 +26,8 @@ const SKILL = {
 }[skill];
 
 const meta = () => ({ bonusHull: 0, bonusShield: 0, bonusLight: 0, unlockedWeapons: new Set(WEAPONS.map((w) => w.id)), tier2: false, heat: 0 });
-const PATH: EncounterKind[] = ['combat', 'combat', 'elite', 'combat', 'boss'];
+// a typical path through an 8-row sector: five fights and an elite before the star
+const PATH: EncounterKind[] = ['combat', 'combat', 'combat', 'elite', 'combat', 'combat', 'boss'];
 const DT = 1 / 60;
 const _v = new Vector3();
 const _q = new Quaternion();
@@ -124,7 +125,7 @@ function playRun(seed: number): { reached: string; logs: EncLog[]; won: boolean 
       if (cards.length) b.apply(cards[rng.int(0, cards.length - 1)]!);
       w.refreshParams();
       // one rest stop per sector (map always offers one): repair 50%
-      if (e === 2) w.player.hull = Math.min(w.player.maxHull, w.player.hull + w.player.maxHull * 0.5);
+      if (e === 4) w.player.hull = Math.min(w.player.maxHull, w.player.hull + w.player.maxHull * 0.5);
     }
   }
   return { reached: 'WON', logs, won: true };

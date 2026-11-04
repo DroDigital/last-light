@@ -40,19 +40,26 @@ export const NODE_INFO: Record<NodeType, { name: string; desc: string; icon: str
   boss: { name: 'Dying Star', desc: 'The sector boss guards the star.', icon: '☀' },
 };
 
-/** Deterministic branching map: 5 rows (4 choice rows + boss). */
+/**
+ * Deterministic branching map: MAP_ROWS rows (choice rows + the boss). Long
+ * enough that a build has room to come together before the star: about five
+ * fights, an elite, a shop and a rest on any path.
+ */
+export const MAP_ROWS = 8;
+const ROW_Z = 22;
 export function generateMap(seed: number, sector: number, opts: { rifts: boolean; heat: number }): SectorMap {
   const rng = new Rng(seed);
-  const rowsN = 5;
+  const rowsN = MAP_ROWS;
   const nodes: MapNode[] = [];
   let id = 0;
   const rowNodes: MapNode[][] = [];
-  const weights: Record<number, [NodeType, number][]> = {
-    0: [['combat', 1]],
-    1: [['combat', 4], ['event', 2.5], ['derelict', 1.5], ['shop', 1.5]],
-    2: [['elite', 2], ['shop', 2], ['forge', 1.5], ['event', 2], ['rest', 1], ['combat', 2], ...(opts.rifts ? ([['rift', 1.2]] as [NodeType, number][]) : [])],
-    3: [['combat', 3], ['rest', opts.heat >= 7 ? 0.8 : 2], ['shop', 1.5], ['elite', 1.5], ['derelict', 1], ['forge', 1]],
-  };
+  const rift = opts.rifts ? ([['rift', 1.2]] as [NodeType, number][]) : [];
+  const rest = opts.heat >= 7 ? 0.8 : 2;
+  // early rows teach and feed the build, the middle diversifies, the run-in to the star is dangerous
+  const early: [NodeType, number][] = [['combat', 4], ['event', 2], ['derelict', 1.2], ['shop', 1]];
+  const mid: [NodeType, number][] = [['combat', 3], ['elite', 1.6], ['shop', 1.6], ['forge', 1.3], ['event', 2], ['rest', 1], ['derelict', 1], ...rift];
+  const late: [NodeType, number][] = [['combat', 3], ['elite', 2], ['rest', rest], ['shop', 1.4], ['forge', 1], ['derelict', 1], ...rift];
+  const weights: Record<number, [NodeType, number][]> = { 0: [['combat', 1]], 1: early, 2: early, 3: mid, 4: mid, 5: late, 6: late };
   for (let r = 0; r < rowsN; r++) {
     const count = r === rowsN - 1 ? 1 : r === 0 ? 2 + rng.int(0, 1) : 2 + rng.int(0, 2);
     const row: MapNode[] = [];
@@ -66,7 +73,7 @@ export function generateMap(seed: number, sector: number, opts: { rifts: boolean
       const spread = count > 1 ? (c / (count - 1) - 0.5) * 2 : 0;
       const n: MapNode = {
         id: id++, row: r, col: c, type, links: [],
-        x: spread * 34 + rng.range(-4, 4), y: rng.range(-8, 8), z: -r * 26 + 40,
+        x: spread * 34 + rng.range(-4, 4), y: rng.range(-8, 8), z: -r * ROW_Z + 40,
         visited: false, seed: Math.floor(rng.next() * 1e9),
       };
       row.push(n);
@@ -74,8 +81,18 @@ export function generateMap(seed: number, sector: number, opts: { rifts: boolean
     }
     rowNodes.push(row);
   }
-  // guarantee at least one shop in rows 1-3
-  if (!nodes.some((n) => n.type === 'shop')) rowNodes[2]![0]!.type = 'shop';
+  // guarantees: a shop early-ish, a rest and an elite before the star
+  const kept = new Set<NodeType>();
+  const ensure = (t: NodeType, rows: number[]) => {
+    kept.add(t);
+    if (nodes.some((n) => n.type === t && rows.includes(n.row))) return;
+    // never overwrite another guaranteed node type
+    const pool = nodes.filter((n) => rows.includes(n.row) && !kept.has(n.type));
+    if (pool.length) pool[rng.int(0, pool.length - 1)]!.type = t;
+  };
+  ensure('shop', [2, 3, 4]);
+  ensure('rest', [5, 6]);
+  ensure('elite', [3, 4, 5]);
   // links: each node connects to the nearest 1-2 nodes in the next row; every node gets an incoming link.
   for (let r = 0; r < rowsN - 1; r++) {
     const a = rowNodes[r]!;
