@@ -1,3 +1,4 @@
+import { AFFIX_BY_ID, type AffixId } from './affixes';
 import type { EnemyDef } from '../game/types';
 
 /** 28 enemy types across three factions (+ asteroids). */
@@ -42,12 +43,6 @@ export const ENEMIES: EnemyDef[] = [
 
 export const ENEMY_BY_ID: Record<string, EnemyDef> = Object.fromEntries(ENEMIES.map((e) => [e.id, e]));
 
-export const ELITE_MODS = ['shielded', 'hasted', 'splitting', 'vampiric', 'cloaked'] as const;
-export type EliteMod = (typeof ELITE_MODS)[number];
-export const ELITE_INFO: Record<EliteMod, { name: string; desc: string }> = {
-  shielded: { name: 'Shielded', desc: 'Carries a regenerating barrier.' },
-  hasted: { name: 'Hasted', desc: 'Moves and fires 50% faster.' },
-  splitting: { name: 'Splitting', desc: 'Splits into two lesser copies on death.' },
-  vampiric: { name: 'Vampiric', desc: 'Heals whenever it damages you.' },
-  cloaked: { name: 'Cloaked', desc: 'Dithers out of sight when not attacking.' },
-};
+/** Elite modifiers are the affix table (src/data/affixes.ts); kept as aliases for older call sites. */
+export type EliteMod = AffixId;
+export const ELITE_INFO = AFFIX_BY_ID;

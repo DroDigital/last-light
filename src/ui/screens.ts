@@ -4,7 +4,8 @@ import { esc } from './ui';
 import { HULLS, HEARTH_UNLOCKS, DIALOGUE, CHALLENGES, LORE, HEAT_LEVELS, SECTORS, BOSSES } from '../data/world';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
-import { ENEMIES, ELITE_INFO } from '../data/enemies';
+import { ENEMIES } from '../data/enemies';
+import { AFFIXES, RARITY } from '../data/affixes';
 import { NODE_INFO } from '../game/run';
 import { Input, ACTION_LABELS, type Action } from '../core/input';
 import { dailySeed } from '../core/rng';
@@ -367,7 +368,7 @@ export function showCodex(g: Game): void {
     body = ENEMIES.map((e) => {
       const k = d.codex.enemies.includes(e.id);
       return `<div class="item ${k ? '' : 'disabled'}" style="--rc:${e.accent}"><div class="ic">●</div><div class="grow"><div class="t">${k ? esc(e.name) : unk} <span class="faint">${k ? e.faction : ''}</span></div><div class="d">${k ? esc(e.desc) : 'Not yet encountered.'}</div></div></div>`;
-    }).join('') + `<h3 style="margin-top:12px">Elite modifiers</h3>` + Object.values(ELITE_INFO).map((x) => `<div class="stat"><span>${x.name}</span><span class="dim">${x.desc}</span></div>`).join('') +
+    }).join('') + `<h3 style="margin-top:12px">Rarities</h3>` + RARITY.slice(1).map((r, i) => `<div class="stat"><span style="color:${r.color}">${r.name}</span><span class="dim">${['1 affix', '2–3 affixes', '3–4 affixes and a name'][i]} · ×${r.hp} HP · ×${r.light} Light</span></div>`).join('') + `<h3 style="margin-top:12px">Affixes · ${AFFIXES.length}</h3>` + AFFIXES.map((x) => `<div class="stat"><span>${x.name}</span><span class="dim">${x.desc}</span></div>`).join('') +
       `<h3 style="margin-top:12px">Bosses</h3>` + Object.values(BOSSES).map((b) => `<div class="item ${d.bossesKilled.includes(b.id) ? '' : 'disabled'}"><div class="ic">☀</div><div class="grow"><div class="t">${d.bossesKilled.includes(b.id) ? b.name : unk}</div><div class="d">${d.bossesKilled.includes(b.id) ? esc(b.desc) : esc(b.title)}</div></div></div>`).join('');
   } else if (tab === 'weapons') {
     body = WEAPONS.map((w) => {

@@ -1,7 +1,8 @@
 import { Rng } from '../core/rng';
 import { BAL } from '../data/balance';
 import { SECTORS, type SectorDef } from '../data/world';
-import { ENEMY_BY_ID, ELITE_MODS, type EliteMod } from '../data/enemies';
+import { ENEMY_BY_ID } from '../data/enemies';
+import { RARITY, rollRarity, type Rarity } from '../data/affixes';
 import type { World } from './world';
 import { Vector3 } from 'three';
 import { BossController } from './bosses';
@@ -170,6 +171,7 @@ export class Director {
     if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
     w.maxTokens = BAL.tokensBase + Math.floor(sectorIdx * BAL.tokensPerSector) + (kind === 'rift' ? 2 : 0);
     w.sectorHpScale = 1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0);
+    w.sectorIdx = sectorIdx;
     w.sectorDmgScale = 1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0);
     this.dress();
     if (kind === 'boss') {
@@ -230,7 +232,7 @@ export class Director {
 
   liveThreat(): number {
     let t = 0;
-    for (const e of this.w.enemies) if (e.alive && e.def.role !== 'inert' && e.def.role !== 'part' && e.def.role !== 'boss') t += e.def.threat * (e.elite ? 2.5 : 1);
+    for (const e of this.w.enemies) if (e.alive && e.def.role !== 'inert' && e.def.role !== 'part' && e.def.role !== 'boss') t += e.def.threat * RARITY[e.rarity].threat;
     return t;
   }
 
@@ -334,9 +336,10 @@ export class Director {
     let count = Math.max(1, Math.min(def.role === 'swarmer' ? 22 : 6, Math.round(need / Math.max(1, def.threat))));
     if (this.w.heat >= 9 && def.role === 'swarmer') count = Math.round(count * 1.3);
     const formation = def.role === 'swarmer' ? this.rng.pick(['cluster', 'ring', 'line'] as const) : this.rng.pick(['cluster', 'line'] as const);
-    let elite: EliteMod | null = null;
+    // guaranteed elites (elite/rift nodes, Heat, Hunted) arrive alone as Rare, sometimes Unique
+    let forced: Rarity = 0;
     if (this.elitesLeft > 0 && (this.spent / this.budget > 0.25 || this.kind === 'rift') && def.role !== 'swarmer' && this.rng.chance(0.5)) {
-      elite = this.rng.pick(ELITE_MODS);
+      forced = this.rng.chance(0.15 + this.sectorIdx * 0.04) ? 3 : 2;
       this.elitesLeft--;
       count = 1;
     }
@@ -348,10 +351,13 @@ export class Director {
       } else if (formation === 'line') {
         p.addScaledVector(side, (i - count / 2) * 5).y += this.rng.range(-2, 2);
       } else p.add(new Vector3(this.rng.range(-10, 10), this.rng.range(-8, 8), this.rng.range(-10, 10)));
-      const e = w.spawnEnemy(def, p.x, p.y, p.z, i === 0 ? elite : null);
+      // every spawn rolls its own rarity; swarm members roll at a third of the odds
+      const roll = this.kind === 'tutorial' ? 0 : rollRarity(this.rng, this.sectorIdx, w.heat, this.kind);
+      const rarity = (i === 0 && forced ? forced : def.role === 'swarmer' && this.rng.next() > 0.33 ? 0 : roll) as Rarity;
+      const e = w.spawnEnemy(def, p.x, p.y, p.z, rarity);
       e.vel.copy(dir).multiplyScalar(-10);
       e.timer += i * 0.15;
-      this.spent += def.threat * (elite ? 2.5 : 1);
+      this.spent += def.threat * RARITY[rarity].threat;
     }
     this.wave++;
   }

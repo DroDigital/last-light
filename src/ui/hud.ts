@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AFFIX_BY_ID, RARITY, rankLabel } from '../data/affixes';
 import type { Game, State } from '../game/game';
 import type { World } from '../game/world';
 import { PALETTES } from '../data/palettes';
@@ -333,13 +334,19 @@ export class Hud {
         const bw = 36;
         c.fillStyle = 'rgba(0,0,0,0.6)';
         c.fillRect(p.x - bw / 2, p.y - 26, bw, 4);
-        c.fillStyle = e.elite ? '#ffc24a' : '#ff8a6a';
+        const rc = e.rarity > 0 ? RARITY[e.rarity].color : '#ff8a6a';
+        c.fillStyle = rc;
         c.fillRect(p.x - bw / 2, p.y - 26, bw * clamp(e.hp / e.maxHp, 0, 1), 4);
-        if (e.elite) {
-          c.font = '600 10px Archivo';
+        if (e.rarity > 0) {
           c.textAlign = 'center';
-          c.fillStyle = '#ffc24a';
-          c.fillText(e.elite.toUpperCase(), p.x, p.y - 30);
+          c.font = '800 10px Archivo';
+          c.fillStyle = rc;
+          c.fillText(e.rarity === 3 ? e.rankName.toUpperCase() : `${RARITY[e.rarity].name.toUpperCase()} ${e.def.name.toUpperCase()}`, p.x, p.y - 42);
+          if (e.rarity < 3 || e.affixes.length) {
+            c.font = '400 9px "JetBrains Mono"';
+            c.fillStyle = 'rgba(243,238,226,0.8)';
+            c.fillText(e.affixes.map((a) => AFFIX_BY_ID[a].name).join(' · '), p.x, p.y - 30);
+          }
         }
       }
       if (p.on || drawn > 24) continue;
@@ -666,7 +673,12 @@ export class Hud {
       c.font = '900 12px Archivo';
       c.fillText(tgt.def.name.toUpperCase(), tx + 8, ty);
       c.font = '400 10px "JetBrains Mono"';
-      c.fillText(`TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.elite ? ' · ' + tgt.elite.toUpperCase() : ''}`, tx + 8, ty + 14);
+      c.fillText(`TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.rarity > 0 ? ' · ' + RARITY[tgt.rarity].name.toUpperCase() : ''}`, tx + 8, ty + 14);
+      if (tgt.rarity > 0) {
+        c.fillStyle = RARITY[tgt.rarity].color;
+        c.fillText(rankLabel(tgt).toUpperCase(), tx + 8, ty + 40);
+        c.fillStyle = PAPER;
+      }
       const hf = clamp(tgt.hp / tgt.maxHp, 0, 1);
       c.fillStyle = DIM;
       c.fillRect(tx + 8, ty + 24, 90, 3);

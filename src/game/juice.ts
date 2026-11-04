@@ -187,7 +187,7 @@ export class Juice {
         // Swiss kill confirmation for anything that matters (throttled in swarms)
         if (big > 0.55 || e.elite || this.killTagT <= 0) {
           this.killTagT = 0.35;
-          this.killTags.push({ x: k.x, y: k.y, z: k.z, n: w.stats.kills, t: 0, label: e.elite ? `${e.def.name} / ${e.elite}` : e.def.name });
+          this.killTags.push({ x: k.x, y: k.y, z: k.z, n: w.stats.kills, t: 0, label: e.rarity === 3 ? e.rankName : e.rarity > 0 ? `${e.def.name} / ${['', 'magic', 'rare', 'unique'][e.rarity]}` : e.def.name });
           if (this.killTags.length > 8) this.killTags.shift();
         }
         // hit-stop scaled by size (30–80 ms)

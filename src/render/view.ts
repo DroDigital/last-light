@@ -9,6 +9,7 @@ import { haloPositions } from '../game/weapons';
 import { hexToRgb } from '../core/math';
 import { fxRng } from '../core/rng';
 import { EdgeBatch } from './edges';
+import { RARITY_RGB } from '../data/affixes';
 
 const KINDS: MeshKind[] = [
   'hushSpike', 'hushDart', 'hushBlob', 'hushEye', 'salvBox', 'salvRam', 'salvGun', 'salvHauler', 'salvTurret',
@@ -366,7 +367,7 @@ export class View {
       let r = e.tint.x;
       let g = e.tint.y;
       let b = e.tint.z;
-      let boost = e.emissive * 1.5 + (e.elite ? 0.6 : 0);
+      let boost = e.emissive * 1.5 + e.rarity * 0.3;
       if (e.frozen) {
         r = 0.6;
         g = 0.9;
@@ -387,8 +388,13 @@ export class View {
       const dissolve = e.alive ? 0 : 1 - e.dying / 0.4;
       ik.push(_m, r, g, b, e.flash, dissolve, boost, e.cloak);
       // elite aura ring + shield links
-      if (e.alive && e.elite && (Math.floor(time * 8) & 1) === 0) {
-        this.telegraphs.ring(_p.x, _p.y, _p.z, e.radius * 1.5, 0, 1, 0, 1, 0.75, 0.3, 0.35, 18);
+      // rarity rings: one for Magic, two for Rare, three turning rings for a Unique
+      if (e.alive && e.rarity > 0) {
+        const rc = RARITY_RGB[e.rarity]!;
+        for (let k = 0; k < e.rarity; k++) {
+          const a = time * (0.6 + k * 0.35) + k * 1.3;
+          this.telegraphs.ring(_p.x, _p.y, _p.z, e.radius * (1.35 + k * 0.22), Math.sin(a) * 0.4, 1, Math.cos(a) * 0.4, rc[0], rc[1], rc[2], 0.4 - k * 0.06, 20);
+        }
       }
       if (e.alive && e.shieldedBy > 0 && e.def.role !== 'shielder') {
         this.streaks.push(_p.x, _p.y + e.radius, _p.z, _p.x, _p.y - e.radius, _p.z, 0.4, 0.3, 0.9, 0.08);

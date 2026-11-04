@@ -4,7 +4,8 @@ import { Rng } from '../core/rng';
 import { Emitter } from '../core/events';
 import { SpatialHash } from '../core/spatial';
 import { clamp } from '../core/math';
-import { ENEMY_BY_ID, type EliteMod } from '../data/enemies';
+import { ENEMY_BY_ID } from '../data/enemies';
+import { AFFIX_BY_ID, AFFIX_INDEX, RARITY, rollAffixes, uniqueName, type AffixId, type Rarity } from '../data/affixes';
 import type { EnemyDef, Faction, StatusKind, TriggerDef, TriggerOn, WeaponParams } from './types';
 import { Build, WeaponInstance } from './build';
 import {
@@ -250,7 +251,8 @@ export class World {
     this.pool.push(e);
   }
 
-  spawnEnemy(def: EnemyDef | string, x: number, y: number, z: number, elite: EliteMod | null = null): Enemy {
+  /** Spawn an enemy. rarity > 0 rolls affixes from the table (or uses `affixes` when given). */
+  spawnEnemy(def: EnemyDef | string, x: number, y: number, z: number, rarity: Rarity = 0, affixes?: AffixId[]): Enemy {
     const d = typeof def === 'string' ? ENEMY_BY_ID[def]! : def;
     const e = (this.pool.pop() ?? new Enemy()).reset(d, this.nextEnemyId++);
     e.pos.set(x, y, z);
@@ -266,10 +268,10 @@ export class World {
     e.tint.set(r, g, b);
     e.orbitDir = this.rng.chance(0.5) ? 1 : -1;
     e.timer = this.rng.range(0.5, 2.5);
-    if (elite) this.makeElite(e, elite);
+    if (rarity > 0 && !isBoss && d.role !== 'inert') this.applyRank(e, rarity, affixes ?? rollAffixes(this.rng, rarity, d.role, this.sectorIdx));
     this.enemies.push(e);
     this.stats.enemiesSeen.add(d.id);
-    this.events.emit('spawn', { x, y, z, faction: d.faction, big: d.threat >= 5 || !!elite });
+    this.events.emit('spawn', { x, y, z, faction: d.faction, big: d.threat >= 5 || rarity > 0 });
     return e;
   }
 
@@ -278,22 +280,45 @@ export class World {
   sectorDmgScale = 1;
   private beamHitT = 0;
 
-  makeElite(e: Enemy, mod: EliteMod): void {
-    e.elite = mod;
-    e.hp = e.maxHp = e.maxHp * 2.6;
-    e.scale *= 1.3;
-    e.radius *= 1.25;
-    switch (mod) {
-      case 'shielded':
-        e.shield = e.maxShield = e.maxHp * 0.6;
-        break;
-      case 'hasted':
-        e.speedMul = 1.5;
-        e.fireMul = 1.3;
-        break;
-      case 'cloaked':
-        e.cloak = 0.8;
-        break;
+  /** current sector (0-based), set by the Director; gates affixes */
+  sectorIdx = 0;
+
+  /** Promote an enemy to a rarity tier with the given affixes. */
+  applyRank(e: Enemy, rarity: Rarity, affixes: AffixId[]): void {
+    const R = RARITY[rarity];
+    e.rarity = rarity;
+    e.affixes = affixes.slice();
+    e.affixMask = 0;
+    for (const a of affixes) e.affixMask |= 1 << AFFIX_INDEX[a];
+    e.elite = affixes[0] ?? null;
+    let hp = R.hp;
+    let scale = R.scale;
+    for (const a of affixes) {
+      const d = AFFIX_BY_ID[a];
+      if (d.hp) hp *= d.hp;
+      if (d.scale) scale *= d.scale;
+      if (d.speed) e.speedMul *= d.speed;
+      if (d.fire) e.fireMul *= d.fire;
+      if (d.dmg) e.dmgMul *= d.dmg;
+      if (d.armor) e.armor += d.armor;
+      if (d.taken) e.dmgTaken *= d.taken;
+    }
+    e.hp = e.maxHp = e.maxHp * hp;
+    e.scale *= scale;
+    e.radius *= scale;
+    if (e.has('shielded')) e.shield = e.maxShield = e.maxHp * 0.5;
+    if (e.has('cloaked')) e.cloak = 0.8;
+    e.affT = 2 + this.rng.next() * 3;
+    e.affT2 = 1 + this.rng.next() * 2;
+    if (rarity === 3) e.rankName = uniqueName(this.rng, e.def.name);
+    // a pack leader arrives with escorts of its own kind
+    if (e.has('packleader')) {
+      for (let i = 0; i < 2; i++) {
+        const c = this.spawnEnemy(e.def, e.pos.x + this.rng.range(-6, 6), e.pos.y + this.rng.range(-4, 4), e.pos.z + this.rng.range(-6, 6));
+        c.speedMul *= 1.2;
+        c.fireMul *= 1.2;
+        c.spawnT = 0.3;
+      }
     }
   }
 
@@ -439,6 +464,10 @@ export class World {
       this.events.emit('block', { x: hx, y: hy, z: hz });
       return;
     }
+    if (e.affixMask && src >= 0 && e.has('deflecting') && this.rng.next() < 0.25) {
+      this.events.emit('block', { x: hx, y: hy, z: hz });
+      return;
+    }
     const p = src >= 0 ? this.params[src] : undefined;
     const pl = this.player;
     let dmg = amount * pl.damageMul();
@@ -490,7 +519,7 @@ export class World {
     if (w) w.damageDealt += dmg;
     // knockback
     const kb = (opts.knock ?? p?.knock ?? 0) / Math.max(1, e.radius * e.radius * 0.6);
-    if (kb > 0 && e.def.role !== 'boss' && e.def.role !== 'part' && e.def.role !== 'turret') {
+    if (kb > 0 && e.def.role !== 'boss' && e.def.role !== 'part' && e.def.role !== 'turret' && !(e.affixMask && e.has('relentless'))) {
       e.vel.x -= nx * kb;
       e.vel.y -= ny * kb;
       e.vel.z -= nz * kb;
@@ -515,6 +544,12 @@ export class World {
       }
     }
     if (shatter) e.flash = 1.5;
+    // Thorned: a hard hit spits a shard back at the shooter
+    if (e.affixMask && e.hp > 0 && dmg > 6 && e.thornT <= 0 && e.has('thorned')) {
+      e.thornT = 0.6;
+      _brk.copy(this.player.pos).sub(e.pos).normalize().multiplyScalar(80);
+      this.spawnEnemyShot(e.pos.x, e.pos.y, e.pos.z, _brk.x, _brk.y, _brk.z, 9 * e.dmgMul, 2, 0.8, 3);
+    }
     if (e.hp <= 0) this.killEnemy(e, dmg);
     else if (e.heavy) this.checkBreakup(e);
   }
@@ -655,7 +690,10 @@ export class World {
       }
       if (e.hitCdHalo > 0) e.hitCdHalo -= dt;
       if (e.shieldedBy > 0) e.shieldedBy -= dt;
-      if (e.elite === 'shielded' && e.shield < e.maxShield)
+      if (e.buffT > 0) e.buffT -= dt;
+      if (e.thornT > 0) e.thornT -= dt;
+      if (e.affixMask && e.has('regenerating') && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.03 * dt);
+      if (e.affixMask && e.has('shielded') && e.shield < e.maxShield)
         e.shield = Math.min(e.maxShield, e.shield + e.maxShield * 0.06 * dt);
     }
   }
@@ -686,7 +724,7 @@ export class World {
     this.events.emit('kill', { e, x, y, z, chain: this.chain, big });
 
     // Light motes
-    let light = d.light * (e.elite ? 3 : 1);
+    let light = d.light * RARITY[e.rarity].light * (e.affixMask && e.has('gilded') ? 3 : 1);
     if (e.radiantT > 0) light *= 2;
     this.dropMotes(x, y, z, light, e.radius);
     // debris
@@ -729,7 +767,17 @@ export class World {
         c.spawnT = 0;
       }
     }
-    if (e.elite === 'splitting') {
+    if (e.affixMask && e.has('volatile')) {
+      this.addTelegraph({ kind: 'sphere', ax: x, ay: y, az: z, bx: 0, by: 0, bz: 0, radius: 10, dur: 0.35, owner: -1 });
+      this.explode(x, y, z, 10, 26 * e.dmgMul, -1, { enemy: true, color: [1, 0.5, 0.2] });
+    }
+    if (e.affixMask && e.has('cursed')) {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        this.spawnEnemyShot(x + Math.cos(a) * 7, y + this.rng.range(-2, 2), z + Math.sin(a) * 7, 0, 0, 0, 14 * e.dmgMul, 4, 1.2, 9);
+      }
+    }
+    if (e.affixMask && e.has('splitting')) {
       for (let i = 0; i < 2; i++) {
         const c = this.spawnEnemy(d, x + this.rng.range(-3, 3), y, z + this.rng.range(-3, 3));
         c.hp = c.maxHp = c.maxHp * 0.35;
@@ -750,7 +798,7 @@ export class World {
         this.applyStatus(o, 'cryo', 1);
       });
     }
-    if (e.elite) {
+    if (e.rarity > 0) {
       this.stats.eliteKills++;
       this.fireTriggers('eliteKill', x, y, z, overkill);
     }
@@ -1094,7 +1142,8 @@ export class World {
       this.fireTriggers('hurt', pl.pos.x, pl.pos.y, pl.pos.z, dmg);
     }
     this.stats.damageTaken += amount;
-    if (attacker?.elite === 'vampiric') attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
+    if (attacker?.affixMask && attacker.has('vampiric')) attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
+    if (attacker?.affixMask && attacker.has('leeching')) pl.lumen = Math.max(0, pl.lumen - 12);
     this.events.emit('hurt', { dmg: amount, hull: hullHit, x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
     if (pl.hull <= 0) this.killPlayer(cause);
   }

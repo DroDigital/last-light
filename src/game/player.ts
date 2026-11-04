@@ -59,6 +59,8 @@ export class Player {
   shockCd = 0;
   stasisCd = 0;
   stasisT = 0;
+  /** slowed by a Frostbound aura */
+  slowT = 0;
   alive = true;
   deathCause = '';
   aimDir = new Vector3(0, 0, -1);
@@ -135,7 +137,7 @@ export class Player {
     this.forward(_f);
     this.right(_r);
     this.up(_u);
-    const maxSpeed = 46 * s.speed;
+    const maxSpeed = 46 * s.speed * (this.slowT > 0 ? 0.6 : 1);
     const boostCap = s.boost;
     const wantBoost = c.boost && this.boostEnergy > 0.02;
     this.boosting = wantBoost;
@@ -219,6 +221,7 @@ export class Player {
     if (this.shockCd > 0) this.shockCd -= dt;
     if (this.stasisCd > 0) this.stasisCd -= dt;
     if (this.stasisT > 0) this.stasisT -= dt;
+    if (this.slowT > 0) this.slowT -= dt;
     if (c.ability1 && this.shockCd <= 0) {
       this.shockCd = 9 * s.abilityCd;
       w.shockwave();
