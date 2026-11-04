@@ -4,7 +4,10 @@ import { esc } from './ui';
 import { HULLS, HEARTH_UNLOCKS, DIALOGUE, CHALLENGES, LORE, HEAT_LEVELS, SECTORS, BOSSES } from '../data/world';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
-import { ENEMIES, ELITE_INFO } from '../data/enemies';
+import { ENEMIES } from '../data/enemies';
+import { AFFIXES, RARITY } from '../data/affixes';
+import { SUBTYPES } from '../data/subtypes';
+import { DROP_INFO, DROP_TABLE, DROP_KINDS, RARITY_DROP } from '../data/drops';
 import { NODE_INFO } from '../game/run';
 import { Input, ACTION_LABELS, type Action } from '../core/input';
 import { dailySeed } from '../core/rng';
@@ -55,14 +58,15 @@ export function showTitle(g: Game): void {
     'title',
     `<div class="numeral">${String(d.bossesKilled.length).padStart(2, '0')}</div>
     <div class="title-screen">
-      <div class="logo"><span class="lg-base">Last Light</span><span class="lg-lit" aria-hidden="true">Last Light</span><small>The universe is going dark · ${d.bossesKilled.length}/5 stars relit</small></div>
+      <div class="logo"><span class="lg-base">Last Light</span><span class="lg-lit" aria-hidden="true">Last Light</span><small>The universe is going dark · ${d.bossesKilled.length}/${Object.keys(BOSSES).length} stars relit</small></div>
       <div class="menu">
         <button class="primary" data-nav data-autofocus data-act="hearth"><span class="ix">01</span>The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
         <button data-nav data-act="quickdive"><span class="ix">02</span>Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
         <button data-nav data-act="daily"><span class="ix">03</span>Daily Dive<span class="sub">${daily}${best ? ` · best ${fmtInt(best)}` : ''}</span></button>
-        <button data-nav data-act="codex"><span class="ix">04</span>Codex</button>
-        <button data-nav data-act="settings"><span class="ix">05</span>Settings</button>
-        <button data-nav data-act="credits"><span class="ix">06</span>Credits</button>
+        <button data-nav data-act="endlessrun"><span class="ix">04</span>Endless<span class="sub">Waves through all ten sectors${d.endlessBest ? ` · best wave ${d.endlessBest}` : ''}</span></button>
+        <button data-nav data-act="codex"><span class="ix">05</span>Codex</button>
+        <button data-nav data-act="settings"><span class="ix">06</span>Settings</button>
+        <button data-nav data-act="credits"><span class="ix">07</span>Credits</button>
       </div>
       <div class="footer"><span>Runs ${d.runs} · Wins ${d.wins} · Stars relit ${d.bossesKilled.length}</span><span>F1 look panel · F3 perf · click the game to lock the mouse</span></div>
     </div>`,
@@ -183,10 +187,12 @@ export function showDraft(g: Game): void {
   const w = g.world!;
   const cards = run.draft ?? [];
   const rerollCost = run.freeRerolls > 0 ? 'FREE' : `${20 + run.rerolls * 15} Light`;
-  const title = run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
+  const src = run.draftCtx?.source;
+  const title = src ? DROP_INFO[src].name : run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
+  const queued = run.draftQueue?.length ?? 0;
   g.ui.show(
     'draft',
-    `<h1>${title}</h1><div class="dim">Light <span class="light mono">${fmtInt(w.player.light)}</span> · Cards marked COMBO work with your build</div>
+    `<h1>${title}</h1><div class="dim">Light <span class="light mono">${fmtInt(w.player.light)}</span> · Cards marked COMBO work with your build${queued ? ` · <span style="color:var(--lantern)">${queued} more draft${queued > 1 ? 's' : ''} queued from drops</span>` : ''}</div>
      <div class="cards">${cards
        .map((c, i) => {
          const r = cardRarity(c);
@@ -334,13 +340,14 @@ export function showDeath(g: Game): void {
 
 export function showVictory(g: Game): void {
   const r = g.lastRecord!;
+  const finalAct = !!g.run?.deep;
   g.ui.show(
     'victory',
     `<div class="col center" style="align-items:center;text-align:center;max-width:720px">
-      <div class="logo" style="font-size:var(--s6)">THE LAST STAR BURNS</div>
-      <p class="plate-line" style="font-size:var(--s3)">For now, the dark retreats. Somewhere, a thousand stars remember how to shine.</p>
+      <div class="logo" style="font-size:var(--s6)">${finalAct ? 'THE FIRST LIGHT BURNS' : 'THE LAST STAR BURNS'}</div>
+      <p class="plate-line" style="font-size:var(--s3)">${finalAct ? 'The Night is unmade. Past the edge, the oldest light in the universe is yours to carry home.' : 'For now, the dark retreats. But past the Last Dark, something older is still hiding: the Deep.'}</p>
       <div class="panel" style="width:420px"><div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div><div class="stat"><span>Embers</span><b class="light">+${r.embers}</b></div><div class="stat"><span>Time</span><b>${Math.floor(r.timeSec / 60)}m ${r.timeSec % 60}s</b></div></div>
-      <div class="row" style="margin-top:16px"><button class="primary" data-nav data-autofocus data-act="endless">Go beyond · Endless</button><button data-nav data-act="hearth">Return home</button></div>
+      <div class="row" style="margin-top:16px">${finalAct ? '' : '<button class="primary" data-nav data-autofocus data-act="deep">Into the Deep · Act II</button>'}<button ${finalAct ? 'class="primary" data-autofocus' : ''} data-nav data-act="endless">Go beyond · Endless</button><button data-nav data-act="hearth">Return home</button></div>
     </div>`,
   );
 }
@@ -366,8 +373,11 @@ export function showCodex(g: Game): void {
   if (tab === 'enemies') {
     body = ENEMIES.map((e) => {
       const k = d.codex.enemies.includes(e.id);
-      return `<div class="item ${k ? '' : 'disabled'}" style="--rc:${e.accent}"><div class="ic">●</div><div class="grow"><div class="t">${k ? esc(e.name) : unk} <span class="faint">${k ? e.faction : ''}</span></div><div class="d">${k ? esc(e.desc) : 'Not yet encountered.'}</div></div></div>`;
-    }).join('') + `<h3 style="margin-top:12px">Elite modifiers</h3>` + Object.values(ELITE_INFO).map((x) => `<div class="stat"><span>${x.name}</span><span class="dim">${x.desc}</span></div>`).join('') +
+      return `<div class="item ${k ? '' : 'disabled'}" style="--rc:${e.accent}"><div class="ic">●</div><div class="grow"><div class="t">${k ? esc(e.name) : unk} <span class="faint">${k ? e.faction : ''}</span></div><div class="d">${k ? esc(e.desc) + (SUBTYPES[e.id] ? `<br><span class="faint">Variants: ${SUBTYPES[e.id]!.map((s) => s.name + (s.moves.length ? ' (' + s.moves.join(', ') + ')' : '')).join(' · ')}</span>` : '') : 'Not yet encountered.'}</div></div></div>`;
+    }).join('') + `<h3 style="margin-top:12px">Rarities</h3>` + RARITY.slice(1).map((r, i) => `<div class="stat"><span style="color:${r.color}">${r.name}</span><span class="dim">${['1 affix', '2–3 affixes', '3–4 affixes and a name'][i]} · ×${r.hp} HP · ×${r.light} Light</span></div>`).join('') + `<h3 style="margin-top:12px">Affixes · ${AFFIXES.length}</h3>` + AFFIXES.map((x) => `<div class="stat"><span>${x.name}</span><span class="dim">${x.desc}</span></div>`).join('') +
+      `<h3 style="margin-top:12px">Drop table · chance per kill</h3><div class="dim" style="margin-bottom:6px">Rarity multiplies these: Magic ×${RARITY_DROP[1]}, Rare ×${RARITY_DROP[2]}, Unique ×${RARITY_DROP[3]}. Gilded doubles them; Luck adds 15% per point.</div>` +
+      `<div class="droptable"><div class="dt-h"><span></span>${DROP_KINDS.map((k) => `<span style="color:${DROP_INFO[k].color}">${DROP_INFO[k].name}</span>`).join('')}</div>` +
+      (Object.keys(DROP_TABLE) as (keyof typeof DROP_TABLE)[]).map((cls) => `<div class="dt-r"><span>${cls}</span>${DROP_KINDS.map((k) => `<span class="mono">${DROP_TABLE[cls][k] >= 1 ? '100%' : (DROP_TABLE[cls][k] * 100).toFixed(DROP_TABLE[cls][k] < 0.01 ? 2 : 1) + '%'}</span>`).join('')}</div>`).join('') + '</div>' +
       `<h3 style="margin-top:12px">Bosses</h3>` + Object.values(BOSSES).map((b) => `<div class="item ${d.bossesKilled.includes(b.id) ? '' : 'disabled'}"><div class="ic">☀</div><div class="grow"><div class="t">${d.bossesKilled.includes(b.id) ? b.name : unk}</div><div class="d">${d.bossesKilled.includes(b.id) ? esc(b.desc) : esc(b.title)}</div></div></div>`).join('');
   } else if (tab === 'weapons') {
     body = WEAPONS.map((w) => {
@@ -618,6 +628,8 @@ export function registerActions(g: Game): void {
     if (r) navigator.clipboard?.writeText(`LAST LIGHT · seed ${r.seed} · ${r.won ? 'WON' : 'sector ' + r.sector} · score ${r.score}${r.daily ? ' · daily' : ''}`).catch(() => {});
   });
   ui.on('endless', () => g.startEndless());
+  ui.on('deep', () => g.startDeep());
+  ui.on('endlessrun', () => g.startRun({ endless: true }));
   ui.onBack = () => {
     if (g.state === 'map') {
       g.setState('pause');

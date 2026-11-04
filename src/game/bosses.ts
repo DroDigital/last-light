@@ -15,7 +15,10 @@ const UP = new Vector3(0, 1, 0);
 const AX_Z = new Vector3(0, 0, 1);
 const _d = new Vector3();
 
-type Pattern = 'volley' | 'ring' | 'spiral' | 'sweep' | 'charge' | 'summon' | 'mines' | 'homing' | 'pull' | 'wall' | 'beams';
+type Pattern = 'volley' | 'ring' | 'spiral' | 'sweep' | 'charge' | 'summon' | 'mines' | 'homing' | 'pull' | 'wall' | 'beams' | 'rain' | 'nova' | 'cross' | 'clones';
+
+/** Act II bosses fight in four phases (75/50/25%) and use the new patterns. */
+const DEEP = new Set(['kilnmother', 'horizoneater', 'quasarregent', 'ironmagnetar', 'endlessnight']);
 
 interface BossBeam {
   dir: Vector3;
@@ -128,6 +131,57 @@ export class BossController {
         this.beams.push({ dir: new Vector3(-1, 0, 0), rate: 0.5, len: 220, width: 2.4, on: false, warm: 0 });
         break;
       }
+      case 'kilnmother': {
+        this.core = w.spawnEnemy(coreDef('crucible', 7, 4, '#ff8040'), start.x, start.y, start.z);
+        this.core.dmgTaken = 0.2;
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          part('salvTurret', 420, 2.6, 2.2, '#ffb050', new Vector3(Math.cos(a) * 17, Math.sin(a * 2) * 3, Math.sin(a) * 17), i);
+        }
+        break;
+      }
+      case 'horizoneater': {
+        this.core = w.spawnEnemy(coreDef('singularity', 8, 5, '#ecaa82'), 0, 0, 0);
+        this.core.invuln = true;
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          part('choirShard', 520, 3, 3, '#f8d396', new Vector3(Math.cos(a) * 21, 0, Math.sin(a) * 21), i);
+        }
+        break;
+      }
+      case 'quasarregent': {
+        this.core = w.spawnEnemy(coreDef('regent', 7, 4.2, '#7fcdfd'), start.x, start.y, start.z);
+        this.core.dmgTaken = 0.6;
+        for (let i = 0; i < 2; i++) part('choirHalo', 650, 3.5, 2.4, '#b7e8ff', new Vector3(0, i ? -15 : 15, 0), i);
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + 0.4;
+          part('choirPrism', 380, 2.4, 2.2, '#b05ad6', new Vector3(Math.cos(a) * 18, 0, Math.sin(a) * 18), 2 + i);
+        }
+        this.beams.push({ dir: new Vector3(0, 1, 0), rate: 0.4, len: 240, width: 2.8, on: false, warm: 0 });
+        this.beams.push({ dir: new Vector3(0, -1, 0), rate: 0.4, len: 240, width: 2.8, on: false, warm: 0 });
+        break;
+      }
+      case 'ironmagnetar': {
+        this.core = w.spawnEnemy(coreDef('bossCore', 6.5, 3, '#d45227'), start.x, start.y, start.z);
+        this.core.dmgTaken = 0.15;
+        let k = 0;
+        for (let ring = 0; ring < 3; ring++)
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2 + ring * 0.5;
+            const r = 10 + ring * 4.5;
+            part('shellPlate', 300 - ring * 40, 2.4, 2 - ring * 0.2, ring === 2 ? '#2a7a72' : '#7d8a8b', new Vector3(Math.cos(a) * r, Math.sin(a) * r * 0.6, Math.sin(a) * r * 0.5), k++);
+          }
+        break;
+      }
+      case 'endlessnight': {
+        this.core = w.spawnEnemy(coreDef('mask', 8, 5.5, '#cfdcb2'), start.x, start.y, start.z);
+        this.core.dmgTaken = 0.35;
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          part('hushEye', 640, 3, 2.4, '#99ad85', new Vector3(Math.cos(a) * 19, Math.sin(a) * 7, Math.sin(a) * 19), i);
+        }
+        break;
+      }
       default: {
         // lastdark
         this.core = w.spawnEnemy(coreDef('hushBlob', 8, 5.5, '#b060ff'), start.x, start.y, start.z);
@@ -155,6 +209,16 @@ export class BossController {
         return [['sweep', 'volley', 'sweep', 'ring'], ['homing', 'ring', 'sweep', 'summon'], ['spiral', 'homing', 'wall', 'sweep']][p]! as Pattern[];
       case 'pulsarheart':
         return [['beams', 'volley', 'beams', 'summon'], ['beams', 'homing', 'beams', 'wall'], ['beams', 'spiral', 'beams', 'homing']][p]! as Pattern[];
+      case 'kilnmother':
+        return [['volley', 'rain', 'ring', 'summon'], ['rain', 'mines', 'spiral', 'volley'], ['rain', 'wall', 'homing', 'ring'], ['nova', 'rain', 'spiral', 'wall']][p]! as Pattern[];
+      case 'horizoneater':
+        return [['ring', 'pull', 'spiral', 'homing'], ['pull', 'nova', 'wall', 'ring'], ['spiral', 'pull', 'homing', 'nova'], ['nova', 'pull', 'wall', 'spiral']][p]! as Pattern[];
+      case 'quasarregent':
+        return [['beams', 'volley', 'beams', 'summon'], ['cross', 'homing', 'beams', 'ring'], ['beams', 'cross', 'spiral', 'wall'], ['cross', 'beams', 'nova', 'homing']][p]! as Pattern[];
+      case 'ironmagnetar':
+        return [['volley', 'charge', 'mines', 'ring'], ['wall', 'charge', 'spiral', 'mines'], ['charge', 'homing', 'wall', 'nova'], ['nova', 'charge', 'wall', 'spiral']][p]! as Pattern[];
+      case 'endlessnight':
+        return [['clones', 'spiral', 'ring', 'homing'], ['wall', 'clones', 'nova', 'pull'], ['nova', 'spiral', 'homing', 'cross', 'wall'], ['clones', 'nova', 'wall', 'rain', 'spiral', 'pull']][p]! as Pattern[];
       default:
         return [['summon', 'pull', 'ring', 'volley'], ['wall', 'homing', 'pull', 'summon'], ['spiral', 'homing', 'wall', 'charge']][p]! as Pattern[];
     }
@@ -202,6 +266,18 @@ export class BossController {
       case 'pulsarheart':
         this.beams[e.partIndex]!.on = false;
         break;
+      case 'kilnmother':
+      case 'ironmagnetar':
+        // every kiln / shell plate broken cools or bares the heart further
+        this.core.dmgTaken = Math.max(this.core.dmgTaken, (this.id === 'kilnmother' ? 0.2 : 0.15) + 0.85 * (1 - alive / total));
+        break;
+      case 'horizoneater':
+        if (alive <= 2) this.core.invuln = false;
+        break;
+      case 'quasarregent':
+        if (e.partIndex < 2) this.beams[e.partIndex]!.on = false;
+        else this.core.dmgTaken = Math.min(1, this.core.dmgTaken + 0.1);
+        break;
     }
     w.explode(e.pos.x, e.pos.y, e.pos.z, 10, 0, -1, { color: [1, 0.7, 0.4] });
   }
@@ -243,7 +319,8 @@ export class BossController {
     if (this.intro > 0) this.intro -= dt;
     // phase transitions
     const frac = core.hp / core.maxHp;
-    const want = frac < 0.33 ? 2 : frac < 0.66 ? 1 : 0;
+    const deep = DEEP.has(this.id);
+    const want = deep ? (frac < 0.25 ? 3 : frac < 0.5 ? 2 : frac < 0.75 ? 1 : 0) : frac < 0.33 ? 2 : frac < 0.66 ? 1 : 0;
     if (want > this.phase) {
       this.phase = want;
       this.patternIdx = 0;
@@ -255,6 +332,8 @@ export class BossController {
       w.telegraphs.length = 0;
       ringBurst(w, core.pos.x, core.pos.y, core.pos.z, 18, 30, 8, 1, 0, _c.set(0, 1, 0));
       if (this.id === 'lastdark') this.hush = this.phase === 1 ? 0.85 : 0.35;
+      if (this.id === 'endlessnight') this.hush = this.phase === 2 ? 0.9 : this.phase === 3 ? 0.2 : 0.5;
+      if (this.id === 'quasarregent' && this.phase >= 2) this.beams.push({ dir: new Vector3(1, 0, 0), rate: -0.5, len: 240, width: 2.4, on: false, warm: 0 });
       if (this.id === 'pulsarheart' && this.phase === 2) {
         this.beams.push({ dir: new Vector3(0, 0, 1), rate: -0.6, len: 220, width: 2.2, on: false, warm: 0 });
         this.beams.push({ dir: new Vector3(0, 0, -1), rate: -0.6, len: 220, width: 2.2, on: false, warm: 0 });
@@ -272,7 +351,13 @@ export class BossController {
     _a.multiplyScalar(1 / dist);
     const speedMul = 1 + this.phase * 0.25;
     if (this.active !== 'charge') {
-      if (this.id === 'leviathan') {
+      if (this.id === 'horizoneater') {
+        // it IS the black hole: it holds the centre and drags you in
+        core.vel.lerp(_b.copy(core.pos).multiplyScalar(-1), Math.min(1, dt));
+        _c.copy(core.pos).sub(pl.pos);
+        const l = _c.length() || 1;
+        pl.vel.addScaledVector(_c, ((8 + this.phase * 4) * dt) / l);
+      } else if (this.id === 'leviathan') {
         this.orbitA += dt * (0.35 + this.phase * 0.12);
         const r = 85;
         _b.set(Math.cos(this.orbitA) * r, Math.sin(this.orbitA * 1.7) * 25, Math.sin(this.orbitA) * r);
@@ -280,7 +365,7 @@ export class BossController {
         core.vel.lerp(_c.multiplyScalar(1.4), Math.min(1, dt * 2));
       } else {
         // hover at preferred range, slow orbit
-        const pref = this.id === 'pulsarheart' ? 70 : 55;
+        const pref = this.id === 'pulsarheart' || this.id === 'quasarregent' ? 70 : this.id === 'kilnmother' ? 60 : 55;
         const radial = dist > pref + 15 ? 1 : dist < pref - 10 ? -1 : 0;
         _b.crossVectors(_a, UP).normalize();
         _c.copy(_a).multiplyScalar(radial * 14 * speedMul).addScaledVector(_b, 6 * speedMul);
@@ -356,13 +441,16 @@ export class BossController {
       if (this.id === 'foreman' && p.partIndex < 4) {
         _a.applyAxisAngle(AX_Z, this.spin * 2);
         _a.applyQuaternion(core.quat);
-      } else if (this.id === 'glasschoir' || this.id === 'lastdark') {
+      } else if (this.id === 'glasschoir' || this.id === 'lastdark' || this.id === 'kilnmother' || this.id === 'horizoneater' || this.id === 'endlessnight' || (this.id === 'quasarregent' && p.partIndex >= 2)) {
         _a.applyQuaternion(_q);
         _a.y += Math.sin(w.time * 1.5 + p.partIndex) * 3;
-      } else if (this.id === 'pulsarheart') {
+      } else if (this.id === 'ironmagnetar') {
+        // shells turn on alternating axes like a gimbal
+        _a.applyAxisAngle(p.partIndex % 2 ? UP : AX_Z, this.spin * (1 + Math.floor(p.partIndex / 6) * 0.4) * (p.partIndex % 2 ? 1 : -1));
+      } else if (this.id === 'pulsarheart' || this.id === 'quasarregent') {
         // emitters ride the beam directions
         const b = this.beams[p.partIndex];
-        if (b) _a.copy(b.dir).multiplyScalar(14);
+        if (b) _a.copy(b.dir).multiplyScalar(this.id === 'quasarregent' ? 15 : 14);
       } else _a.applyQuaternion(core.quat);
       p.pos.copy(core.pos).add(_a);
       _b.copy(w.player.pos).sub(p.pos);
@@ -484,7 +572,7 @@ export class BossController {
       }
       case 'summon': {
         if (t > 0.8) {
-          const pool = this.id === 'foreman' ? 'scrapper' : this.id === 'leviathan' ? 'gloom' : this.id === 'glasschoir' ? 'shardling' : this.id === 'pulsarheart' ? 'seraph' : 'moteeater';
+          const pool = ({ foreman: 'scrapper', leviathan: 'gloom', glasschoir: 'shardling', pulsarheart: 'seraph', kilnmother: 'cutter', quasarregent: 'cantor' } as Record<string, string>)[this.id] ?? 'moteeater';
           const n = (pool === 'seraph' || pool === 'gloom' ? 3 : 8) + ph * 2;
           if (w.liveEnemyCount() < 60) {
             for (let i = 0; i < n; i++) {
@@ -547,6 +635,67 @@ export class BossController {
         }
         break;
       }
+      case 'rain': {
+        // slag falls around you from above: read the shadows (telegraph rings) and keep moving
+        if (t > 0.2 && t < 3.2 && Math.floor(t * 10) !== Math.floor((t - dt) * 10)) {
+          for (let k = 0; k < 2 + ph; k++) {
+            const x = pl.pos.x + pl.vel.x * 0.8 + w.rng.range(-26, 26);
+            const z = pl.pos.z + pl.vel.z * 0.8 + w.rng.range(-26, 26);
+            const y = pl.pos.y + w.rng.range(-6, 6);
+            w.spawnEnemyShot(x, y + 46, z, 0, -38, 0, 11, 1, 1.1, 2);
+          }
+        }
+        if (t >= 3.4) this.end(1.6);
+        break;
+      }
+      case 'nova': {
+        // three staggered double rings in different planes
+        for (const at of [0.7, 1.15, 1.6]) {
+          if (t >= at && t - dt < at) {
+            const k = Math.round((at - 0.7) / 0.45);
+            _c.set(Math.sin(k * 1.7), 1, Math.cos(k * 1.3)).normalize();
+            ringBurst(w, core.pos.x, core.pos.y, core.pos.z, 26 + ph * 4, 30 + k * 4, 11, 1, this.spin + k, _c);
+            ringBurst(w, core.pos.x, core.pos.y, core.pos.z, 18 + ph * 2, 22 + k * 3, 11, 2, this.spin - k, _b.set(1, 0, 0));
+            w.events.emit('explosion', { x: core.pos.x, y: core.pos.y, z: core.pos.z, radius: 14, r: 1, g: 0.8, b: 0.6, enemy: true });
+          }
+        }
+        if (t > 2.2) this.end(1.8);
+        break;
+      }
+      case 'cross': {
+        // four beams in a turning cross; one gap per quarter turn
+        const len = 220;
+        if (t < 1.2) {
+          for (let k = 0; k < 4; k++) {
+            _b.copy(this.chargeDir).applyAxisAngle(this.sweepAxis, (k * Math.PI) / 2);
+            w.telegraphs.push({ kind: 'line', ax: core.pos.x, ay: core.pos.y, az: core.pos.z, bx: core.pos.x + _b.x * len, by: core.pos.y + _b.y * len, bz: core.pos.z + _b.z * len, radius: 2.2, t: (t / 1.2) * 0.98, dur: 1, owner: core.id });
+          }
+        } else if (t < 4.6) {
+          this.chargeDir.applyAxisAngle(this.sweepAxis, dt * (0.55 + ph * 0.12));
+          for (let k = 0; k < 4; k++) {
+            _b.copy(this.chargeDir).applyAxisAngle(this.sweepAxis, (k * Math.PI) / 2);
+            w.beams.push({ ax: core.pos.x, ay: core.pos.y, az: core.pos.z, bx: core.pos.x + _b.x * len, by: core.pos.y + _b.y * len, bz: core.pos.z + _b.z * len, width: 2.2, r: 0.7, g: 0.8, b: 1.2, enemy: true });
+            const tt = raySphere(core.pos.x, core.pos.y, core.pos.z, _b.x, _b.y, _b.z, pl.pos.x, pl.pos.y, pl.pos.z, pl.radius + 1.1);
+            if (tt >= 0 && tt < len) w.hurtPlayerBeam(16, this.def.name + ' crossfire', core);
+          }
+        } else this.end(1.6);
+        break;
+      }
+      case 'clones': {
+        // the Night wears the masks of what you have killed: rare and unique elites step out
+        if (t > 0.9) {
+          if (w.liveEnemyCount() < 40) {
+            const pool = ['gunship', 'seraph', 'umbra', 'cantor', 'bulwark', 'hymnlancer', 'eclipse', 'cutter'];
+            for (let i = 0; i < 2 + (ph >= 2 ? 1 : 0); i++) {
+              _b.set(w.rng.range(-1, 1), w.rng.range(-0.4, 0.4), w.rng.range(-1, 1)).normalize().multiplyScalar(core.radius + 8);
+              const e = w.spawnEnemy(w.rng.pick(pool), core.pos.x + _b.x, core.pos.y + _b.y, core.pos.z + _b.z, w.rng.chance(0.2 + ph * 0.1) ? 3 : 2);
+              e.spawnT = 0.4;
+            }
+          }
+          this.end(2.6);
+        }
+        break;
+      }
       case 'mines': {
         for (let i = 0; i < 10; i++) w.spawnEnemyShot(pl.pos.x + w.rng.range(-30, 30), pl.pos.y + w.rng.range(-15, 15), pl.pos.z + w.rng.range(-30, 30), 0, 0, 0, 14, 4, 1.2, 9);
         this.end(2);
@@ -582,6 +731,22 @@ export class BossController {
         break;
       case 'pull':
         w.addTelegraph({ kind: 'ring', ax: pl.pos.x, ay: pl.pos.y, az: pl.pos.z, bx: 0, by: 1, bz: 0, radius: 12, dur: 0.8, owner: core.id });
+        break;
+      case 'rain':
+        w.addTelegraph({ kind: 'ring', ax: pl.pos.x, ay: pl.pos.y, az: pl.pos.z, bx: 0, by: 1, bz: 0, radius: 26, dur: 0.6, owner: core.id });
+        core.emissive = 1;
+        break;
+      case 'nova':
+        w.addTelegraph({ kind: 'sphere', ax: core.pos.x, ay: core.pos.y, az: core.pos.z, bx: 0, by: 0, bz: 0, radius: core.radius * 3, dur: 0.7, owner: core.id });
+        core.emissive = 1;
+        break;
+      case 'cross':
+        this.chargeDir.copy(pl.pos).sub(core.pos).normalize().applyAxisAngle(UP, Math.PI / 4);
+        this.sweepAxis.copy(pl.pos).sub(core.pos).cross(this.chargeDir).normalize();
+        if (this.sweepAxis.lengthSq() < 0.5) this.sweepAxis.copy(UP);
+        break;
+      case 'clones':
+        w.addTelegraph({ kind: 'ring', ax: core.pos.x, ay: core.pos.y, az: core.pos.z, bx: 0, by: 1, bz: 0, radius: core.radius * 3.5, dur: 0.9, owner: core.id });
         break;
       case 'beams':
         for (const b of this.beams) {

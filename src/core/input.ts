@@ -66,7 +66,42 @@ export const DEFAULT_BINDINGS: Bindings = {
   cancel: ['Escape', 'Backspace', 'Pad1'],
 };
 
+/** One gamepad's state (Player 2 in local co-op). */
+export class PadState {
+  lx = 0;
+  ly = 0;
+  rx = 0;
+  ry = 0;
+  now: boolean[] = [];
+  prev: boolean[] = [];
+  read(pad: Gamepad): void {
+    const dz = (v: number) => (Math.abs(v) < 0.15 ? 0 : Math.sign(v) * ((Math.abs(v) - 0.15) / 0.85));
+    this.lx = dz(pad.axes[0] ?? 0);
+    this.ly = dz(pad.axes[1] ?? 0);
+    const rx = pad.axes[2] ?? 0;
+    const ry = pad.axes[3] ?? 0;
+    const rm = Math.hypot(rx, ry);
+    const rk = rm < 0.2 ? 0 : (rm - 0.2) / 0.8 / rm;
+    this.rx = rx * rk;
+    this.ry = ry * rk;
+    this.prev = this.now;
+    this.now = pad.buttons.map((b) => b.pressed || b.value > 0.4);
+  }
+  held(i: number): boolean {
+    return !!this.now[i];
+  }
+  pressed(i: number): boolean {
+    return !!this.now[i] && !this.prev[i];
+  }
+}
+
 export class Input {
+  /** local co-op: the gamepad Player 2 flies with, and a fresh join request */
+  p2Index: number | null = null;
+  readonly p2 = new PadState();
+  joinRequest: number | null = null;
+  p2Lost = false;
+  private startPrev = new Map<number, boolean>();
   bindings: Bindings = structuredClone(DEFAULT_BINDINGS);
   private down = new Set<string>();
   private pressedThisFrame = new Set<string>();
@@ -171,7 +206,8 @@ export class Input {
   poll(): void {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let pad: Gamepad | null = null;
-    for (const p of pads) if (p && p.connected) pad = p;
+    // Player 1 never reads Player 2's controller
+    for (const p of pads) if (p && p.connected && p.index !== this.p2Index) pad = p;
     this.padConnected = !!pad;
     this.padPrev = pad?.index === this.padIndex ? this.padNow : [];
     if (pad?.index !== this.padIndex) this.suppressedPadButtons.clear();
@@ -212,6 +248,43 @@ export class Input {
     } else {
       this.padLX = this.padLY = this.padRX = this.padRY = 0;
     }
+    this.pollP2(pads);
+  }
+
+  /** Track Player 2's pad; any other pad pressing Start asks to join. */
+  private pollP2(pads: (Gamepad | null)[]): void {
+    this.joinRequest = null;
+    if (this.p2Index !== null) {
+      const p = pads[this.p2Index];
+      if (!p || !p.connected) this.p2Lost = true;
+      else this.p2.read(p);
+      return;
+    }
+    for (const p of pads) {
+      if (!p || !p.connected) continue;
+      const start = !!(p.buttons[9]?.pressed);
+      const was = this.startPrev.get(p.index) ?? false;
+      this.startPrev.set(p.index, start);
+      if (!start || was) continue;
+      // a pad Player 1 is actively flying with pauses instead of joining
+      const p1sPad = p.index === this.padIndex && this.lastDevice === 'pad';
+      if (p1sPad) continue;
+      this.joinRequest = p.index;
+      if (p.index === this.padIndex) this.suppressedPadButtons.add(9);
+    }
+  }
+
+  assignP2(index: number | null): void {
+    this.p2Index = index;
+    this.p2Lost = false;
+    this.p2.now = [];
+    this.p2.prev = [];
+  }
+
+  /** Button index of an action's pad binding (for Player 2, who shares P1's pad layout). */
+  padButton(a: Action): number {
+    const code = this.bindings[a].find((c) => c.startsWith('Pad'));
+    return code ? Number(code.slice(3)) : -1;
   }
 
   private padHeld(i: number): boolean {

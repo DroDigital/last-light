@@ -207,8 +207,31 @@ const CURSES: UpgradeDef[] = [
   curse('c_fuse', 'Short Fuse', 'Flare is half as long but fills twice as fast.', [{ s: 'flareDur', mul: 0.5 }, { s: 'flareGain', mul: 2 }]),
 ];
 
+/** Expansion: more ways to shape a build (ship systems, abilities, luck, niche weapon mods). */
+const EXPANSION: TierSpec[] = [
+  { id: 'longsight', name: 'Long Sights', tags: ['speed'], values: [0.2, 0.35, 0.5], desc: (v) => `+${pct(v)} beam and rail range, +${pct(v / 2)} projectile speed.`, mods: (v) => [{ s: 'range', mul: 1 + v }, { s: 'speed', mul: 1 + v / 2 }], visual: 'trail' },
+  { id: 'volley', name: 'Volley Loader', tags: ['ordnance'], requires: ['ordnance'], rarityStart: 1, values: [1, 2], desc: (v) => `Ordnance fires ${v} more projectile${v > 1 ? 's' : ''}.`, mods: (v) => [{ s: 'count', add: v, tag: 'ordnance' }], visual: 'projectile' },
+  { id: 'capacitorbank', name: 'Capacitor Bank', tags: ['energy'], requires: ['energy'], values: [0.15, 0.25, 0.4], desc: (v) => `Energy weapons fire ${pct(v)} faster.`, mods: (v) => [{ s: 'rate', mul: 1 + v, tag: 'energy' }], visual: 'ship' },
+  { id: 'phaseplating', name: 'Phase Plating', tags: ['dodge'], values: [0.25, 0.5], desc: (v) => `Dodge invulnerability lasts ${pct(v)} longer.`, mods: (v) => [{ s: 'iframes', mul: 1 + v }], visual: 'ship' },
+  { id: 'afterburn', name: 'Afterburners', tags: ['boost'], values: [0.25, 0.45], desc: (v) => `+${pct(v)} boost capacity and recharge.`, mods: (v) => [{ s: 'boost', mul: 1 + v }, { s: 'boostRegen', mul: 1 + v }], visual: 'trail' },
+  { id: 'fortune', name: 'Fortune Engine', tags: ['magnet'], values: [1, 2, 3], desc: (v) => `+${v} Luck: better drafts and more drops.`, mods: (v) => [{ s: 'luck', add: v }], visual: 'hud' },
+  { id: 'prospector', name: 'Prospector', tags: ['light'], values: [0.12, 0.2, 0.3], desc: (v) => `+${pct(v)} Light from every mote.`, mods: (v) => [{ s: 'lightGain', mul: 1 + v }], visual: 'hud' },
+  { id: 'reactive', name: 'Reactive Armor', tags: ['hull'], rarityStart: 1, values: [0.08, 0.14, 0.2], desc: (v) => `Take ${pct(v)} less damage.`, mods: (v) => [{ s: 'damageTaken', mul: 1 - v }], visual: 'ship' },
+  { id: 'phasecells', name: 'Phase Cells', tags: ['dodge'], values: [0.2, 0.35], desc: (v) => `Dodges recharge ${pct(v)} faster.`, mods: (v) => [{ s: 'dodgeCd', mul: 1 - v }], visual: 'ship' },
+  { id: 'flarereactor', name: 'Flare Reactor', tags: ['flare'], values: [0.2, 0.4, 0.6], desc: (v) => `Lumen fills ${pct(v)} faster.`, mods: (v) => [{ s: 'flareGain', mul: 1 + v }], visual: 'aura' },
+  { id: 'grazeweave', name: 'Graze Weave', tags: ['graze'], values: [0.25, 0.5], desc: (v) => `+${pct(v)} graze radius and graze rewards.`, mods: (v) => [{ s: 'grazeRadius', mul: 1 + v }, { s: 'grazeGain', mul: 1 + v }], visual: 'aura' },
+  { id: 'abilitycore', name: 'Ability Core', tags: [], values: [0.15, 0.28, 0.4], desc: (v) => `Shockwave and Stasis recharge ${pct(v)} faster.`, mods: (v) => [{ s: 'abilityCd', mul: 1 - v }], visual: 'hud' },
+  { id: 'concussive', name: 'Concussive Field', tags: ['area'], values: [0.3, 0.6], desc: (v) => `Shockwave is ${pct(v)} bigger and harder.`, mods: (v) => [{ s: 'shockwave', mul: 1 + v }], visual: 'aura' },
+  { id: 'chrono', name: 'Chrono Field', tags: [], values: [0.25, 0.5], desc: (v) => `Stasis covers ${pct(v)} more space.`, mods: (v) => [{ s: 'stasis', mul: 1 + v }], visual: 'aura' },
+  { id: 'deadeye', name: 'Deadeye', tags: ['crit'], rarityStart: 1, values: [0.04, 0.07, 0.1], desc: (v) => `+${pct(v)} crit chance and +${pct(v * 4)} crit damage.`, mods: (v) => [{ s: 'crit', add: v }, { s: 'critMul', add: v * 4 }], visual: 'projectile' },
+  { id: 'conduit', name: 'Elemental Conduit', tags: ['burn', 'cryo', 'shock'], rarityStart: 2, values: [0.06, 0.1], desc: (v) => `+${pct(v)} chance to burn, chill and shock on every hit.`, mods: (v) => [{ s: 'burn', add: v }, { s: 'cryo', add: v }, { s: 'shock', add: v }], visual: 'projectile' },
+  { id: 'uplink', name: 'Drone Uplink', tags: ['drone'], requires: ['drone'], values: [0.25, 0.4], desc: (v) => `Drones deal ${pct(v)} more damage and fire ${pct(v / 2)} faster.`, mods: (v) => [{ s: 'damage', mul: 1 + v, tag: 'drone' }, { s: 'rate', mul: 1 + v / 2, tag: 'drone' }], visual: 'drone' },
+  { id: 'scavenger', name: 'Scavenger Protocols', tags: ['hull'], values: [0.15, 0.3], desc: (v) => `Hull regenerates ${v} per second.`, mods: (v) => [{ s: 'regen', add: v }], visual: 'ship' },
+];
+
 export const UPGRADES: UpgradeDef[] = [
   ...WEAPON_MODS.flatMap(tiers),
+  ...EXPANSION.flatMap(tiers),
   ...MASTERY.flatMap(tiers),
   ...ELEMENT_TIERS.flatMap(tiers),
   ...SHIP.flatMap(tiers),
@@ -239,6 +262,12 @@ export const SYNERGIES: SynergyDef[] = [
   { id: 'kinetic_orbit', name: 'Gravity Slingshot', desc: 'Orbiting weapons deal +50% damage.', needs: { orbit: 2 }, mods: [{ s: 'damage', mul: 1.5, tag: 'orbit' }], kind: 'synergy' },
   { id: 'overdrive', name: 'Overdrive Loop', desc: 'Flare also doubles projectile count.', needs: { flare: 3 }, flags: ['overdrive'], kind: 'synergy' },
   { id: 'prismatic', name: 'Prismatic Split', desc: 'Split fragments inherit full damage.', needs: { split: 3 }, flags: ['prismatic'], kind: 'synergy' },
+  { id: 'velocity', name: 'Velocity Theory', desc: 'Fast ships hit harder: +12% damage.', needs: { speed: 2, boost: 1 }, mods: [{ s: 'globalDamage', mul: 1.12 }], kind: 'synergy' },
+  { id: 'goldenhour', name: 'Golden Hour', desc: 'Light seekers find more: +2 Luck.', needs: { magnet: 2, light: 1 }, mods: [{ s: 'luck', add: 2 }], kind: 'synergy' },
+  { id: 'thermal', name: 'Thermal Lance', desc: 'Energy weapons deal +20% damage when you also burn.', needs: { burn: 2, energy: 2 }, mods: [{ s: 'damage', mul: 1.2, tag: 'energy' }], kind: 'synergy' },
+  { id: 'longshot', name: 'Longshot', desc: 'Piercing shots crit for +50% more.', needs: { pierce: 2, crit: 1 }, mods: [{ s: 'critMul', add: 0.5, tag: 'pierce' }], kind: 'synergy' },
+  { id: 'siege', name: 'Siege Line', desc: 'Ordnance: +25% blast radius, +10% damage.', needs: { ordnance: 3 }, mods: [{ s: 'explode', mul: 1.25, tag: 'ordnance' }, { s: 'damage', mul: 1.1, tag: 'ordnance' }], kind: 'synergy' },
+  { id: 'phalanx', name: 'Phalanx', desc: 'Hull and shield together: take 15% less damage.', needs: { hull: 2, shield: 2 }, mods: [{ s: 'damageTaken', mul: 0.85 }], kind: 'synergy' },
   // Reactions: always active; discovered when first triggered.
   { id: 'r_shatter', name: 'Shatter', desc: 'Kinetic hits on frozen enemies shatter them for +150% damage and shards.', needs: {}, kind: 'reaction' },
   { id: 'r_overload', name: 'Overload', desc: 'Shock on a burning enemy triggers an overload explosion.', needs: {}, kind: 'reaction' },

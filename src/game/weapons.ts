@@ -427,6 +427,38 @@ export function updateWeapons(w: World, c: Controls, dt: number): void {
   updateDrones(w, dt, combat);
 }
 
+/**
+ * Player 2's guns (local co-op). `w.player` is P2 here. The build's primary and
+ * secondary are shared, so P2 keeps its own cooldowns in `w.p2Cd`.
+ */
+export function updateWingWeapons(w: World, c: Controls, dt: number): void {
+  const pl = w.player;
+  if (!pl.alive) return;
+  computeAim(w);
+  const flareRate = pl.flareT > 0 ? 2 : 1;
+  const run = (wi: WeaponInstance, key: 'primary' | 'secondary', held: boolean, secondary: boolean) => {
+    const keep = wi.cd;
+    wi.cd = w.p2Cd[key] - dt;
+    if (held) {
+      if (wi.def.behavior === 'beam') {
+        const tick = wi.cd <= 0;
+        if (tick) wi.cd += 1 / (wi.params.rate * flareRate);
+        fireBeam(w, wi, secondary, tick);
+        if (wi.cd < -0.1) wi.cd = 0;
+      } else if (wi.cd <= 0) {
+        fireWeapon(w, wi, secondary);
+        wi.cd = secondary ? 1 / (wi.params.rate * (flareRate > 1 ? 1.5 : 1)) : wi.cd + 1 / (wi.params.rate * flareRate);
+        if (wi.cd < -0.05) wi.cd = 0;
+        pl.recoil = Math.min(1, pl.recoil + (secondary ? 0.3 : (wi.def.recoil ?? 0.05) * 4));
+      }
+    } else if (wi.cd < 0) wi.cd = 0;
+    w.p2Cd[key] = wi.cd;
+    wi.cd = keep;
+  };
+  run(w.build.primary, 'primary', c.fire1, false);
+  run(w.build.secondary, 'secondary', c.fire2, true);
+}
+
 /** World positions of halo blades this tick (for rendering). */
 export function haloPositions(w: World, sys: WeaponInstance, time: number, out: Vector3[]): number {
   const p = sys.params;

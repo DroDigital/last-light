@@ -1,6 +1,10 @@
 import * as THREE from 'three';
+import { AFFIX_BY_ID, RARITY, rankLabel } from '../data/affixes';
+import { DROP_INFO } from '../data/drops';
+import { subtypeName } from '../data/subtypes';
+import { HAZARD_INFO } from '../game/hazards';
 import type { Game, State } from '../game/game';
-import type { World } from '../game/world';
+import { World } from '../game/world';
 import { PALETTES } from '../data/palettes';
 import { fmtInt, clamp } from '../core/math';
 import { esc } from './ui';
@@ -18,6 +22,7 @@ export class Hud {
   private refs: Record<string, HTMLElement> = {};
   private perfEl: HTMLElement;
   private debugEl: HTMLElement;
+  private lastBank = -1;
   private lastLight = 0;
   private miniMap = false;
   private t = 0;
@@ -54,6 +59,13 @@ export class Hud {
   }
 
   setMode(s: State): void {
+    // the 2D HUD only belongs to flight; menus never show a stale frame of it
+    const flight = s === 'combat' || s === 'pause' || s === 'warp';
+    this.canvas.style.visibility = flight || s === 'map' ? 'visible' : 'hidden';
+    if (!flight) {
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
     if (s === 'combat' || s === 'pause') this.buildCombatHud();
     else if (s !== 'warp') {
       this.el.innerHTML = '';
@@ -71,7 +83,7 @@ export class Hud {
     this.el.innerHTML = `${scan}<div class="brackets"><i></i><i></i><i></i><i></i></div>
       <div class="tl"><div class="display" data-r="sector" style="font-size:var(--s3)"></div><span class="sigbar" style="width:48px"></span><div class="readout" data-r="enc"></div><div class="readout" data-r="coords" style="margin-top:4px;opacity:.6"></div></div>
       <div class="tc"><div data-r="boss" class="bossbar" style="display:none"><div class="name" data-r="bossname"></div><div class="bar"><b data-r="bossghost"></b><i data-r="bosshp"></i></div><div class="dim" data-r="bossphase"></div></div></div>
-      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
+      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="bank" data-r="bank"></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
       <div class="bl">
         <div class="label"><span>Hull</span><b data-r="hullt"></b></div><div class="bar hull"><b data-r="hullghost"></b><i data-r="hull"></i></div>
         <div class="label"><span>Shield</span><b data-r="shieldt"></b></div><div class="bar shield"><i data-r="shield"></i></div>
@@ -161,6 +173,15 @@ export class Hud {
     }
     r.boost!.style.width = `${pl.boostEnergy * 100}%`;
     r.kills!.textContent = String(w.stats.kills).padStart(3, '0');
+    // banked drafts from drops
+    const bk = w.bank;
+    const bankKey = bk.shard * 10000 + bk.prism * 100 + bk.cache;
+    if (bankKey !== this.lastBank && r.bank) {
+      this.lastBank = bankKey;
+      r.bank.innerHTML = bankKey
+        ? (['shard', 'prism', 'cache'] as const).filter((k) => bk[k] > 0).map((k) => `<span style="--dc:${DROP_INFO[k].color}">${DROP_INFO[k].name} ×${bk[k]}</span>`).join('')
+        : '';
+    }
     r.coords!.textContent = `[ x ${pl.pos.x.toFixed(1).padStart(6)}  y ${pl.pos.y.toFixed(1).padStart(6)}  z ${pl.pos.z.toFixed(1).padStart(6)} ]  T+${String(Math.floor(w.time / 60)).padStart(2, '0')}:${String(Math.floor(w.time % 60)).padStart(2, '0')}`;
     const s = w.build.ship;
     r.cddodge!.style.height = pl.dodgeCharges >= s.dodges ? '0%' : `${(1 - pl.dodgeRecharge / s.dodgeCd) * 100}%`;
@@ -181,7 +202,7 @@ export class Hud {
       if (run) {
         r.sector!.textContent = run.endless ? 'SECTOR ∞ — BEYOND' : `SECTOR ${String(run.sector + 1).padStart(2, '0')} — ${SECTORS[run.sector]!.name.replace(/^[IVX]+ · /, '')}`;
         const dir = g.director;
-        r.enc!.textContent = dir ? (dir.kind === 'derelict' ? `Relight the beacons · ${dir.beacons.filter((b) => b.lit).length}/3` : dir.kind === 'endless' ? `Wave ${dir.endlessWave + 1}` : `${dir.kind.toUpperCase()} · ${w.liveEnemyCount()} hostiles`) : '';
+        r.enc!.textContent = dir ? (dir.kind === 'derelict' ? `Relight the beacons · ${dir.beacons.filter((b) => b.lit).length}/3` : dir.kind === 'endless' ? `Wave ${dir.endlessWave + 1}` : `${dir.kind.toUpperCase()} · ${w.liveEnemyCount()} hostiles${dir.hazard ? ' · ' + HAZARD_INFO[dir.hazard.kind].name.toUpperCase() : ''}`) : '';
       }
     }
     // boss
@@ -217,6 +238,68 @@ export class Hud {
     this.el.classList.toggle('cockpit', g.camMode === 'cockpit');
   }
 
+  /** Local co-op overlay: P2's plate, an edge arrow when off-screen, the downed banner, the join hint. */
+  private drawCoop(w: World, W: number, H: number): void {
+    const c = this.ctx;
+    const p2 = w.player2;
+    c.textAlign = 'center';
+    if (!p2) {
+      if (this.g.input.padConnected && this.g.input.lastDevice === 'kbm') {
+        c.font = '400 10px "JetBrains Mono"';
+        c.fillStyle = 'rgba(127,224,168,0.7)';
+        c.fillText('P2 · PRESS START ON A CONTROLLER TO JOIN', W / 2, H - 16);
+      }
+      return;
+    }
+    const MINT = '#7fe0a8';
+    const p = this.project(p2.pos.x, p2.pos.y, p2.pos.z);
+    if (p.on) {
+      const bw = 40;
+      c.fillStyle = 'rgba(0,0,0,0.6)';
+      c.fillRect(p.x - bw / 2, p.y - 30, bw, 4);
+      c.fillRect(p.x - bw / 2, p.y - 25, bw, 2);
+      c.fillStyle = MINT;
+      c.fillRect(p.x - bw / 2, p.y - 30, bw * clamp(p2.hull / p2.maxHull, 0, 1), 4);
+      c.fillStyle = '#9adcf0';
+      c.fillRect(p.x - bw / 2, p.y - 25, bw * clamp(p2.shield / Math.max(1, p2.maxShield), 0, 1), 2);
+      c.font = '800 10px Archivo';
+      c.fillStyle = MINT;
+      c.fillText(p2.alive ? 'P2' : 'P2 · DOWN', p.x, p.y - 34);
+    } else {
+      // edge arrow toward P2
+      let dx = p.x - W / 2;
+      let dy = p.y - H / 2;
+      if (p.behind) {
+        dx = -dx;
+        dy = -dy;
+      }
+      const ang = Math.atan2(dy, dx);
+      const r = Math.min(W, H) / 2 - 40;
+      const ax = W / 2 + Math.cos(ang) * r;
+      const ay = H / 2 + Math.sin(ang) * r;
+      c.save();
+      c.translate(ax, ay);
+      c.rotate(ang);
+      c.fillStyle = MINT;
+      c.beginPath();
+      c.moveTo(10, 0);
+      c.lineTo(-6, -7);
+      c.lineTo(-6, 7);
+      c.closePath();
+      c.fill();
+      c.restore();
+      c.font = '800 10px Archivo';
+      c.fillText('P2', ax, ay - 12);
+    }
+    const downed = !w.p1.alive ? 'P1' : !p2.alive ? 'P2' : '';
+    if (downed) {
+      const k = Math.round((w.reviveT / World.REVIVE_TIME) * 100);
+      c.font = '900 13px Archivo';
+      c.fillStyle = Math.floor(this.t * 3) % 2 ? MINT : '#f3eee2';
+      c.fillText(`${downed} DOWN · ${downed === 'P1' ? 'P2' : 'P1'}: HOVER CLOSE TO REVIVE${k > 0 ? ` · ${k}%` : ''}`, W / 2, H * 0.3);
+    }
+  }
+
   private project(x: number, y: number, z: number): { x: number; y: number; on: boolean; behind: boolean } {
     const cam = this.g.view.camera;
     _v.set(x, y, z).project(cam);
@@ -232,6 +315,7 @@ export class Hud {
     const W = window.innerWidth;
     const H = window.innerHeight;
     const pl = w.player;
+    this.drawCoop(w, W, H);
     if (!pl.alive) return;
     // reticle at aim point
     const aimP = _w.copy(pl.pos).addScaledVector(pl.aimDir, 90);
@@ -333,13 +417,19 @@ export class Hud {
         const bw = 36;
         c.fillStyle = 'rgba(0,0,0,0.6)';
         c.fillRect(p.x - bw / 2, p.y - 26, bw, 4);
-        c.fillStyle = e.elite ? '#ffc24a' : '#ff8a6a';
+        const rc = e.rarity > 0 ? RARITY[e.rarity].color : '#ff8a6a';
+        c.fillStyle = rc;
         c.fillRect(p.x - bw / 2, p.y - 26, bw * clamp(e.hp / e.maxHp, 0, 1), 4);
-        if (e.elite) {
-          c.font = '600 10px Archivo';
+        if (e.rarity > 0) {
           c.textAlign = 'center';
-          c.fillStyle = '#ffc24a';
-          c.fillText(e.elite.toUpperCase(), p.x, p.y - 30);
+          c.font = '800 10px Archivo';
+          c.fillStyle = rc;
+          c.fillText(e.rarity === 3 ? e.rankName.toUpperCase() : `${RARITY[e.rarity].name.toUpperCase()} ${e.def.name.toUpperCase()}${e.subtype >= 0 ? ' · ' + subtypeName(e.def.id, e.subtype).toUpperCase() : ''}`, p.x, p.y - 42);
+          if (e.rarity < 3 || e.affixes.length) {
+            c.font = '400 9px "JetBrains Mono"';
+            c.fillStyle = 'rgba(243,238,226,0.8)';
+            c.fillText(e.affixes.map((a) => AFFIX_BY_ID[a].name).join(' · '), p.x, p.y - 30);
+          }
         }
       }
       if (p.on || drawn > 24) continue;
@@ -664,9 +754,15 @@ export class Hud {
       c.fillRect(tx, ty - 9, 2, 40);
       c.fillStyle = PAPER;
       c.font = '900 12px Archivo';
-      c.fillText(tgt.def.name.toUpperCase(), tx + 8, ty);
+      const stn = subtypeName(tgt.def.id, tgt.subtype);
+      c.fillText(tgt.def.name.toUpperCase() + (stn ? ' · ' + stn.toUpperCase() : ''), tx + 8, ty);
       c.font = '400 10px "JetBrains Mono"';
-      c.fillText(`TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.elite ? ' · ' + tgt.elite.toUpperCase() : ''}`, tx + 8, ty + 14);
+      c.fillText(`TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.rarity > 0 ? ' · ' + RARITY[tgt.rarity].name.toUpperCase() : ''}`, tx + 8, ty + 14);
+      if (tgt.rarity > 0) {
+        c.fillStyle = RARITY[tgt.rarity].color;
+        c.fillText(rankLabel(tgt).toUpperCase(), tx + 8, ty + 40);
+        c.fillStyle = PAPER;
+      }
       const hf = clamp(tgt.hp / tgt.maxHp, 0, 1);
       c.fillStyle = DIM;
       c.fillRect(tx + 8, ty + 24, 90, 3);

@@ -66,6 +66,8 @@ export interface SaveData {
   maxHeat: number;
   heatUnlocked: boolean;
   dailyBest: Record<string, number>;
+  /** best wave reached in Endless */
+  endlessBest: number;
   settings: Settings;
   tutorialDone: boolean;
   hearthLevel: number;
@@ -117,6 +119,7 @@ export function defaultSave(): SaveData {
     maxHeat: 0,
     heatUnlocked: false,
     dailyBest: {},
+    endlessBest: 0,
     settings: defaultSettings(),
     tutorialDone: false,
     hearthLevel: 0,

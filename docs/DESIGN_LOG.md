@@ -158,6 +158,34 @@ The style brief evolved into a fusion of three explored directions. Each owns on
   - **Wells and decoys:** wells get a dark singularity with a spinning accretion disc. Decoys are a flickering, half-dissolved ghost of the ship.
 - **HUD fix:** combat HUD marks (target brackets, beacon labels, threat arrows) could stay frozen on the Hearth after leaving a run. The HUD now resets its transform and clears its full backing store every frame. `node scripts/play.mjs <out> props` checks that the Hearth HUD canvas is empty.
 
+## Expansion: pacing, rarities, drops, move sets, the Deep, Endless, co-op
+
+- **Pacing:** sectors are 8 rows long (7 choice rows plus the boss), with a guaranteed shop, rest and elite. Fights get 6% tougher per row: budget and HP for the rank and file, half that in damage, and nothing extra for bosses. The map camera sits steeper and follows the current row.
+- **Rarities and affixes** (`data/affixes.ts`): Magic, Rare and Unique enemies carry 1, 2–3 and 3–4 affixes rolled from a 31-entry table. Stat affixes apply on spawn. Behaviour affixes hook into the world (damage, kill, hurt) and into `game/affixai.ts`, and every one telegraphs or shows on screen. Uniques get generated names. Odds rise with sector, Heat and encounter type.
+- **Drops** (`data/drops.ts`): each kill rolls every drop kind against its category (swarm, fighter, heavy, support, debris, part, boss), times rarity ×4/×10/×25, Gilded ×2 and Luck. Shards, prisms and caches are banked and paid out as a queue of extra drafts after the fight, so combat never pauses for a menu. Bosses always drop a prism and a cache, and Uniques always drop a shard. A boss core's staged death used to pay its loot twice; it now pays on the final kill only. Tuned to about 15 bonus drafts per run.
+- **Move sets** (`game/moves.ts`, `data/subtypes.ts`): 19 signature moves (dash, evade, flank, dive, retreat, blink, ram, burst, fan, feint, snipe, orb, spiral, ring, sweep, artillery, mines, call, bulwark). Every enemy type has 2–3 named variants with distinct move sets, rolled per spawn and gated by sector. Moves share the attack-token limit with the role AI, and their cooldowns are a balance lever.
+- **Act II, the Deep:** five sectors, five palettes with backdrop features, and five live hazards.
+
+  | Sector | Backdrop feature | Hazard |
+  | --- | --- | --- |
+  | VI · The Nebula Forge | gas pillars | ion storms |
+  | VII · Event Horizon | black hole and accretion disc | central gravity well |
+  | VIII · The Quasar Jets | twin jets | sweeping jets |
+  | IX · Shattered Magnetar | magnetic field lines | magnetic pulses |
+  | X · The Edge of Night | broken slivers | void rifts |
+
+  Hazards (`game/hazards.ts`) all telegraph, run at 60% pressure during the boss, and act on both co-op ships.
+- **The Deep's bosses:** Kiln Mother, Horizon Eater, Quasar Regent, Iron Magnetar and the Endless Night. All five fight in four phases and use the new patterns rain, nova, cross and clones (rare or unique elites).
+- **Content:** 44 weapons (+12), 213 upgrades (+41 in 18 families), 30 synergies (+6), 41 enemy types (+12 Deep enemies, each with variants).
+- **Endless:** a title-menu mode. Each wave is a finite fight that pays a draft. Every three waves the environment moves on through all ten sectors, and every fifth wave is a boss. The best wave is saved. Going Endless after a victory starts at wave 16 (wave 31 after Act II).
+- **Local co-op:** Player 2 drops in with START on a spare controller.
+  - **Sharing:** the build and the Light are shared; hull and shield are each ship's own.
+  - **Implementation:** the world points `player` at Player 2 while it updates P2's flight, P2's guns and the enemies that chose P2 (nearest living pilot). Projectiles, explosions, hazards, motes and drops check both ships.
+  - **Downed and revive:** a downed pilot is revived by the partner hovering close for 3 s, and the run ends only when both are down.
+  - **Camera and tether:** the camera stays rigid behind P1 and pulls back to keep P2 in frame, and a soft tether keeps the fight together.
+  - **Replays:** these record P1's controls only, so co-op fights are not replayable.
+- **Balance after the expansion** (headless bots, random picks, no meta): the "good" bot clears Act I about a third of the time and reaches the Deep. The "poor" bot dies in sectors 2–3. The god-mode autopilot full run reaches victory with boss fights of 50–190 s.
+
 ## Changes from the brief (and why)
 
 - **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.
@@ -170,6 +198,7 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 
 - **STATUS:** Visual verification has been done in headless SwiftShader (CPU WebGL) at 1280×720; real-GPU frame timing still needs measuring on Iris Xe-class hardware (see PERF.md).
 - **STATUS:** Destruction uses debris chunks with physics, not true Voronoi fracture. Bosses lose parts; heavy non-boss hulls break apart in two stages and die in secondary detonations.
-- **STATUS:** Replays record and play back bit-for-bit (tested), but there is no replay viewer UI yet.
+- **STATUS:** Replays record and play back bit-for-bit (tested) for solo fights, but there is no replay viewer UI yet. Co-op fights are not recorded.
+- **STATUS:** Act II difficulty is tuned against bots only; the Deep bosses need human playtesting.
 - **STATUS:** The WebGPU path is not implemented.
 - **STATUS:** Damage numbers and threat indicators draw on a 2D canvas; telegraphs and the readability layer are WebGL.

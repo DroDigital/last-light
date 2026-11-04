@@ -1,7 +1,9 @@
 import { Rng } from '../core/rng';
 import { BAL } from '../data/balance';
+import { Hazard } from './hazards';
 import { SECTORS, type SectorDef } from '../data/world';
-import { ENEMY_BY_ID, ELITE_MODS, type EliteMod } from '../data/enemies';
+import { ENEMY_BY_ID } from '../data/enemies';
+import { RARITY, rollRarity, type Rarity } from '../data/affixes';
 import type { World } from './world';
 import { Vector3 } from 'three';
 import { BossController } from './bosses';
@@ -40,19 +42,26 @@ export const NODE_INFO: Record<NodeType, { name: string; desc: string; icon: str
   boss: { name: 'Dying Star', desc: 'The sector boss guards the star.', icon: '☀' },
 };
 
-/** Deterministic branching map: 5 rows (4 choice rows + boss). */
+/**
+ * Deterministic branching map: MAP_ROWS rows (choice rows + the boss). Long
+ * enough that a build has room to come together before the star: about five
+ * fights, an elite, a shop and a rest on any path.
+ */
+export const MAP_ROWS = 8;
+const ROW_Z = 28;
 export function generateMap(seed: number, sector: number, opts: { rifts: boolean; heat: number }): SectorMap {
   const rng = new Rng(seed);
-  const rowsN = 5;
+  const rowsN = MAP_ROWS;
   const nodes: MapNode[] = [];
   let id = 0;
   const rowNodes: MapNode[][] = [];
-  const weights: Record<number, [NodeType, number][]> = {
-    0: [['combat', 1]],
-    1: [['combat', 4], ['event', 2.5], ['derelict', 1.5], ['shop', 1.5]],
-    2: [['elite', 2], ['shop', 2], ['forge', 1.5], ['event', 2], ['rest', 1], ['combat', 2], ...(opts.rifts ? ([['rift', 1.2]] as [NodeType, number][]) : [])],
-    3: [['combat', 3], ['rest', opts.heat >= 7 ? 0.8 : 2], ['shop', 1.5], ['elite', 1.5], ['derelict', 1], ['forge', 1]],
-  };
+  const rift = opts.rifts ? ([['rift', 1.2]] as [NodeType, number][]) : [];
+  const rest = opts.heat >= 7 ? 0.8 : 2;
+  // early rows teach and feed the build, the middle diversifies, the run-in to the star is dangerous
+  const early: [NodeType, number][] = [['combat', 4], ['event', 2], ['derelict', 1.2], ['shop', 1]];
+  const mid: [NodeType, number][] = [['combat', 3], ['elite', 1.6], ['shop', 1.6], ['forge', 1.3], ['event', 2], ['rest', 1], ['derelict', 1], ...rift];
+  const late: [NodeType, number][] = [['combat', 3], ['elite', 2], ['rest', rest], ['shop', 1.4], ['forge', 1], ['derelict', 1], ...rift];
+  const weights: Record<number, [NodeType, number][]> = { 0: [['combat', 1]], 1: early, 2: early, 3: mid, 4: mid, 5: late, 6: late };
   for (let r = 0; r < rowsN; r++) {
     const count = r === rowsN - 1 ? 1 : r === 0 ? 2 + rng.int(0, 1) : 2 + rng.int(0, 2);
     const row: MapNode[] = [];
@@ -66,7 +75,7 @@ export function generateMap(seed: number, sector: number, opts: { rifts: boolean
       const spread = count > 1 ? (c / (count - 1) - 0.5) * 2 : 0;
       const n: MapNode = {
         id: id++, row: r, col: c, type, links: [],
-        x: spread * 34 + rng.range(-4, 4), y: rng.range(-8, 8), z: -r * 26 + 40,
+        x: spread * 34 + rng.range(-4, 4), y: rng.range(-8, 8), z: -r * ROW_Z + 40,
         visited: false, seed: Math.floor(rng.next() * 1e9),
       };
       row.push(n);
@@ -74,8 +83,18 @@ export function generateMap(seed: number, sector: number, opts: { rifts: boolean
     }
     rowNodes.push(row);
   }
-  // guarantee at least one shop in rows 1-3
-  if (!nodes.some((n) => n.type === 'shop')) rowNodes[2]![0]!.type = 'shop';
+  // guarantees: a shop early-ish, a rest and an elite before the star
+  const kept = new Set<NodeType>();
+  const ensure = (t: NodeType, rows: number[]) => {
+    kept.add(t);
+    if (nodes.some((n) => n.type === t && rows.includes(n.row))) return;
+    // never overwrite another guaranteed node type
+    const pool = nodes.filter((n) => rows.includes(n.row) && !kept.has(n.type));
+    if (pool.length) pool[rng.int(0, pool.length - 1)]!.type = t;
+  };
+  ensure('shop', [2, 3, 4]);
+  ensure('rest', [5, 6]);
+  ensure('elite', [3, 4, 5]);
   // links: each node connects to the nearest 1-2 nodes in the next row; every node gets an incoming link.
   for (let r = 0; r < rowsN - 1; r++) {
     const a = rowNodes[r]!;
@@ -117,6 +136,7 @@ export class Director {
   done = false;
   cleared = false;
   elitesLeft = 0;
+  hazard: Hazard | null = null;
   wave = 0;
   private spawnCd = 1.5;
   private rng: Rng;
@@ -129,12 +149,17 @@ export class Director {
   private lastKills = 0;
   private noKillT = 0;
 
-  constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number) {
+  /**
+   * @param depth row of the sector map (0 = first jump). Fights get tougher row by
+   * row, so the long sectors keep pace with the build.
+   */
+  constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number, depth = 0) {
     this.kind = kind;
     this.sectorIdx = sectorIdx;
     this.sector = SECTORS[Math.min(sectorIdx, SECTORS.length - 1)]!;
     this.rng = new Rng(seed);
-    const base = BAL.budgetBase + sectorIdx * BAL.budgetPerSector;
+    const depthK = 1 + depth * BAL.perRow;
+    const base = (BAL.budgetBase + sectorIdx * BAL.budgetPerSector) * depthK;
     const heatMul = 1 + (heat >= 9 ? 0.25 : 0);
     this.budget = Math.round(
       {
@@ -152,9 +177,16 @@ export class Director {
     if (w.build.flags.has('hunted')) this.elitesLeft += 1;
     if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
     w.maxTokens = BAL.tokensBase + Math.floor(sectorIdx * BAL.tokensPerSector) + (kind === 'rift' ? 2 : 0);
-    w.sectorHpScale = 1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0);
-    w.sectorDmgScale = 1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0);
+    // bosses have their own HP multiplier and sector growth; row depth only scales the rank and file
+    w.sectorHpScale = (1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0)) * (kind === 'boss' ? 1 : depthK);
+    w.sectorIdx = sectorIdx;
+    w.sectorDmgScale = (1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0)) * (1 + depth * BAL.perRow * 0.5);
     this.dress();
+    // the Horizon Eater IS the gravity well; don't stack a second one under it
+    if (this.sector.hazard && kind !== 'tutorial' && !(kind === 'boss' && this.sector.hazard === 'gravity')) {
+      this.hazard = new Hazard(this.sector.hazard, kind === 'boss' ? 0.6 : 1, (x, y, z) => this.spawnRift(x, y, z));
+      w.hazard = this.hazard;
+    }
     if (kind === 'boss') {
       this.boss = new BossController(this.sector.boss, w, 1 + (heat >= 5 ? 0.25 : 0), this.sector.music.bpm);
       w.boss = this.boss;
@@ -204,7 +236,7 @@ export class Director {
     else if (frac < 0.65) k = 0.35; // breather
     else k = 1.25;
     const w = this.w;
-    const power = Math.max(0.7, Math.min(1.7, w.build.dpsEstimate() / this.expectedDps()));
+    const power = Math.max(0.7, Math.min(BAL.maxPower, w.build.dpsEstimate() / this.expectedDps()));
     const health = w.player.hull / w.player.maxHull;
     const hk = health < 0.3 ? 0.65 : health < 0.55 ? 0.85 : 1;
     this.intensity = k;
@@ -213,13 +245,14 @@ export class Director {
 
   liveThreat(): number {
     let t = 0;
-    for (const e of this.w.enemies) if (e.alive && e.def.role !== 'inert' && e.def.role !== 'part' && e.def.role !== 'boss') t += e.def.threat * (e.elite ? 2.5 : 1);
+    for (const e of this.w.enemies) if (e.alive && e.def.role !== 'inert' && e.def.role !== 'part' && e.def.role !== 'boss') t += e.def.threat * RARITY[e.rarity].threat;
     return t;
   }
 
   update(dt: number): void {
     const w = this.w;
     this.time += dt;
+    this.hazard?.update(w, dt);
     if (this.kind === 'boss') {
       if (this.boss?.dead) {
         this.calm += dt;
@@ -249,11 +282,12 @@ export class Director {
       this.lastKills = w.stats.kills;
       this.noKillT = 0;
     } else this.noKillT += dt;
-    if (this.noKillT > 25 && this.kind !== 'endless' && this.spent > this.budget * 0.5) {
+    if (this.noKillT > 25 && this.spent > this.budget * 0.5) {
       this.spent = this.budget;
       this.elitesLeft = 0;
     }
-    const exhausted = this.kind !== 'endless' && this.spent >= this.budget && this.elitesLeft <= 0;
+    // endless waves are finite too: each wave ends, pays a draft, and the next one is harder
+    const exhausted = this.spent >= this.budget && this.elitesLeft <= 0;
     if (exhausted) {
       // safety net: stragglers hunt the player, then retreat into the dark
       this.straggleT += dt;
@@ -285,9 +319,16 @@ export class Director {
       this.spawnGroup(target - live);
       this.spawnCd = 1.2 + this.rng.next() * 1.4;
     } else this.spawnCd = 0.5;
-    if (this.kind === 'endless' && this.spent > this.budget * (this.endlessWave + 1)) {
-      this.endlessWave++;
-      w.sectorHpScale *= 1.08;
+  }
+
+  /** a void rift spills three hostiles of the sector's pool */
+  private spawnRift(x: number, y: number, z: number): void {
+    const w = this.w;
+    if (w.liveEnemyCount() > 160) return;
+    for (let i = 0; i < 3; i++) {
+      const id = this.pickEnemy();
+      const e = w.spawnEnemy(id, x + this.rng.range(-4, 4), y + this.rng.range(-3, 3), z + this.rng.range(-4, 4), rollRarity(this.rng, this.sectorIdx, w.heat, this.kind));
+      e.spawnT = 0.4;
     }
   }
 
@@ -317,9 +358,10 @@ export class Director {
     let count = Math.max(1, Math.min(def.role === 'swarmer' ? 22 : 6, Math.round(need / Math.max(1, def.threat))));
     if (this.w.heat >= 9 && def.role === 'swarmer') count = Math.round(count * 1.3);
     const formation = def.role === 'swarmer' ? this.rng.pick(['cluster', 'ring', 'line'] as const) : this.rng.pick(['cluster', 'line'] as const);
-    let elite: EliteMod | null = null;
+    // guaranteed elites (elite/rift nodes, Heat, Hunted) arrive alone as Rare, sometimes Unique
+    let forced: Rarity = 0;
     if (this.elitesLeft > 0 && (this.spent / this.budget > 0.25 || this.kind === 'rift') && def.role !== 'swarmer' && this.rng.chance(0.5)) {
-      elite = this.rng.pick(ELITE_MODS);
+      forced = this.rng.chance(0.1 + this.sectorIdx * 0.03) ? 3 : 2;
       this.elitesLeft--;
       count = 1;
     }
@@ -331,10 +373,13 @@ export class Director {
       } else if (formation === 'line') {
         p.addScaledVector(side, (i - count / 2) * 5).y += this.rng.range(-2, 2);
       } else p.add(new Vector3(this.rng.range(-10, 10), this.rng.range(-8, 8), this.rng.range(-10, 10)));
-      const e = w.spawnEnemy(def, p.x, p.y, p.z, i === 0 ? elite : null);
+      // every spawn rolls its own rarity; swarm members roll at a third of the odds
+      const roll = this.kind === 'tutorial' ? 0 : rollRarity(this.rng, this.sectorIdx, w.heat, this.kind);
+      const rarity = (i === 0 && forced ? forced : def.role === 'swarmer' && this.rng.next() > 0.33 ? 0 : roll) as Rarity;
+      const e = w.spawnEnemy(def, p.x, p.y, p.z, rarity);
       e.vel.copy(dir).multiplyScalar(-10);
       e.timer += i * 0.15;
-      this.spent += def.threat * (elite ? 2.5 : 1);
+      this.spent += def.threat * RARITY[rarity].threat;
     }
     this.wave++;
   }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { World } from '../game/world';
+import { World } from '../game/world';
 import { Pipeline } from './pipeline';
 import { Particles, Streaks, Bullets, Telegraphs } from './fx';
 import { Space } from './space';
@@ -9,16 +9,22 @@ import { haloPositions } from '../game/weapons';
 import { hexToRgb } from '../core/math';
 import { fxRng } from '../core/rng';
 import { EdgeBatch } from './edges';
+import { RARITY_RGB } from '../data/affixes';
+import { DROP_INFO, type DropKind } from '../data/drops';
 
 const KINDS: MeshKind[] = [
   'hushSpike', 'hushDart', 'hushBlob', 'hushEye', 'salvBox', 'salvRam', 'salvGun', 'salvHauler', 'salvTurret',
   'choirShard', 'choirPrism', 'choirHalo', 'choirSeraph', 'asteroid', 'plate', 'segment', 'bossCore',
+  'crucible', 'singularity', 'regent', 'shellPlate', 'mask',
 ];
 
 /** world props: beacons, map nodes, hearth lanterns, well singularities */
 const PROP_KINDS: MeshKind[] = [
   'beacon', 'beaconCrown', 'wellCore', 'wellDisc', 'navCombat', 'navElite', 'navBoss', 'navShop', 'navWreck', 'navRest', 'navForge', 'navRift', 'navStart', 'pylon',
+  'dropShard', 'dropPrism', 'dropCache', 'dropRepair', 'dropCell',
 ];
+const DROP_MESH: Record<DropKind, MeshKind> = { shard: 'dropShard', prism: 'dropPrism', cache: 'dropCache', repair: 'dropRepair', cell: 'dropCell' };
+const DROP_RGB = Object.fromEntries(Object.entries(DROP_INFO).map(([k, v]) => [k, hexToRgb(v.color)])) as Record<DropKind, [number, number, number]>;
 const PROP_CAP = 48;
 
 const _m = new THREE.Matrix4();
@@ -137,6 +143,8 @@ export class View {
   private drones: InstancedKind;
   private halos: InstancedKind;
   private ghosts: InstancedKind;
+  /** Player 2's ship (local co-op) */
+  private wing: InstancedKind;
   ship: THREE.Mesh;
   private shipEdges: EdgeBatch;
   private rings: VecRing[] = [];
@@ -194,6 +202,10 @@ export class View {
     this.ghosts = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 3, emissive: 4 }), 12);
     this.world.add(this.ghosts.mesh);
     this.ghosts.withEdges(this, { haloGain: 0.8, coreGain: 0.45 });
+    this.wing = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 1.8, emissive: 2.2 }), 2);
+    this.wing.mesh.frustumCulled = false;
+    this.world.add(this.wing.mesh);
+    this.wing.withEdges(this, { haloGain: 0.7, coreGain: 0.7 });
 
     for (const k of PROP_KINDS) {
       const ik = new InstancedKind(buildEnemyMesh(k, k.length * 7), this.hullMat, PROP_CAP);
@@ -266,6 +278,12 @@ export class View {
     ng.setAttribute('aFx', fx);
     this.ghosts.mesh.geometry = ng;
     g.dispose();
+    // Player 2 flies the same hull
+    const wg = this.wing.mesh.geometry;
+    const wng = buildPlayerShip(id);
+    wng.setAttribute('aFx', wg.getAttribute('aFx'));
+    this.wing.mesh.geometry = wng;
+    wg.dispose();
     const [r, gg, b] = hexToRgb(accent);
     this.shipAccent.set(r, gg, b);
     (this.shipMat.uniforms.uTint!.value as THREE.Color).setRGB(r, gg, b);
@@ -282,6 +300,7 @@ export class View {
     this.drones.begin();
     this.halos.begin();
     this.ghosts.begin();
+    this.wing.begin();
     this.shipEdges.begin();
     this.streaks.begin();
     for (const k of this.props.values()) k.begin();
@@ -291,6 +310,7 @@ export class View {
     if (w) {
       this.syncEnemies(w, alpha, time);
       this.syncPlayer(w, alpha, time, frameDt);
+      this.syncWing(w, alpha, time);
       this.syncProjectiles(w, alpha);
       this.syncDebris(w, alpha);
       this.syncDrones(w, alpha, time);
@@ -334,6 +354,7 @@ export class View {
     this.drones.end();
     this.halos.end();
     this.ghosts.end();
+    this.wing.end();
     this.shipEdges.end();
     this.streaks.end();
     this.bullets.end();
@@ -366,7 +387,7 @@ export class View {
       let r = e.tint.x;
       let g = e.tint.y;
       let b = e.tint.z;
-      let boost = e.emissive * 1.5 + (e.elite ? 0.6 : 0);
+      let boost = e.emissive * 1.5 + e.rarity * 0.3;
       if (e.frozen) {
         r = 0.6;
         g = 0.9;
@@ -387,8 +408,13 @@ export class View {
       const dissolve = e.alive ? 0 : 1 - e.dying / 0.4;
       ik.push(_m, r, g, b, e.flash, dissolve, boost, e.cloak);
       // elite aura ring + shield links
-      if (e.alive && e.elite && (Math.floor(time * 8) & 1) === 0) {
-        this.telegraphs.ring(_p.x, _p.y, _p.z, e.radius * 1.5, 0, 1, 0, 1, 0.75, 0.3, 0.35, 18);
+      // rarity rings: one for Magic, two for Rare, three turning rings for a Unique
+      if (e.alive && e.rarity > 0) {
+        const rc = RARITY_RGB[e.rarity]!;
+        for (let k = 0; k < e.rarity; k++) {
+          const a = time * (0.6 + k * 0.35) + k * 1.3;
+          this.telegraphs.ring(_p.x, _p.y, _p.z, e.radius * (1.35 + k * 0.22), Math.sin(a) * 0.4, 1, Math.cos(a) * 0.4, rc[0], rc[1], rc[2], 0.4 - k * 0.06, 20);
+        }
       }
       if (e.alive && e.shieldedBy > 0 && e.def.role !== 'shielder') {
         this.streaks.push(_p.x, _p.y + e.radius, _p.z, _p.x, _p.y - e.radius, _p.z, 0.4, 0.3, 0.9, 0.08);
@@ -396,9 +422,37 @@ export class View {
     }
   }
 
+  /** Local co-op: Player 2's ship, its engine, and the revive ring around a downed pilot. */
+  private syncWing(w: World, a: number, time: number): void {
+    const p2 = w.player2;
+    if (!p2) return;
+    _p.lerpVectors(p2.prev, p2.pos, a);
+    _q.slerpQuaternions(p2.prevQuat, p2.quat, a);
+    _e.set(0, 0, p2.bank + p2.roll);
+    _q.multiply(_q2.setFromEuler(_e));
+    const scale = w.build.hull.id === 'moth' ? 0.8 : w.build.hull.id === 'bastion' ? 1.2 : 1;
+    _m.compose(_p, _q, _s.setScalar(scale));
+    const down = !p2.alive;
+    if (!down || Math.floor(time * 6) % 2 === 0) {
+      this.wing.push(_m, 0.5, 1, 0.75, p2.hurtT > 0.2 ? 1 : 0, down ? 0.45 : 0, p2.flareT > 0 ? 1 : 0.3, 0);
+    }
+    if (!down && p2.thrust > 0.05 && fxRng.next() < 0.8) {
+      _v.set(0, 0, 1.6).applyQuaternion(_q).add(_p);
+      this.particles.spawn(_v.x, _v.y, _v.z, 0, 0, 0, 0.35, 0.9, 2.2, 1.6, 2.5 + p2.thrust * 2, 0.5, 2);
+    }
+    // a downed pilot: the revive radius, and progress as the partner hovers close
+    const downed = !w.p1.alive ? w.p1 : down ? p2 : null;
+    if (downed) {
+      const k = w.reviveT / World.REVIVE_TIME;
+      this.telegraphs.ring(downed.pos.x, downed.pos.y, downed.pos.z, World.REVIVE_RANGE, 0, 1, 0, 0.5, 1, 0.75, 0.35, 40);
+      if (k > 0) this.telegraphs.ring(downed.pos.x, downed.pos.y, downed.pos.z, 2 + k * (World.REVIVE_RANGE - 2), 0, 1, 0, 0.6, 1, 0.8, 0.9, 40);
+    }
+  }
+
   private syncPlayer(w: World, a: number, time: number, frameDt: number): void {
     const pl = w.player;
-    this.ship.visible = pl.alive && !this.cockpit;
+    // co-op: a downed P1 stays visible (blinking) so P2 can find and revive them
+    this.ship.visible = (pl.alive || (!!w.player2 && Math.floor(time * 6) % 2 === 0)) && !this.cockpit;
     _p.lerpVectors(pl.prev, pl.pos, a);
     _q.slerpQuaternions(pl.prevQuat, pl.quat, a);
     // bank + barrel roll + recoil kick
@@ -659,6 +713,26 @@ export class View {
         _v.set(fxRng.next() - 0.5, fxRng.next() - 0.5, fxRng.next() - 0.5).normalize().multiplyScalar(wl.radius);
         this.particles.spawn(wl.x + _v.x, wl.y + _v.y, wl.z + _v.z, -_v.x * 2, -_v.y * 2, -_v.z * 2, 0.5, c[0] * 2, c[1] * 2, c[2] * 2, 2, 0.5, 0, 0);
       }
+    }
+    // Act II hazards that live in the arena itself
+    const hz = w.hazard;
+    if (hz?.kind === 'gravity') {
+      const r = hz.horizon;
+      this.queueProp('wellCore', 0, 0, 0, r * 0.75, time * 0.2, 0.4, 0.3, 0.25, 0);
+      this.queueProp('wellDisc', 0, 0, 0, r * 0.9, time * 0.6, 2.2, 1.6, 0.9, 0.6, 0.3);
+      this.telegraphs.ring(0, 0, 0, r, 0.3, 1, 0, 1, 0.65, 0.4, 0.5, 48);
+      if (fxRng.next() < 0.8) {
+        _v.set(fxRng.next() - 0.5, (fxRng.next() - 0.5) * 0.2, fxRng.next() - 0.5).normalize().multiplyScalar(r * (2 + fxRng.next() * 3));
+        this.particles.spawn(_v.x, _v.y, _v.z, -_v.x * 0.8, -_v.y * 0.8, -_v.z * 0.8, 1.2, 1.6, 1.1, 0.6, 2, 0.5, 0, 0);
+      }
+    }
+    // loot: small turning dithered objects with a pulsing ring so they read in a busy fight
+    for (const d of w.drops) {
+      const c = DROP_RGB[d.kind];
+      const bob = Math.sin(time * 3 + d.age * 2) * 0.25;
+      const sc = Math.min(1, d.age * 4) * (d.kind === 'prism' || d.kind === 'cache' ? 1.25 : 1);
+      this.queueProp(DROP_MESH[d.kind], d.x, d.y + bob, d.z, sc, time * 2 + d.age, c[0] * 0.75, c[1] * 0.75, c[2] * 0.75, 0.25 + Math.sin(time * 6) * 0.1, 0.3);
+      this.telegraphs.ring(d.x, d.y + bob, d.z, 1.6 + ((time * 1.5) % 1) * 1.2, 0, 1, 0, c[0], c[1], c[2], 0.5 * (1 - ((time * 1.5) % 1)), 16);
     }
     // decoys: a flickering ghost of the ship (the enemy sees a Lantern)
     for (const d of w.decoys) {

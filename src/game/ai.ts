@@ -4,6 +4,9 @@ import { raySphere } from './world';
 import type { Enemy } from './entities';
 import { damp } from '../core/math';
 import { BAL } from '../data/balance';
+import { updateAffixAI } from './affixai';
+import { updateMoves } from './moves';
+import { SUBTYPES } from '../data/subtypes';
 
 const _d = new Vector3();
 const _t = new Vector3();
@@ -28,7 +31,8 @@ export function fireAt(w: World, e: Enemy, speed: number, dmg: number, kind: num
   for (let i = 0; i < count; i++) {
     const off = count > 1 ? (i / (count - 1) - 0.5) * spread * 2 : 0;
     _d.copy(_t).addScaledVector(_s, off).normalize().multiplyScalar(speed);
-    w.spawnEnemyShot(e.pos.x + _t.x * e.radius, e.pos.y + _t.y * e.radius, e.pos.z + _t.z * e.radius, _d.x, _d.y, _d.z, dmg * e.dmgMul, kind, size);
+    const k = w.spawnEnemyShot(e.pos.x + _t.x * e.radius, e.pos.y + _t.y * e.radius, e.pos.z + _t.z * e.radius, _d.x, _d.y, _d.z, dmg * e.dmgMul, kind, size);
+    if (k >= 0 && e.affixMask && e.has('seeking')) w.eproj.homing[k] = 1.6;
   }
   w.events.emit('enemyShot', { x: e.pos.x, y: e.pos.y, z: e.pos.z, big: count > 3 });
 }
@@ -66,24 +70,31 @@ function steerTo(e: Enemy, dx: number, dy: number, dz: number, speed: number, dt
 }
 
 export function updateEnemyAI(w: World, dt: number): void {
-  const pl = w.player;
-  const target = w.decoys.length ? w.decoys[0]!.pos : pl.pos;
-  const stasis = pl.stasisT > 0;
+  const coop = !!w.player2;
   const stasisR2 = (34 * w.build.ship.stasis) ** 2;
-  const ramBoost = w.build.flags.has('ramBoost') && pl.boosting;
-  const burnAura = pl.boosting && w.build.triggers.some((t) => t.do === 'burnAura');
   const wake = w.build.flags.has('wakeFire');
+  const hasBurnAura = w.build.triggers.some((t) => t.do === 'burnAura');
   for (const e of w.enemies) {
     if (!e.alive) continue;
+    // each enemy hunts the nearer living pilot; every nested call (fireAt, moves,
+    // affixes, contact damage) then reads w.player as that target
+    if (coop) w.player = w.nearestPlayer(e.pos.x, e.pos.y, e.pos.z);
+    const pl = w.player;
+    const target = w.decoys.length ? w.decoys[0]!.pos : pl.pos;
+    const stasis = pl.stasisT > 0;
+    const ramBoost = pl.boosting && w.build.flags.has('ramBoost');
+    const burnAura = pl.boosting && hasBurnAura;
     e.prev.copy(e.pos);
     e.prevQuat.copy(e.quat);
     const def = e.def;
     if (def.role === 'part' || (def.role === 'boss' && e.parent)) continue;
-    let sp = def.speed * e.speedMul * (1 - e.cryo * 0.12);
+    let sp = def.speed * e.speedMul * (1 - e.cryo * 0.12 * (e.affixMask && e.has('relentless') ? 0 : 1));
     _d.copy(target).sub(e.pos);
     const dist = _d.length() || 1;
     _d.multiplyScalar(1 / dist);
-    const inStasis = stasis && dist * dist < stasisR2;
+    const relentless = e.affixMask !== 0 && e.has('relentless');
+    const inStasis = stasis && !relentless && dist * dist < stasisR2;
+    if (e.buffT > 0) sp *= 1.25;
     let tdt = dt;
     if (inStasis) {
       tdt *= 0.25;
@@ -103,7 +114,6 @@ export function updateEnemyAI(w: World, dt: number): void {
       continue; // boss controller moves the core
     }
     e.timer -= tdt;
-    if (e.elite === 'cloaked') e.cloak = e.state === 1 || e.state === 2 ? 0 : 0.85;
 
     switch (def.role) {
       case 'swarmer': {
@@ -232,7 +242,7 @@ export function updateEnemyAI(w: World, dt: number): void {
           if (e.timer <= 0) {
             w.releaseToken(e);
             e.state = 0;
-            e.timer = (1 / (f.rate * e.fireMul * BAL.enemyFireRate)) * (0.7 + w.rng.next() * 0.6);
+            e.timer = (1 / (f.rate * e.fireMul * BAL.enemyFireRate * (e.buffT > 0 ? 1.25 : 1))) * (0.7 + w.rng.next() * 0.6);
           }
         }
         break;
@@ -252,7 +262,7 @@ export function updateEnemyAI(w: World, dt: number): void {
             fireAt(w, e, f.speed, f.damage, f.kind, f.count, f.spread, 0.6);
             w.releaseToken(e);
             e.emissive = 0;
-            e.timer = (1 / (f.rate * e.fireMul * BAL.enemyFireRate)) * (0.8 + w.rng.next() * 0.5);
+            e.timer = (1 / (f.rate * e.fireMul * BAL.enemyFireRate * (e.buffT > 0 ? 1.25 : 1))) * (0.8 + w.rng.next() * 0.5);
           } else e.timer = 0.3;
         }
         break;
@@ -275,7 +285,7 @@ export function updateEnemyAI(w: World, dt: number): void {
             w.releaseToken(e);
             e.state = 0;
             e.emissive = 0;
-            e.timer = 1 / (f.rate * e.fireMul * BAL.enemyFireRate);
+            e.timer = 1 / (f.rate * e.fireMul * BAL.enemyFireRate * (e.buffT > 0 ? 1.25 : 1));
           }
         }
         break;
@@ -291,7 +301,7 @@ export function updateEnemyAI(w: World, dt: number): void {
           ringBurst(w, e.pos.x, e.pos.y, e.pos.z, f.count, f.speed, f.damage * e.dmgMul, f.kind, e.spin * 2, _o.clone().cross(_d).normalize());
           fireAt(w, e, f.speed * 1.5, f.damage * e.dmgMul, 1, 1, 0, 0.7);
           e.emissive = 0;
-          e.timer = 1 / (f.rate * e.fireMul * BAL.enemyFireRate);
+          e.timer = 1 / (f.rate * e.fireMul * BAL.enemyFireRate * (e.buffT > 0 ? 1.25 : 1));
         }
         break;
       }
@@ -390,6 +400,9 @@ export function updateEnemyAI(w: World, dt: number): void {
       }
     }
 
+    if (e.subtype >= 0 && e.revealed && !inStasis) updateMoves(w, e, tdt, dist, SUBTYPES[def.id]![e.subtype]!.moves);
+    updateAffixAI(w, e, tdt, dist);
+
     // separation (cheap): only against a few neighbors
     if (def.role !== 'inert' && def.role !== 'turret') {
       let px = 0;
@@ -456,4 +469,5 @@ export function updateEnemyAI(w: World, dt: number): void {
       }
     }
   }
+  w.player = w.p1;
 }

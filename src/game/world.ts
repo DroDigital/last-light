@@ -4,7 +4,11 @@ import { Rng } from '../core/rng';
 import { Emitter } from '../core/events';
 import { SpatialHash } from '../core/spatial';
 import { clamp } from '../core/math';
-import { ENEMY_BY_ID, type EliteMod } from '../data/enemies';
+import { ENEMY_BY_ID } from '../data/enemies';
+import { SUBTYPES, pickSubtype } from '../data/subtypes';
+import type { Hazard } from './hazards';
+import { DROP_KINDS, dropChance, type DropKind } from '../data/drops';
+import { AFFIX_BY_ID, AFFIX_INDEX, RARITY, rollAffixes, uniqueName, type AffixId, type Rarity } from '../data/affixes';
 import type { EnemyDef, Faction, StatusKind, TriggerDef, TriggerOn, WeaponParams } from './types';
 import { Build, WeaponInstance } from './build';
 import {
@@ -26,9 +30,9 @@ import {
   Telegraph,
   Well,
 } from './entities';
-import { Player, type Controls } from './player';
+import { Player, emptyControls, type Controls } from './player';
 import { updateEnemyAI } from './ai';
-import { updateWeapons, syncDrones, type RailFx } from './weapons';
+import { updateWeapons, updateWingWeapons, syncDrones, type RailFx } from './weapons';
 import type { BossController } from './bosses';
 import { hexToRgb } from '../core/math';
 
@@ -70,6 +74,10 @@ export interface WorldEvents {
     enemy: boolean;
   };
   pickup: { x: number; y: number; z: number; value: number; combo: number };
+  /** a drop appeared (picked=false) or was collected (picked=true) */
+  drop: { kind: DropKind; x: number; y: number; z: number; picked: boolean };
+  /** local co-op: player 2 joined/left/was revived */
+  coop: { joined: boolean; revived?: boolean };
   graze: { x: number; y: number; z: number; count: number };
   hurt: { dmg: number; hull: boolean; x: number; y: number; z: number };
   shieldBreak: Record<string, never>;
@@ -103,6 +111,7 @@ export interface ExplodeOpts {
 
 const _a = new Vector3();
 const _b = new Vector3();
+const EMPTY_CONTROLS = emptyControls();
 const _brk = new Vector3();
 const _brk2 = new Vector3();
 const _c = new Vector3();
@@ -198,7 +207,101 @@ export class World {
     this.build = build;
     this.player = new Player(this);
     this.player.reset(this);
+    this.p1 = this.player;
     this.refreshParams();
+  }
+
+  // ------------------------------------------------------------ local co-op
+  /**
+   * Player 1. `player` is the ship a system is currently acting for: the world
+   * re-points it at Player 2 for P2's flight, weapons and the enemies hunting
+   * P2, then restores it. Outside update() it is always P1.
+   */
+  p1: Player;
+  /** Player 2 (drop-in local co-op), or null */
+  player2: Player | null = null;
+  /** P2's weapon cooldowns (the build's weapons are shared) */
+  p2Cd = { primary: 0, secondary: 0 };
+  /** seconds a partner has hovered beside a downed pilot */
+  reviveT = 0;
+  static readonly REVIVE_TIME = 3;
+  static readonly REVIVE_RANGE = 12;
+  static readonly TETHER = 70;
+
+  get players(): Player[] {
+    return this.player2 ? [this.p1, this.player2] : [this.p1];
+  }
+
+  anyAlive(): boolean {
+    return this.p1.alive || !!this.player2?.alive;
+  }
+
+  /** Nearest living player to a point (P1 if nobody is alive). */
+  nearestPlayer(x: number, y: number, z: number): Player {
+    const p2 = this.player2;
+    if (!p2 || !p2.alive) return this.p1;
+    if (!this.p1.alive) return p2;
+    const d1 = (this.p1.pos.x - x) ** 2 + (this.p1.pos.y - y) ** 2 + (this.p1.pos.z - z) ** 2;
+    const d2 = (p2.pos.x - x) ** 2 + (p2.pos.y - y) ** 2 + (p2.pos.z - z) ** 2;
+    return d2 < d1 ? p2 : this.p1;
+  }
+
+  /** Run fn with `player` pointed at p. */
+  withPlayer<T>(p: Player, fn: () => T): T {
+    const prev = this.player;
+    this.player = p;
+    try {
+      return fn();
+    } finally {
+      this.player = prev;
+    }
+  }
+
+  /** Player 2 drops in beside Player 1, sharing the build and the Light. */
+  addPlayer2(): Player {
+    if (this.player2) return this.player2;
+    const p = new Player(this);
+    this.withPlayer(p, () => p.reset(this));
+    p.pos.copy(this.p1.pos).add(_brk.set(6, 1, 2));
+    p.prev.copy(p.pos);
+    p.quat.copy(this.p1.quat);
+    p.prevQuat.copy(p.quat);
+    p.vel.copy(this.p1.vel);
+    this.player2 = p;
+    this.events.emit('coop', { joined: true });
+    return p;
+  }
+
+  removePlayer2(): void {
+    if (!this.player2) return;
+    this.player2 = null;
+    this.events.emit('coop', { joined: false });
+  }
+
+  /** Downed pilots come back when their partner hovers close for a few seconds. */
+  private updateCoop(dt: number): void {
+    const p2 = this.player2;
+    if (!p2) return;
+    const p1 = this.p1;
+    const down = !p1.alive ? p1 : !p2.alive ? p2 : null;
+    const up = down === p1 ? p2 : p1;
+    if (down && up.alive && down.pos.distanceTo(up.pos) < World.REVIVE_RANGE) {
+      this.reviveT += dt;
+      if (this.reviveT >= World.REVIVE_TIME) {
+        this.reviveT = 0;
+        down.alive = true;
+        down.hull = down.maxHull * 0.4;
+        down.shield = down.maxShield;
+        down.iframeT = 2;
+        this.events.emit('coop', { joined: true, revived: true });
+      }
+    } else this.reviveT = Math.max(0, this.reviveT - dt * 2);
+    // a soft tether keeps the pair in one fight (and one camera)
+    if (p1.alive && p2.alive) {
+      _brk.copy(p1.pos).sub(p2.pos);
+      const d = _brk.length();
+      if (d > World.TETHER) p2.vel.addScaledVector(_brk, ((d - World.TETHER) * 3 * dt) / d);
+    }
   }
 
   // ------------------------------------------------------------ setup
@@ -231,6 +334,9 @@ export class World {
   }
 
   clearArena(): void {
+    this.drops.length = 0;
+    this.timers.length = 0;
+    this.hazard = null;
     for (const e of this.enemies) this.release(e);
     this.enemies.length = 0;
     this.proj.clear();
@@ -250,7 +356,8 @@ export class World {
     this.pool.push(e);
   }
 
-  spawnEnemy(def: EnemyDef | string, x: number, y: number, z: number, elite: EliteMod | null = null): Enemy {
+  /** Spawn an enemy. rarity > 0 rolls affixes from the table (or uses `affixes` when given). */
+  spawnEnemy(def: EnemyDef | string, x: number, y: number, z: number, rarity: Rarity = 0, affixes?: AffixId[]): Enemy {
     const d = typeof def === 'string' ? ENEMY_BY_ID[def]! : def;
     const e = (this.pool.pop() ?? new Enemy()).reset(d, this.nextEnemyId++);
     e.pos.set(x, y, z);
@@ -266,10 +373,20 @@ export class World {
     e.tint.set(r, g, b);
     e.orbitDir = this.rng.chance(0.5) ? 1 : -1;
     e.timer = this.rng.range(0.5, 2.5);
-    if (elite) this.makeElite(e, elite);
+    e.moveT = this.rng.range(1.5, 4);
+    if (!isBoss && d.role !== 'inert') {
+      e.subtype = pickSubtype(d.id, this.sectorIdx, (w) => this.rng.weighted(w));
+      const st = e.subtype >= 0 ? SUBTYPES[d.id]![e.subtype] : undefined;
+      if (st) {
+        if (st.hp) e.hp = e.maxHp = e.maxHp * st.hp;
+        if (st.speed) e.speedMul *= st.speed;
+        if (st.fire) e.fireMul *= st.fire;
+      }
+    }
+    if (rarity > 0 && !isBoss && d.role !== 'inert') this.applyRank(e, rarity, affixes ?? rollAffixes(this.rng, rarity, d.role, this.sectorIdx));
     this.enemies.push(e);
     this.stats.enemiesSeen.add(d.id);
-    this.events.emit('spawn', { x, y, z, faction: d.faction, big: d.threat >= 5 || !!elite });
+    this.events.emit('spawn', { x, y, z, faction: d.faction, big: d.threat >= 5 || rarity > 0 });
     return e;
   }
 
@@ -278,32 +395,129 @@ export class World {
   sectorDmgScale = 1;
   private beamHitT = 0;
 
-  makeElite(e: Enemy, mod: EliteMod): void {
-    e.elite = mod;
-    e.hp = e.maxHp = e.maxHp * 2.6;
-    e.scale *= 1.3;
-    e.radius *= 1.25;
-    switch (mod) {
-      case 'shielded':
-        e.shield = e.maxShield = e.maxHp * 0.6;
-        break;
-      case 'hasted':
-        e.speedMul = 1.5;
-        e.fireMul = 1.3;
-        break;
-      case 'cloaked':
-        e.cloak = 0.8;
-        break;
+  /** the sector's environment hazard for this fight (read by the view) */
+  hazard: Hazard | null = null;
+  /** sim-time delayed actions (deterministic: advanced by update) */
+  private timers: { t: number; fn: () => void }[] = [];
+  later(delay: number, fn: () => void): void {
+    this.timers.push({ t: delay, fn });
+  }
+
+  /** loot on the field (few at a time, so plain objects) */
+  drops: { x: number; y: number; z: number; vx: number; vy: number; vz: number; kind: DropKind; age: number }[] = [];
+  /** banked drafts, paid out when the fight ends */
+  bank = { shard: 0, prism: 0, cache: 0 };
+
+  /** Roll every drop kind for a kill against the drop table. */
+  private rollDrops(e: Enemy, x: number, y: number, z: number): void {
+    const gilded = e.affixMask !== 0 && e.has('gilded');
+    let shard = false;
+    for (const k of DROP_KINDS) {
+      const hit = this.rng.next() < dropChance(e.def, k, e.rarity, gilded, this.build.ship.luck, e.isBossCore) || (k === 'shard' && e.rarity === 3 && !shard);
+      if (!hit) continue;
+      if (k === 'shard') shard = true;
+      _brk.set(this.rng.next() - 0.5, this.rng.next() * 0.6, this.rng.next() - 0.5).normalize().multiplyScalar(10 + this.rng.next() * 8);
+      this.drops.push({ x, y, z, vx: _brk.x, vy: _brk.y, vz: _brk.z, kind: k, age: 0 });
+      this.events.emit('drop', { kind: k, x, y, z, picked: false });
+    }
+  }
+
+  private updateDrops(dt: number): void {
+    const reach = this.build.ship.magnet * 1.4;
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i]!;
+      d.age += dt;
+      const pl = this.player2 ? this.nearestPlayer(d.x, d.y, d.z) : this.player;
+      const dx = pl.pos.x - d.x;
+      const dy = pl.pos.y - d.y;
+      const dz = pl.pos.z - d.z;
+      const dist = Math.hypot(dx, dy, dz) || 1;
+      if (pl.alive && d.age > 0.6 && (dist < reach || d.age > 12)) {
+        const k = (70 + Math.max(0, reach - dist) * 5) / dist;
+        d.vx += dx * k * dt;
+        d.vy += dy * k * dt;
+        d.vz += dz * k * dt;
+        d.vx *= 1 - dt * 3;
+        d.vy *= 1 - dt * 3;
+        d.vz *= 1 - dt * 3;
+        if (dist < 2.6) {
+          this.collectDrop(i, pl);
+          continue;
+        }
+      } else {
+        d.vx *= 1 - dt * 1.5;
+        d.vy *= 1 - dt * 1.5;
+        d.vz *= 1 - dt * 1.5;
+      }
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.z += d.vz * dt;
+    }
+  }
+
+  /** Collect drop i (or all of them at the end of a fight). */
+  collectDrop(i: number, by?: Player): void {
+    const d = this.drops[i]!;
+    const pl = by ?? this.player;
+    if (d.kind === 'repair') pl.hull = Math.min(pl.maxHull, pl.hull + 18);
+    else if (d.kind === 'cell') pl.lumen = Math.min(100, pl.lumen + 35);
+    else this.bank[d.kind]++;
+    this.events.emit('drop', { kind: d.kind, x: d.x, y: d.y, z: d.z, picked: true });
+    this.drops.splice(i, 1);
+  }
+
+  /** current sector (0-based), set by the Director; gates affixes */
+  sectorIdx = 0;
+
+  /** Promote an enemy to a rarity tier with the given affixes. */
+  applyRank(e: Enemy, rarity: Rarity, affixes: AffixId[]): void {
+    const R = RARITY[rarity];
+    e.rarity = rarity;
+    e.affixes = affixes.slice();
+    e.affixMask = 0;
+    for (const a of affixes) e.affixMask |= 1 << AFFIX_INDEX[a];
+    e.elite = affixes[0] ?? null;
+    let hp = R.hp;
+    let scale = R.scale;
+    for (const a of affixes) {
+      const d = AFFIX_BY_ID[a];
+      if (d.hp) hp *= d.hp;
+      if (d.scale) scale *= d.scale;
+      if (d.speed) e.speedMul *= d.speed;
+      if (d.fire) e.fireMul *= d.fire;
+      if (d.dmg) e.dmgMul *= d.dmg;
+      if (d.armor) e.armor += d.armor;
+      if (d.taken) e.dmgTaken *= d.taken;
+    }
+    e.hp = e.maxHp = e.maxHp * hp;
+    e.scale *= scale;
+    e.radius *= scale;
+    if (e.has('shielded')) e.shield = e.maxShield = e.maxHp * 0.5;
+    if (e.has('cloaked')) e.cloak = 0.8;
+    e.affT = 2 + this.rng.next() * 3;
+    e.affT2 = 1 + this.rng.next() * 2;
+    if (rarity === 3) e.rankName = uniqueName(this.rng, e.def.name);
+    // a pack leader arrives with escorts of its own kind
+    if (e.has('packleader')) {
+      for (let i = 0; i < 2; i++) {
+        const c = this.spawnEnemy(e.def, e.pos.x + this.rng.range(-6, 6), e.pos.y + this.rng.range(-4, 4), e.pos.z + this.rng.range(-6, 6));
+        c.speedMul *= 1.2;
+        c.fireMul *= 1.2;
+        c.spawnT = 0.3;
+      }
     }
   }
 
   // ------------------------------------------------------------ main update
 
-  update(c: Controls, dt: number): void {
+  update(c: Controls, dt: number, c2?: Controls): void {
+    this.player = this.p1;
     this.time += dt;
     if (this.beamHitT > 0) this.beamHitT -= dt;
     this.killsThisTick = 0;
     this.player.update(c, dt);
+    const p2 = this.player2;
+    if (p2) this.withPlayer(p2, () => p2.update(c2 ?? EMPTY_CONTROLS, dt));
     const edt = dt * this.enemyTimeScale;
     if (this.chainT > 0) {
       this.chainT -= dt;
@@ -316,8 +530,10 @@ export class World {
     for (const [t, v] of this.triggerCd) if (v > 0) this.triggerCd.set(t, v - dt);
 
     updateWeapons(this, c, dt);
+    if (p2?.alive) this.withPlayer(p2, () => updateWingWeapons(this, c2 ?? EMPTY_CONTROLS, dt));
     this.rebuildHash();
-    this.boss?.update(this, edt);
+    const boss = this.boss;
+    if (boss) this.withPlayer(this.nearestPlayer(boss.core.pos.x, boss.core.pos.y, boss.core.pos.z), () => boss.update(this, edt));
     updateEnemyAI(this, edt);
     this.updateStatuses(edt);
     this.rebuildHash();
@@ -325,6 +541,16 @@ export class World {
     this.updateEnemyProjectiles(edt);
     this.updateWells(dt);
     this.updateMotes(dt);
+    this.updateDrops(dt);
+    this.updateCoop(dt);
+    for (let i = this.timers.length - 1; i >= 0; i--) {
+      const tm = this.timers[i]!;
+      tm.t -= dt;
+      if (tm.t <= 0) {
+        this.timers.splice(i, 1);
+        tm.fn();
+      }
+    }
     this.updateDebris(dt);
     for (let i = this.decoys.length - 1; i >= 0; i--) {
       const d = this.decoys[i]!;
@@ -439,6 +665,10 @@ export class World {
       this.events.emit('block', { x: hx, y: hy, z: hz });
       return;
     }
+    if (e.affixMask && src >= 0 && e.has('deflecting') && this.rng.next() < 0.25) {
+      this.events.emit('block', { x: hx, y: hy, z: hz });
+      return;
+    }
     const p = src >= 0 ? this.params[src] : undefined;
     const pl = this.player;
     let dmg = amount * pl.damageMul();
@@ -490,7 +720,7 @@ export class World {
     if (w) w.damageDealt += dmg;
     // knockback
     const kb = (opts.knock ?? p?.knock ?? 0) / Math.max(1, e.radius * e.radius * 0.6);
-    if (kb > 0 && e.def.role !== 'boss' && e.def.role !== 'part' && e.def.role !== 'turret') {
+    if (kb > 0 && e.def.role !== 'boss' && e.def.role !== 'part' && e.def.role !== 'turret' && !(e.affixMask && e.has('relentless'))) {
       e.vel.x -= nx * kb;
       e.vel.y -= ny * kb;
       e.vel.z -= nz * kb;
@@ -515,6 +745,12 @@ export class World {
       }
     }
     if (shatter) e.flash = 1.5;
+    // Thorned: a hard hit spits a shard back at the shooter
+    if (e.affixMask && e.hp > 0 && dmg > 6 && e.thornT <= 0 && e.has('thorned')) {
+      e.thornT = 0.6;
+      _brk.copy(this.player.pos).sub(e.pos).normalize().multiplyScalar(80);
+      this.spawnEnemyShot(e.pos.x, e.pos.y, e.pos.z, _brk.x, _brk.y, _brk.z, 9 * e.dmgMul, 2, 0.8, 3);
+    }
     if (e.hp <= 0) this.killEnemy(e, dmg);
     else if (e.heavy) this.checkBreakup(e);
   }
@@ -655,7 +891,10 @@ export class World {
       }
       if (e.hitCdHalo > 0) e.hitCdHalo -= dt;
       if (e.shieldedBy > 0) e.shieldedBy -= dt;
-      if (e.elite === 'shielded' && e.shield < e.maxShield)
+      if (e.buffT > 0) e.buffT -= dt;
+      if (e.thornT > 0) e.thornT -= dt;
+      if (e.affixMask && e.has('regenerating') && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.03 * dt);
+      if (e.affixMask && e.has('shielded') && e.shield < e.maxShield)
         e.shield = Math.min(e.maxShield, e.shield + e.maxShield * 0.06 * dt);
     }
   }
@@ -685,8 +924,10 @@ export class World {
     const big = clamp((e.radius * e.scale) / 3, 0.2, 3) + (e.elite ? 0.6 : 0) + (d.role === 'boss' ? 3 : 0);
     this.events.emit('kill', { e, x, y, z, chain: this.chain, big });
 
+    // a boss core 'dies' twice (staged death sequence); only the final kill pays out
+    if (!e.isBossCore || this.boss?.dead) this.rollDrops(e, x, y, z);
     // Light motes
-    let light = d.light * (e.elite ? 3 : 1);
+    let light = d.light * RARITY[e.rarity].light * (e.affixMask && e.has('gilded') ? 3 : 1);
     if (e.radiantT > 0) light *= 2;
     this.dropMotes(x, y, z, light, e.radius);
     // debris
@@ -729,7 +970,17 @@ export class World {
         c.spawnT = 0;
       }
     }
-    if (e.elite === 'splitting') {
+    if (e.affixMask && e.has('volatile')) {
+      this.addTelegraph({ kind: 'sphere', ax: x, ay: y, az: z, bx: 0, by: 0, bz: 0, radius: 10, dur: 0.35, owner: -1 });
+      this.explode(x, y, z, 10, 26 * e.dmgMul, -1, { enemy: true, color: [1, 0.5, 0.2] });
+    }
+    if (e.affixMask && e.has('cursed')) {
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        this.spawnEnemyShot(x + Math.cos(a) * 7, y + this.rng.range(-2, 2), z + Math.sin(a) * 7, 0, 0, 0, 14 * e.dmgMul, 4, 1.2, 9);
+      }
+    }
+    if (e.affixMask && e.has('splitting')) {
       for (let i = 0; i < 2; i++) {
         const c = this.spawnEnemy(d, x + this.rng.range(-3, 3), y, z + this.rng.range(-3, 3));
         c.hp = c.maxHp = c.maxHp * 0.35;
@@ -750,7 +1001,7 @@ export class World {
         this.applyStatus(o, 'cryo', 1);
       });
     }
-    if (e.elite) {
+    if (e.rarity > 0) {
       this.stats.eliteKills++;
       this.fireTriggers('eliteKill', x, y, z, overkill);
     }
@@ -789,8 +1040,11 @@ export class World {
     const col = opts.color ?? [1, 0.6, 0.3];
     this.events.emit('explosion', { x, y, z, radius, r: col[0], g: col[1], b: col[2], enemy: !!opts.enemy });
     if (opts.enemy) {
-      const d = this.player.pos.distanceTo(_a.set(x, y, z));
-      if (d < radius + this.player.radius) this.hurtPlayer(dmg * (1 - (d / (radius + 1)) * 0.5), 'Explosion');
+      for (const p of this.players) {
+        if (!p.alive) continue;
+        const d = p.pos.distanceTo(_a.set(x, y, z));
+        if (d < radius + p.radius) this.withPlayer(p, () => this.hurtPlayer(dmg * (1 - (d / (radius + 1)) * 0.5), 'Explosion'));
+      }
       return;
     }
     const depth = opts.depth ?? 0;
@@ -1094,7 +1348,8 @@ export class World {
       this.fireTriggers('hurt', pl.pos.x, pl.pos.y, pl.pos.z, dmg);
     }
     this.stats.damageTaken += amount;
-    if (attacker?.elite === 'vampiric') attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
+    if (attacker?.affixMask && attacker.has('vampiric')) attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
+    if (attacker?.affixMask && attacker.has('leeching')) pl.lumen = Math.max(0, pl.lumen - 12);
     this.events.emit('hurt', { dmg: amount, hull: hullHit, x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
     if (pl.hull <= 0) this.killPlayer(cause);
   }
@@ -1382,27 +1637,36 @@ export class World {
       P.x[i] = x1;
       P.y[i] = y1;
       P.z[i] = z1;
-      if (!pl.alive) continue;
       const sz = P.size[i]!;
-      const t = segSphere(x0, y0, z0, x1, y1, z1, pl.pos.x, pl.pos.y, pl.pos.z, pr + sz * 0.6);
-      if (t >= 0) {
-        if (pl.iframeT > 0) {
-          // dodged through: wraith crit buff
-          if (this.build.flags.has('wraith')) pl.critBuff = true;
-          continue;
+      // co-op: a round can hit (or graze) either ship
+      let consumed = false;
+      for (let pi = 0; pi < (this.player2 ? 2 : 1); pi++) {
+        const tp = pi === 0 ? pl : this.player2!;
+        if (!tp.alive) continue;
+        const t = segSphere(x0, y0, z0, x1, y1, z1, tp.pos.x, tp.pos.y, tp.pos.z, pr + sz * 0.6);
+        if (t >= 0) {
+          if (tp.iframeT > 0) {
+            // dodged through: wraith crit buff
+            if (this.build.flags.has('wraith')) tp.critBuff = true;
+            consumed = true;
+            break;
+          }
+          const dmg = P.dmg[i]!;
+          const cause = P.kind[i] === 4 ? 'Mine' : 'Enemy fire';
+          this.withPlayer(tp, () => this.hurtPlayer(dmg, cause));
+          P.kill(i);
+          consumed = true;
+          break;
         }
-        this.hurtPlayer(P.dmg[i]!, P.kind[i] === 4 ? 'Mine' : 'Enemy fire');
-        P.kill(i);
-        continue;
-      }
-      // graze
-      if (!(P.flags[i]! & PF_GRAZED)) {
-        const tg = segSphere(x0, y0, z0, x1, y1, z1, pl.pos.x, pl.pos.y, pl.pos.z, gr);
-        if (tg >= 0) {
-          P.flags[i] |= PF_GRAZED;
-          this.onGraze(x1, y1, z1);
+        if (!(P.flags[i]! & PF_GRAZED)) {
+          const tg = segSphere(x0, y0, z0, x1, y1, z1, tp.pos.x, tp.pos.y, tp.pos.z, gr);
+          if (tg >= 0) {
+            P.flags[i] |= PF_GRAZED;
+            this.withPlayer(tp, () => this.onGraze(x1, y1, z1));
+          }
         }
       }
+      if (consumed) continue;
       // Sentinel pods block shots
       if (this.blockers.length) {
         for (let b = 0; b < this.blockers.length; b += 4) {
@@ -1523,13 +1787,14 @@ export class World {
 
   private updateMotes(dt: number): void {
     const M = this.motes;
-    const pl = this.player;
     const s = this.build.ship;
     const mag = s.magnet;
     const mag2 = mag * mag;
     const lodestar = this.build.flags.has('lodestar');
+    const coop = !!this.player2?.alive;
     for (let i = M.n - 1; i >= 0; i--) {
       M.age[i] += dt;
+      const pl = coop ? this.nearestPlayer(M.x[i]!, M.y[i]!, M.z[i]!) : this.player;
       const dx = pl.pos.x - M.x[i]!;
       const dy = pl.pos.y - M.y[i]!;
       const dz = pl.pos.z - M.z[i]!;

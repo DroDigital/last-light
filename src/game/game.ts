@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { DropKind } from '../data/drops';
 import { GameLoop, SIM_DT } from '../core/loop';
 import { Input } from '../core/input';
 import { Rng, dailySeed, randomSeedString, fxRng, hashString } from '../core/rng';
@@ -9,7 +10,7 @@ import { AudioEngine } from '../audio/audio';
 import { UI } from '../ui/ui';
 import { SaveSystem, type RunRecord } from '../meta/save';
 import { PALETTES, paletteById } from '../data/palettes';
-import { SECTORS, HULLS, HULL_BY_ID, EVENTS, CHALLENGES, LORE, HEARTH_UNLOCKS, type EventDef, type EventEffect } from '../data/world';
+import { SECTORS, ACT2_START, HULLS, HULL_BY_ID, EVENTS, CHALLENGES, LORE, HEARTH_UNLOCKS, type EventDef, type EventEffect } from '../data/world';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES } from '../data/upgrades';
 import { SYNERGIES } from '../data/upgrades';
@@ -54,13 +55,17 @@ export interface RunState {
   startTime: number;
   sectorLight: number;
   endless: boolean;
+  /** pressed on past the Last Dark into Act II */
+  deep?: boolean;
   endlessWaves: number;
   encounters: number;
   lastEvent?: EventDef;
   eventOutcome?: string;
   shop?: ShopItem[];
   draft?: DraftCard[];
-  draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector' };
+  draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector' | 'endless'; weaponsOnly?: boolean; source?: DropKind };
+  /** drafts earned from drops, opened one after another once the fight ends */
+  draftQueue?: NonNullable<RunState['draftCtx']>[];
   lore: string[];
   won: boolean;
   /** an event choice queued a fight; the player may not leave the event */
@@ -102,6 +107,12 @@ export class Game {
   run: RunState | null = null;
   director: Director | null = null;
   controls: Controls = emptyControls();
+  /** local co-op: Player 2's controls (built from the second gamepad) */
+  controls2: Controls = emptyControls();
+  private p2Yaw = 0;
+  private p2Pitch = 0;
+  private p2LeaveT = 0;
+  private coopPull = 0;
   private pendingYaw = 0;
   private pendingPitch = 0;
   time = 0;
@@ -355,7 +366,7 @@ export class Game {
 
   // ------------------------------------------------------------ run flow
 
-  startRun(opts: { daily?: boolean; seed?: string; hull?: string; heat?: number; primary?: string } = {}): void {
+  startRun(opts: { daily?: boolean; seed?: string; hull?: string; heat?: number; primary?: string; endless?: boolean } = {}): void {
     const d = this.save.data;
     const daily = !!opts.daily;
     const seed = opts.seed ?? (daily ? dailySeed() : randomSeedString());
@@ -375,6 +386,8 @@ export class Game {
     (this.world as unknown as { deathBloom: boolean }).deathBloom = d.equippedCosmetics.death === 'c_death_bloom';
     this.juice.attach(this.world);
     this.hookWorld(this.world);
+    // co-op carries over between runs while Player 2's controller stays assigned
+    if (this.input.p2Index !== null) this.world.addPlayer2();
     this.view.setHull(hull.id, hull.accent);
     const trail = d.equippedCosmetics.trail;
     const tc = trail === 'c_trail_gold' ? '#ffc040' : trail === 'c_trail_violet' ? '#b070ff' : hull.accent;
@@ -384,7 +397,39 @@ export class Game {
     d.runs++;
     this.save.save();
     this.hintStep = d.tutorialDone ? 99 : 0;
+    if (opts.endless) {
+      // straight into the waves: no map, no tutorial
+      this.hintStep = 99;
+      this.run.endless = true;
+      this.pipe.setPalette(paletteById(SECTORS[0]!.palette), 1.2);
+      this.buildBackdrop(SECTORS[0]!.palette, hashString(seed));
+      this.nextEndlessWave();
+      return;
+    }
     this.enterSector(0, true);
+  }
+
+  /**
+   * Endless: waves of rising difficulty. Every three waves the environment moves on
+   * through all ten sectors; every fifth wave is a boss. Each cleared wave pays a draft.
+   */
+  nextEndlessWave(): void {
+    const run = this.run!;
+    const wave = run.endlessWaves;
+    const env = Math.floor(wave / 3) % SECTORS.length;
+    const boss = wave % 5 === 4;
+    const go = () => this.startEncounter(boss ? 'boss' : 'endless', Math.floor(run.rng.next() * 1e9));
+    if (env !== run.sector || wave === 0) {
+      run.sector = env;
+      const sec = SECTORS[env]!;
+      if (wave === 0) go();
+      else
+        this.doWarp(sec.palette, () => {
+          this.buildBackdrop(sec.palette, hashString(run.seed + 'e' + wave));
+          this.sectorTitle = { name: sec.name, sub: `Endless · wave ${wave + 1}`, t: 3.5 };
+          go();
+        });
+    } else go();
   }
 
   private hookWorld(w: World): void {
@@ -407,6 +452,7 @@ export class Game {
     run.sector = idx;
     run.sectorLight = 0;
     run.freeRerolls = this.save.unlockLevel('b_reroll');
+    this.mapFocusZ = null;
     if (!first) run.map = generateMap(Math.floor(run.rng.next() * 1e9), idx, { rifts: this.save.unlockLevel('p_curses') > 0, heat: run.heat });
     run.node = -1;
     const sec = SECTORS[idx]!;
@@ -418,7 +464,7 @@ export class Game {
       if (this.audio.music) this.audio.music.targetIntensity = 0.15;
       this.world!.stats.sectorGrazes = 0;
       this.sectorTitle = { name: sec.name, sub: sec.intro, t: 4.5 };
-      this.discoverLore(['vela', 'antares', 'sirius', 'pulsar', 'laststar'][idx]!);
+      this.discoverLore(sec.lore ?? ['vela', 'antares', 'sirius', 'pulsar', 'laststar'][idx]!);
       this.openMap();
     };
     if (first) {
@@ -442,6 +488,7 @@ export class Game {
   }
 
   mapFocus = -1;
+  private mapFocusZ: number | null = null;
 
   reachable(): MapNode[] {
     const run = this.run!;
@@ -519,9 +566,28 @@ export class Game {
     pl.dodgeCharges = w.build.ship.dodges;
     pl.lumen = Math.min(pl.lumen, 99);
     pl.flareT = 0;
+    const p2 = w.player2;
+    if (p2) {
+      // Player 2 starts each fight on P1's wing, back on their feet if they were down
+      p2.alive = true;
+      p2.hull = Math.max(p2.hull, p2.maxHull * 0.4);
+      p2.pos.set(7, 1, 72);
+      p2.prev.copy(p2.pos);
+      p2.vel.set(0, 0, -30);
+      p2.quat.identity();
+      p2.prevQuat.identity();
+      p2.shield = p2.maxShield;
+      p2.boostEnergy = 1;
+      p2.dodgeCharges = w.build.ship.dodges;
+      p2.flareT = 0;
+      w.reviveT = 0;
+    }
     this.view.resetTrail();
     this.camPos.set(0, 3, 82);
-    this.director = new Director(kind, run.sector, seed, w, run.heat);
+    // map row inside a sector; in Endless the wave number drives the same scaling
+    const depth = run.endless ? run.endlessWaves : run.node >= 0 ? run.map.nodes[run.node]!.row : 0;
+    this.director = new Director(kind, run.sector, seed, w, run.heat, depth);
+    this.director.endlessWave = run.endlessWaves;
     run.encounters++;
     this.recorder.reset();
     run.pendingFight = false;
@@ -553,7 +619,8 @@ export class Game {
       w.player.lumen = Math.max(w.player.lumen, 50);
     }
     dir.update(dt);
-    w.update(this.controls, dt);
+    w.update(this.controls, dt, w.player2 ? this.controls2 : undefined);
+    this.controls2.dodge = this.controls2.ability1 = this.controls2.ability2 = this.controls2.flare = false;
     if (dir.kind === 'derelict') {
       this.view.markers = dir.beacons.map((b) => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z, r: 12, lit: b.lit ? 1 : b.progress }));
     }
@@ -561,7 +628,8 @@ export class Game {
     if (dir.kind === 'endless') run.endlessWaves = dir.endlessWave;
     // codex: enemies seen
     for (const id of w.stats.enemiesSeen) if (!this.save.data.codex.enemies.includes(id)) this.save.data.codex.enemies.push(id);
-    if (!w.player.alive) {
+    // co-op: the run only ends when both pilots are down
+    if (!w.anyAlive()) {
       this.deathT -= dt;
       if (this.deathT <= 0) this.onDeath();
       return;
@@ -575,7 +643,15 @@ export class Game {
     const dir = this.director!;
     this.director = null;
     this.view.markers.length = 0;
-    // vacuum up remaining motes
+    // vacuum up remaining drops and motes; banked drops become a queue of extra drafts
+    for (let i = w.drops.length - 1; i >= 0; i--) w.collectDrop(i);
+    const after = run.endless ? 'endless' : dir.kind === 'boss' ? 'sector' : 'map';
+    const q: NonNullable<RunState['draftCtx']>[] = [];
+    for (let i = 0; i < w.bank.prism; i++) q.push({ minRarity: 'rare', after, source: 'prism' });
+    for (let i = 0; i < w.bank.cache; i++) q.push({ weaponsOnly: true, after, source: 'cache' });
+    for (let i = 0; i < w.bank.shard; i++) q.push({ after, source: 'shard' });
+    run.draftQueue = q.slice(0, 6);
+    w.bank.shard = w.bank.prism = w.bank.cache = 0;
     for (let i = 0; i < w.motes.n; i++) {
       w.player.light += w.motes.value[i]! * w.build.ship.lightGain;
       w.player.lightTotal += w.motes.value[i]! * w.build.ship.lightGain;
@@ -587,12 +663,29 @@ export class Game {
       this.save.save();
     }
     const kind = dir.kind;
+    if (run.endless) {
+      run.endlessWaves++;
+      const d = this.save.data;
+      if (run.endlessWaves > d.endlessBest) {
+        d.endlessBest = run.endlessWaves;
+        this.juice.toast(`NEW BEST · WAVE ${run.endlessWaves}`, '#ffd890');
+      }
+      if (kind === 'boss') {
+        this.view.space.starPower = 1;
+        this.view.space.applyStarPower();
+      }
+      this.save.save();
+      this.openDraft({ minRarity: kind === 'boss' ? 'rare' : undefined, after: 'endless' });
+      return;
+    }
     if (kind === 'boss') {
       this.view.space.starPower = 1;
       this.view.space.applyStarPower();
       this.juice.toast('THE STAR IS RELIT', '#fff6c0');
       if (run.sector === 0) this.challenge('first_boss');
-      if (run.sector >= SECTORS.length - 1 && !run.endless) {
+      // Act I ends at the Last Dark (unless you pressed on); Act II at the Endless Night
+      const actEnd = run.sector === ACT2_START - 1 && !run.deep;
+      if ((run.sector >= SECTORS.length - 1 || actEnd) && !run.endless) {
         run.won = true;
         this.setState('victory');
         this.finishRun(true);
@@ -602,7 +695,6 @@ export class Game {
       this.openDraft({ minRarity: 'rare', after: 'sector' });
       return;
     }
-    if (kind === 'endless') return;
     if (kind === 'elite') this.openDraft({ minRarity: 'rare', artifacts: true, after: 'map' });
     else if (kind === 'rift') this.openDraft({ minRarity: 'legendary', artifacts: true, curse: true, after: 'map' });
     else this.openDraft({ after: 'map' });
@@ -612,7 +704,7 @@ export class Game {
     const run = this.run!;
     const w = this.world!;
     run.draftCtx = ctx;
-    run.draft = w.build.draft(run.rng.fork('draft' + run.encounters + ':' + run.rerolls), { minRarity: ctx.minRarity, allowArtifacts: ctx.artifacts });
+    run.draft = w.build.draft(run.rng.fork('draft' + run.encounters + ':' + run.rerolls + ':' + (run.draftQueue?.length ?? 0)), { minRarity: ctx.minRarity, allowArtifacts: ctx.artifacts, weaponsOnly: ctx.weaponsOnly });
     if (ctx.curse) {
       const curses = UPGRADES.filter((u) => u.rarity === 'curse' && !w.build.upgrades.has(u.id));
       if (curses.length) {
@@ -692,7 +784,13 @@ export class Game {
 
   private afterDraft(): void {
     const run = this.run!;
-    if (run.draftCtx?.after === 'sector') this.enterSector(run.sector + 1);
+    const next = run.draftQueue?.shift();
+    if (next) {
+      this.openDraft(next);
+      return;
+    }
+    if (run.draftCtx?.after === 'endless') this.nextEndlessWave();
+    else if (run.draftCtx?.after === 'sector') this.enterSector(run.sector + 1);
     else this.openMap();
   }
 
@@ -973,13 +1071,22 @@ export class Game {
     this.save.save();
   }
 
+  /** Press on past the Last Dark into Act II: the Deep. */
+  startDeep(): void {
+    const run = this.run!;
+    run.deep = true;
+    run.won = false;
+    this.juice.toast('INTO THE DEEP', '#99ad85');
+    this.enterSector(ACT2_START);
+  }
+
+  /** After a victory: keep going into Endless with the build you have. */
   startEndless(): void {
     const run = this.run!;
     run.endless = true;
-    this.doWarp('binary', () => {
-      this.buildBackdrop('binary', 99);
-      this.startEncounter('endless', Math.floor(run.rng.next() * 1e9));
-    });
+    // a finished build starts deep into the waves
+    run.endlessWaves = run.deep ? 30 : 15;
+    this.nextEndlessWave();
   }
 
   abandonRun(): void {
@@ -1160,8 +1267,61 @@ export class Game {
       this.pendingYaw = 0;
       this.pendingPitch = 0;
     }
+    this.gatherP2(frameDt);
     aim.strength = inp.lastDevice === 'pad' ? Math.min(1, s.aimAssist + 0.35) : s.aimAssist;
     aim.cone = inp.lastDevice === 'pad' ? 0.17 : 0.1;
+  }
+
+  /**
+   * Local co-op input. Any spare gamepad joins as Player 2 with START during a
+   * fight; holding BACK for 1.5 s leaves. P2 uses P1's pad layout.
+   */
+  private gatherP2(frameDt: number): void {
+    const inp = this.input;
+    const w = this.world;
+    if (!w || !this.run) return;
+    if (!w.player2) {
+      if (inp.joinRequest !== null && this.state === 'combat') {
+        inp.assignP2(inp.joinRequest);
+        w.addPlayer2();
+        this.juice.toast('PLAYER 2 JOINED', '#7fe0a8');
+        this.audio.play('uiSelect', 0, 0.8);
+      }
+      return;
+    }
+    if (inp.p2Lost) {
+      this.leaveCoop('PLAYER 2 DISCONNECTED');
+      return;
+    }
+    const p = inp.p2;
+    const c = this.controls2;
+    const btn = (a: Parameters<typeof inp.padButton>[0]) => inp.padButton(a);
+    c.mx = p.lx;
+    c.mz = -p.ly;
+    c.my = (p.held(12) ? 1 : 0) - (p.held(13) ? 1 : 0);
+    c.fire1 = p.held(btn('fire1'));
+    c.fire2 = p.held(btn('fire2'));
+    c.boost = p.held(btn('boost'));
+    if (p.pressed(btn('dodge'))) c.dodge = true;
+    if (p.pressed(btn('ability1'))) c.ability1 = true;
+    if (p.pressed(btn('ability2'))) c.ability2 = true;
+    if (p.pressed(btn('flare'))) c.flare = true;
+    c.autoLevel = this.settings.autoLevel;
+    const sens = this.settings.sensitivity;
+    const inv = this.settings.invertY ? -1 : 1;
+    if (this.state === 'combat') {
+      this.p2Yaw += p.rx * 2.6 * frameDt * sens;
+      this.p2Pitch += p.ry * 2.0 * frameDt * sens * inv;
+    } else this.p2Yaw = this.p2Pitch = 0;
+    this.p2LeaveT = p.held(8) ? this.p2LeaveT + frameDt : 0;
+    if (this.p2LeaveT > 1.5) this.leaveCoop('PLAYER 2 LEFT');
+  }
+
+  leaveCoop(msg: string): void {
+    this.world?.removePlayer2();
+    this.input.assignP2(null);
+    this.p2LeaveT = 0;
+    this.juice.toast(msg, '#ff8a6a');
   }
 
   update(dt: number): void {
@@ -1169,6 +1329,9 @@ export class Game {
     if (this.state === 'combat' && this.world) {
       this.controls.yaw = this.pendingYaw;
       this.controls.pitch = this.pendingPitch;
+      this.controls2.yaw = this.p2Yaw;
+      this.controls2.pitch = this.p2Pitch;
+      this.p2Yaw = this.p2Pitch = 0;
       this.pendingYaw = 0;
       this.pendingPitch = 0;
       this.recorder.capture(this.controls);
@@ -1333,7 +1496,11 @@ export class Game {
         // lag, no shake) so the view can never drift. Same offset and the same
         // slight downward tilt every frame; only boost changes it.
         const b = this.boostCam;
-        _w.set(0, CHASE_UP + b * 0.6, CHASE_BACK + b * 3.5).applyQuaternion(_q).add(_v);
+        // co-op: pull the rigid chase camera back so Player 2 stays in frame
+        const p2 = w.player2;
+        const spread = p2 ? clamp((p2.pos.distanceTo(pl.pos) - 18) * 0.35, 0, 22) : 0;
+        this.coopPull = damp(this.coopPull, spread, 2, dt);
+        _w.set(0, CHASE_UP + b * 0.6 + this.coopPull * 0.35, CHASE_BACK + b * 3.5 + this.coopPull).applyQuaternion(_q).add(_v);
         cam.position.copy(_w);
         this.camPos.copy(_w);
         cam.quaternion.copy(_q).multiply(CHASE_TILT);
@@ -1350,8 +1517,14 @@ export class Game {
       // menus / map: slow cinematic drift
       const t = this.loop.realTime;
       if (this.run) {
-        cam.position.set(Math.sin(t * 0.07) * 18, 52 + Math.sin(t * 0.11) * 4, 92);
-        cam.lookAt(0, 0, -12);
+        // the chart is long: follow the row you are on
+        const nodes = this.run.map.nodes;
+        const cur = this.run.node >= 0 ? nodes[this.run.node] : undefined;
+        const fz = (cur ? cur.z : 40) - 44;
+        this.mapFocusZ = this.mapFocusZ === null ? fz : damp(this.mapFocusZ, fz, 2.5, dt);
+        // steep, nearly overhead: rows spread down the screen instead of stacking up
+        cam.position.set(Math.sin(t * 0.07) * 12, 104 + Math.sin(t * 0.11) * 3, this.mapFocusZ + 62);
+        cam.lookAt(0, 0, this.mapFocusZ);
       } else {
         cam.position.set(Math.sin(t * 0.05) * 20 + 30, 8 + Math.sin(t * 0.08) * 3, 60);
         cam.lookAt(-6, 2, 0);

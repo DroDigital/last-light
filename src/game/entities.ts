@@ -1,6 +1,7 @@
 import { Quaternion, Vector3 } from 'three';
 import type { EnemyDef } from './types';
 import type { EliteMod } from '../data/enemies';
+import { AFFIX_INDEX, type AffixId, type Rarity } from '../data/affixes';
 import type { MeshKind } from '../render/meshes';
 
 
@@ -23,7 +24,30 @@ export class Enemy {
   scale = 1;
   mesh: MeshKind = 'hushSpike';
   tint = new Vector3(1, 1, 1);
+  /** primary affix (display); null for common enemies */
   elite: EliteMod | null = null;
+  rarity: Rarity = 0;
+  affixes: AffixId[] = [];
+  affixMask = 0;
+  /** generated name for uniques */
+  rankName = '';
+  /** affix timers: periodic (summon/barrage/nova/phase), secondary, thorns cooldown */
+  affT = 0;
+  affT2 = 0;
+  thornT = 0;
+  enragedOn = false;
+  /** Unstable: nova telegraphed and armed */
+  affArm = false;
+  /** subtype index into SUBTYPES[def.id] (-1 = none) */
+  subtype = -1;
+  /** signature move state */
+  move = '';
+  moveTime = 0;
+  moveT = 0;
+  moveToken = false;
+  moveVec = new Vector3();
+  /** buff from an Empowering ally */
+  buffT = 0;
   speedMul = 1;
   fireMul = 1;
   hpMul = 1;
@@ -104,10 +128,26 @@ export class Enemy {
     this.shieldedBy = 0;
     this.lastSrc = -1;
     this.breakStage = 0;
+    this.elite = null;
+    this.rarity = 0;
+    this.affixes.length = 0;
+    this.affixMask = 0;
+    this.rankName = '';
+    this.affT = this.affT2 = this.thornT = this.buffT = 0;
+    this.enragedOn = this.affArm = false;
+    this.subtype = -1;
+    this.move = '';
+    this.moveTime = 0;
+    this.moveT = 2;
+    this.moveToken = false;
     this.spawnT = 0.6;
     this.isBossCore = false;
     this.dmgTaken = 1;
     return this;
+  }
+
+  has(a: AffixId): boolean {
+    return (this.affixMask & (1 << AFFIX_INDEX[a])) !== 0;
   }
 
   /** Heavy hulls (carriers, bombers, shielders) break apart in stages. */

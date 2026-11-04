@@ -196,6 +196,74 @@ if (scenario === 'muzzle') {
   await page.waitForTimeout(900);
   await shot('muzzle2');
 }
+if (scenario === 'coop') {
+  await ll(() => window.__ll.startRun({ seed: 'COOP' }));
+  await page.waitForTimeout(2000);
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 6); g.godMode = true; g.world.addPlayer2(); const p = g.input.p2; p.now = []; p.now[7] = true; p.ly = -0.4; p.rx = 0.15; });
+  await page.waitForTimeout(5000); await shot('coop-1');
+  await ll(() => { const g = window.__ll; const w = g.world; w.withPlayer(w.player2, () => w.killPlayer('test')); });
+  await page.waitForTimeout(1500); await shot('coop-down');
+  console.log('coop:', JSON.stringify(await ll(() => { const g = window.__ll; const w = g.world; return { p2: !!w.player2, p2alive: w.player2.alive, state: g.state, kills: w.stats.kills, d: +w.player2.pos.distanceTo(w.p1.pos).toFixed(1) }; })));
+}
+if (scenario === 'endless') {
+  const log = await page.evaluate(async () => {
+    const g = window.__ll;
+    const out = [];
+    g.startRun({ endless: true });
+    g.godMode = true; g.autopilot = true; g.input.synthetic.add('fire1'); g.input.synthetic.add('fire2'); g.input.synthetic.add('forward');
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let guard = 0;
+    while (guard++ < 60 && g.run.endlessWaves < 7) {
+      if (g.state === 'warp') { g.simulate(0); await wait(50); for (let i = 0; i < 40 && g.state === 'warp'; i++) g.render(0, 0.1); continue; }
+      if (g.state === 'combat') {
+        let t = 0; while (g.state === 'combat' && t < 300) { g.simulate(2); t += 2; }
+        out.push(`wave ${g.run.endlessWaves} done: ${g.director ? g.director.kind : 'cleared'} sector=${g.run.sector} t=${t}s state=${g.state} queue=${g.run.draftQueue ? g.run.draftQueue.length : 0}`);
+        if (t >= 300) { out.push('STUCK'); break; }
+        continue;
+      }
+      if (g.state === 'draft') { g.pickCard(0); continue; }
+      out.push('state ' + g.state); break;
+    }
+    out.push('best=' + g.save.data.endlessBest);
+    return out;
+  });
+  console.log(log.join('\n'));
+}
+if (scenario === 'deep') {
+  await ll(() => window.__ll.startRun({ seed: 'DEEP' }));
+  await page.waitForTimeout(2000);
+  for (let idx = 5; idx < 10; idx++) {
+    await ll((idx) => { const g = window.__ll; g.run.deep = true; g.run.sector = idx; g.enterSector(idx, true); }, idx);
+    await page.waitForTimeout(900);
+    if (idx === 6) await shot('deep-map-' + idx);
+    await ll(() => { const g = window.__ll; g.startEncounter('boss', 7); g.godMode = true; });
+    await page.waitForTimeout(6500);
+    await ll(() => { const g = window.__ll; const b = g.world.boss; const p = g.world.player; const d = b.core.pos.clone().sub(p.pos).normalize(); p.quat.setFromUnitVectors(p.pos.clone().set(0, 0, -1), d); p.prevQuat.copy(p.quat); });
+    await page.waitForTimeout(1500);
+    await shot('deep-boss-' + idx);
+  }
+}
+if (scenario === 'loot') {
+  await ll(() => window.__ll.startRun({ seed: 'LOOT' }));
+  await page.waitForTimeout(2500);
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 4); g.godMode = true; g.director.update = () => {}; });
+  await page.waitForTimeout(1500);
+  await ll(() => { const g = window.__ll; const w = g.world; w.clearArena(); const p = w.player; const f = p.forward(p.pos.clone()); const r = p.right ? p.right(p.pos.clone()) : p.pos.clone().set(1, 0, 0);
+    const at = (d, s) => p.pos.clone().addScaledVector(f, d).addScaledVector(r, s);
+    let a = at(30, -10); const u = w.spawnEnemy('gunship', a.x, a.y + 2, a.z, 3); u.spawnT = 0; u.speedMul = 0; u.fireMul = 0;
+    a = at(34, 10); const rr = w.spawnEnemy('surveyor', a.x, a.y + 1, a.z, 2); rr.spawnT = 0; rr.speedMul = 0; rr.fireMul = 0;
+    a = at(26, 2); const m = w.spawnEnemy('scrapper', a.x, a.y - 3, a.z, 1); m.spawnT = 0; m.speedMul = 0;
+    const kinds = ['shard', 'prism', 'cache', 'repair', 'cell'];
+    kinds.forEach((k, i) => { const q = at(16, (i - 2) * 3.5); w.drops.push({ x: q.x, y: q.y - 1.5, z: q.z, vx: 0, vy: 0, vz: 0, kind: k, age: 1 }); });
+    w.bank.shard = 2; w.bank.cache = 1; });
+  await page.waitForTimeout(400);
+  await ll(() => { const g = window.__ll; for (const d of g.world.drops) d.age = 0.3; });
+  await page.waitForTimeout(500); await shot('l-loot');
+  await ll(() => { const g = window.__ll; g.world.bank.prism = 1; g.director.done = true; });
+  await page.waitForTimeout(2500); await shot('l-draft1');
+  console.log('queue after first draft opens:', await ll(() => window.__ll.run.draftQueue.length));
+  console.log('hud canvas visible in draft (want hidden):', await ll(() => document.getElementById('hud2d').style.visibility));
+}
 if (scenario === 'props') {
   await page.mouse.click(5, 5);
   await page.waitForTimeout(1500); await shot('p-title');
