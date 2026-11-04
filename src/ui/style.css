@@ -325,9 +325,12 @@ h3 { font-family: var(--px); font-weight: 400; font-size: calc(12px * var(--ui-s
 .card:hover::before, .card.focus::before { opacity: 0.42; }
 .card .idx { position: absolute; right: 20px; top: 18px; font-family: var(--px); font-size: calc(12px * var(--ui-scale)); color: var(--paper-3); }
 .card .rar { align-self: flex-start; font-family: var(--px); font-size: calc(12px * var(--ui-scale)); text-transform: uppercase; color: var(--ink); background: var(--rc); padding: 2px 8px 1px; clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px); }
-.card .icon { position: relative; width: 74px; height: 74px; margin: 10px 0 6px; display: flex; align-items: center; justify-content: center; font-size: calc(34px * var(--ui-scale)); color: var(--paper); text-shadow: 0 0 14px var(--rc); }
-/* a dithered halo behind the icon */
-.card .icon::before { content: ''; position: absolute; inset: -22px; z-index: -1; background: var(--rc); opacity: 0.5; -webkit-mask: var(--m-glow) center / 120px 120px no-repeat; mask: var(--m-glow) center / 120px 120px no-repeat; }
+/* animated effect preview: a 76x44 dithered vignette on the 3px cell grid */
+.card .pv { position: relative; margin: 6px -6px 4px; aspect-ratio: 76 / 44; background: var(--ink); clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.card .pv::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 1px var(--line-2); clip-path: inherit; }
+.card:hover .pv::after, .card.focus .pv::after { box-shadow: inset 0 0 0 1px var(--rc); }
+.card .pv canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.card .pv-ic { position: absolute; left: 8px; bottom: 4px; font-size: calc(16px * var(--ui-scale)); color: var(--rc); text-shadow: 0 0 8px var(--rc); line-height: 1; }
 .card .nm { font-weight: 900; font-size: var(--s4); line-height: 1.05; letter-spacing: 0.03em; text-transform: uppercase; }
 .card .ds { color: var(--paper-2); line-height: 1.5; flex: 1; font-size: var(--s2); }
 .card .combo { position: absolute; left: 50%; top: -11px; transform: translateX(-50%); padding: 3px 10px 2px; background: var(--signal); clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); z-index: 2; }
@@ -399,10 +402,21 @@ h3 { font-family: var(--px); font-weight: 400; font-size: calc(12px * var(--ui-s
 .setting button.switch.on::after { transform: translateX(22px); background: var(--ink); }
 textarea { width: 100%; height: 84px; margin: 10px 0; background: var(--ink); color: var(--paper); border: 1px solid var(--line-2); font-family: var(--mono); font-size: calc(11px * var(--ui-scale)); padding: 8px; }
 
-.dialogue { position: relative; padding: 12px 16px 12px 18px; margin-bottom: 10px; line-height: 1.55; background: rgba(243, 238, 226, 0.04); box-shadow: inset 3px 0 0 var(--tint); animation: hintIn 0.4s steps(4) backwards; }
+.dialogue { position: relative; padding: 12px 16px 12px 18px; margin-bottom: 10px; line-height: 1.55; background: rgba(243, 238, 226, 0.04); box-shadow: inset 3px 0 0 var(--tint); animation: dialogueIn 0.4s steps(4) backwards; }
+@keyframes dialogueIn { from { opacity: 0; transform: translateX(-8px); } }
+/* cause-of-death line: always on an ink plate, never straight on the world */
+.plate-line { align-self: center; padding: 8px 16px 7px; background: var(--ink); color: var(--paper-2); clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+.cause { align-self: flex-start; margin-top: 4px; padding: 6px 12px 5px; background: var(--ink); color: var(--paper-2); clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+.cause b { color: var(--danger); font-weight: 800; }
 .dialogue .who { font-family: var(--px); font-size: calc(12px * var(--ui-scale)); text-transform: uppercase; color: var(--tint); margin-bottom: 4px; }
 .stat { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: var(--s2); color: var(--paper-2); }
 .stat b { font-family: var(--mono); font-weight: 700; color: var(--paper); }
+/* short viewports (720p and below): keep the death / victory summaries on screen */
+@media (max-height: 800px) {
+  [data-screen=death] .stat, [data-screen=victory] .stat { padding: 4px 0; }
+  [data-screen=death] .display { font-size: var(--s5) !important; }
+  [data-screen=death] .panel { margin-top: 8px !important; }
+}
 .dmgbar { height: 6px; margin-top: 4px; background: var(--lantern); -webkit-mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 9px); mask: repeating-linear-gradient(90deg, #000 0 6px, transparent 6px 9px); }
 
 /* ===================== DEBUG / PERF ===================== */
