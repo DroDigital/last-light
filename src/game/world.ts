@@ -1,4 +1,5 @@
 import { Vector3 } from 'three';
+import { BAL } from '../data/balance';
 import { Rng } from '../core/rng';
 import { Emitter } from '../core/events';
 import { SpatialHash } from '../core/spatial';
@@ -255,7 +256,10 @@ export class World {
     e.pos.set(x, y, z);
     e.prev.copy(e.pos);
     const heatHp = 1 + (this.heat >= 1 ? 0.15 : 0) + (this.heat >= 5 ? 0.3 : 0);
-    e.hpMul = heatHp * this.sectorHpScale;
+    const isBoss = d.role === 'boss' || d.role === 'part';
+    // bosses grow more slowly per sector than the rank and file, or late fights turn into sponges
+    const sectorHp = isBoss ? 1 + (this.sectorHpScale - 1) * BAL.bossSectorHp : this.sectorHpScale;
+    e.hpMul = heatHp * sectorHp * (isBoss ? BAL.bossHp : d.role === 'inert' ? 1 : BAL.enemyHp);
     e.hp = e.maxHp = d.hp * e.hpMul;
     e.dmgMul = this.heat >= 8 ? 1.25 : 1;
     const [r, g, b] = hexToRgb(d.accent);
@@ -270,6 +274,9 @@ export class World {
   }
 
   sectorHpScale = 1;
+  /** enemy damage growth for the current sector (set by the Director) */
+  sectorDmgScale = 1;
+  private beamHitT = 0;
 
   makeElite(e: Enemy, mod: EliteMod): void {
     e.elite = mod;
@@ -294,6 +301,7 @@ export class World {
 
   update(c: Controls, dt: number): void {
     this.time += dt;
+    if (this.beamHitT > 0) this.beamHitT -= dt;
     this.killsThisTick = 0;
     this.player.update(c, dt);
     const edt = dt * this.enemyTimeScale;
@@ -1064,9 +1072,10 @@ export class World {
   hurtPlayer(amount: number, cause: string, attacker?: Enemy): void {
     const pl = this.player;
     if (!pl.alive || pl.iframeT > 0 || pl.hurtT > 0) return;
-    let dmg = amount * this.build.ship.damageTaken * (this.heat >= 8 ? 1.25 : 1);
+    const bossK = this.boss && !this.boss.dead ? BAL.bossDamage : 1;
+    let dmg = amount * BAL.enemyDamage * bossK * this.sectorDmgScale * this.build.ship.damageTaken * (this.heat >= 8 ? 1.25 : 1);
     dmg = Math.max(1, dmg - this.build.ship.armor);
-    pl.hurtT = 0.35;
+    pl.hurtT = BAL.hitGrace;
     pl.shieldDelayT = this.build.ship.shieldDelay;
     let hullHit = false;
     if (pl.shield > 0) {
@@ -1088,6 +1097,14 @@ export class World {
     if (attacker?.elite === 'vampiric') attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
     this.events.emit('hurt', { dmg: amount, hull: hullHit, x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
     if (pl.hull <= 0) this.killPlayer(cause);
+  }
+
+  /** Beams hit at most once per BAL.beamCooldown, so a sweep is a threat, not a one-shot. */
+  hurtPlayerBeam(amount: number, cause: string, attacker?: Enemy): void {
+    if (this.beamHitT > 0) return;
+    const before = this.player.hurtT;
+    this.hurtPlayer(amount, cause, attacker);
+    if (this.player.hurtT !== before || !this.player.alive) this.beamHitT = BAL.beamCooldown;
   }
 
   killPlayer(cause: string): void {
@@ -1434,7 +1451,7 @@ export class World {
     size = 0.6,
     life = 6,
   ): number {
-    const heatSpeed = this.heat >= 2 ? 1.15 : 1;
+    const heatSpeed = (this.heat >= 2 ? 1.15 : 1) * BAL.enemyShotSpeed;
     const i = this.eproj.spawn(
       x,
       y,

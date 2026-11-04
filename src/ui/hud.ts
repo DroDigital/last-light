@@ -107,7 +107,11 @@ export class Hud {
     this.t += dt;
     const g = this.g;
     const c = this.ctx;
-    c.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    // clear the whole backing store regardless of any transform a draw left behind
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (g.showPerf) this.renderPerf(w);
     this.perfEl.style.display = g.showPerf ? 'block' : 'none';
     this.debugEl.style.display = g.showDebug ? 'block' : 'none';

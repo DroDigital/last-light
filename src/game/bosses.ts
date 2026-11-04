@@ -387,7 +387,7 @@ export class BossController {
       }
       w.beams.push({ ax: core.pos.x, ay: core.pos.y, az: core.pos.z, bx: core.pos.x + b.dir.x * b.len, by: core.pos.y + b.dir.y * b.len, bz: core.pos.z + b.dir.z * b.len, width: b.width, r: 1, g: 0.35, b: 0.3, enemy: true });
       const t = raySphere(core.pos.x, core.pos.y, core.pos.z, b.dir.x, b.dir.y, b.dir.z, pl.pos.x, pl.pos.y, pl.pos.z, pl.radius + b.width * 0.5);
-      if (t >= 0 && t < b.len) w.hurtPlayer(16, this.def.name + ' beam', core);
+      if (t >= 0 && t < b.len) w.hurtPlayerBeam(16, this.def.name + ' beam', core);
     }
   }
 
@@ -461,7 +461,7 @@ export class BossController {
             if (s !== core) _c.copy(pl.pos).sub(s.pos).normalize().applyAxisAngle(this.sweepAxis, ang * 0.6);
             w.beams.push({ ax: s.pos.x, ay: s.pos.y, az: s.pos.z, bx: s.pos.x + _c.x * 180, by: s.pos.y + _c.y * 180, bz: s.pos.z + _c.z * 180, width: 2, r: 1, g: 0.35, b: 0.3, enemy: true });
             const tt = raySphere(s.pos.x, s.pos.y, s.pos.z, _c.x, _c.y, _c.z, pl.pos.x, pl.pos.y, pl.pos.z, pl.radius + 1);
-            if (tt >= 0 && tt < 180) w.hurtPlayer(15, this.def.name + ' beam', s);
+            if (tt >= 0 && tt < 180) w.hurtPlayerBeam(15, this.def.name + ' beam', s);
           }
         } else this.end(1.4);
         break;

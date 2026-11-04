@@ -1,4 +1,5 @@
 import { Rng } from '../core/rng';
+import { BAL } from '../data/balance';
 import { SECTORS, type SectorDef } from '../data/world';
 import { ENEMY_BY_ID, ELITE_MODS, type EliteMod } from '../data/enemies';
 import type { World } from './world';
@@ -133,7 +134,7 @@ export class Director {
     this.sectorIdx = sectorIdx;
     this.sector = SECTORS[Math.min(sectorIdx, SECTORS.length - 1)]!;
     this.rng = new Rng(seed);
-    const base = 34 + sectorIdx * 20;
+    const base = BAL.budgetBase + sectorIdx * BAL.budgetPerSector;
     const heatMul = 1 + (heat >= 9 ? 0.25 : 0);
     this.budget = Math.round(
       {
@@ -150,8 +151,9 @@ export class Director {
     this.elitesLeft = kind === 'elite' ? 2 + Math.floor(sectorIdx / 2) : kind === 'rift' ? 4 : 0;
     if (w.build.flags.has('hunted')) this.elitesLeft += 1;
     if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
-    w.maxTokens = 3 + Math.floor(sectorIdx / 2) + (kind === 'rift' ? 2 : 0);
-    w.sectorHpScale = 1 + sectorIdx * 0.34 + (kind === 'endless' ? 0.3 : 0);
+    w.maxTokens = BAL.tokensBase + Math.floor(sectorIdx * BAL.tokensPerSector) + (kind === 'rift' ? 2 : 0);
+    w.sectorHpScale = 1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0);
+    w.sectorDmgScale = 1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0);
     this.dress();
     if (kind === 'boss') {
       this.boss = new BossController(this.sector.boss, w, 1 + (heat >= 5 ? 0.25 : 0), this.sector.music.bpm);
@@ -206,7 +208,7 @@ export class Director {
     const health = w.player.hull / w.player.maxHull;
     const hk = health < 0.3 ? 0.65 : health < 0.55 ? 0.85 : 1;
     this.intensity = k;
-    return (6 + this.sectorIdx * 3.5) * k * power * hk * (this.kind === 'tutorial' ? 0.5 : 1);
+    return (BAL.liveThreatBase + this.sectorIdx * BAL.liveThreatPerSector) * k * power * hk * (this.kind === 'tutorial' ? 0.5 : 1);
   }
 
   liveThreat(): number {

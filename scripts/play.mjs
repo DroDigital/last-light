@@ -196,6 +196,28 @@ if (scenario === 'muzzle') {
   await page.waitForTimeout(900);
   await shot('muzzle2');
 }
+if (scenario === 'props') {
+  await page.mouse.click(5, 5);
+  await page.waitForTimeout(1500); await shot('p-title');
+  await ll(() => window.__ll.startRun({ seed: 'PROPS' })); await page.waitForTimeout(3500); await shot('p-map');
+  await ll(() => { const g = window.__ll; g.startEncounter('derelict', 3); g.godMode = true; });
+  await page.waitForTimeout(2500);
+  // park the ship near the first beacon, facing it
+  await ll(() => { const g = window.__ll; const b = g.director.beacons[0]; const p = g.world.player; p.pos.set(b.pos.x + 30, b.pos.y + 4, b.pos.z + 30); p.prev.copy(p.pos);
+    const d = b.pos.clone().sub(p.pos).normalize(); p.quat.setFromUnitVectors(p.pos.clone().set(0, 0, -1), d); p.prevQuat.copy(p.quat); p.vel.set(0, 0, 0);
+    g.director.beacons[1].lit = true; g.director.beacons[0].progress = 0.5; g.world.clearArena(); });
+  await page.waitForTimeout(1800); await shot('p-beacon');
+  await ll(() => { const g = window.__ll; const b = g.director.beacons[1]; const p = g.world.player; p.pos.set(b.pos.x + 26, b.pos.y + 4, b.pos.z + 26); p.prev.copy(p.pos);
+    const d = b.pos.clone().sub(p.pos).normalize(); p.quat.setFromUnitVectors(p.pos.clone().set(0, 0, -1), d); p.prevQuat.copy(p.quat); });
+  await page.waitForTimeout(1500); await shot('p-beacon-lit');
+  await ll(() => { const g = window.__ll; const w = g.world; const p = w.player; const f = p.forward(p.pos.clone());
+    w.wells.push({ x: p.pos.x + f.x * 22, y: p.pos.y + f.y * 22, z: p.pos.z + f.z * 22, vx: 0, vy: 0, vz: 0, radius: 26, life: 30, maxLife: 30, pull: 0, dmg: 0, src: -1, tick: 0, shock: false, explode: 0, active: true });
+    w.decoys.push({ pos: p.pos.clone().addScaledVector(f, 12).add(p.pos.clone().set(6, 1, 0)), life: 30 }); });
+  await page.waitForTimeout(1500); await shot('p-well');
+  await ll(() => window.__ll.goTitle()); await page.waitForTimeout(400);
+  await ll(() => window.__ll.goHearth()); await page.waitForTimeout(1800); await shot('p-hearth');
+  console.log('hud pixels on hearth (want 0):', await ll(() => { const g = window.__ll; const cv = g.hud.canvas; const d = g.hud.ctx.getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; }));
+}
 if (scenario === 'draft') {
   await ll(() => window.__ll.startRun({ seed: 'DRAFT' }));
   await page.waitForTimeout(2500);
