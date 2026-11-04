@@ -74,6 +74,12 @@
   --chamfer: polygon(var(--cut) 0, 100% 0, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0 100%, 0 var(--cut));
   --br: transparent; /* bracket colour, set per state */
   --bl: 12px; /* bracket arm length */
+}
+
+/* The bracket template must be declared on the elements that use it: a custom
+   property's var() references resolve where it is declared, so a :root
+   declaration would freeze --br at its root value (transparent). */
+button, .btn, .panel, .card, .ab, .item, .hud .bl, .hud .br, .bossbar, .engage {
   --brackets:
     linear-gradient(var(--br), var(--br)) 0 0 / var(--bl) 2px no-repeat,
     linear-gradient(var(--br), var(--br)) 0 0 / 2px var(--bl) no-repeat,

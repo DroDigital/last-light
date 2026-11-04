@@ -1281,10 +1281,12 @@ export class Game {
         cam.position.copy(_w);
         this.camPos.copy(_w);
         cam.quaternion.copy(_q).multiply(CHASE_TILT);
-        if (b > 0.01) {
-          // gentle boost rumble, proportional to boost only
+        // gentle boost rumble, proportional to boost, honouring the screen-shake
+        // slider and reduced motion like every other camera motion
+        const rumble = b * st.shake * (st.reducedMotion ? 0 : 1);
+        if (rumble > 0.01) {
           const t = this.loop.realTime;
-          _q.setFromEuler(new THREE.Euler(Math.sin(t * 37) * 0.0025 * b, Math.sin(t * 29 + 1) * 0.0025 * b, 0));
+          _q.setFromEuler(new THREE.Euler(Math.sin(t * 37) * 0.0025 * rumble, Math.sin(t * 29 + 1) * 0.0025 * rumble, 0));
           cam.quaternion.multiply(_q);
         }
       }
