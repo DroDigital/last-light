@@ -371,7 +371,7 @@ export class Build {
   }
 
   /** Generate a 3-card draft. Deterministic given rng. */
-  draft(rng: Rng, opts: { count?: number; minRarity?: Rarity; allowArtifacts?: boolean; luckBonus?: number } = {}): DraftCard[] {
+  draft(rng: Rng, opts: { count?: number; minRarity?: Rarity; allowArtifacts?: boolean; luckBonus?: number; weaponsOnly?: boolean } = {}): DraftCard[] {
     const count = opts.count ?? 3;
     const cards: DraftCard[] = [];
     const used = new Set<string>();
@@ -399,7 +399,10 @@ export class Build {
     let guard = 0;
     while (cards.length < count && guard++ < 60) {
       const roll = rng.next();
-      if (roll < 0.14) {
+      // weapon caches offer weapons and levels; ordinary drafts mostly upgrades
+      const pW = opts.weaponsOnly ? 0.65 : 0.14;
+      const pL = opts.weaponsOnly ? 1 : 0.28;
+      if (roll < pW) {
         // new weapon
         const options = WEAPONS.filter(
           (w) => !this.ownsWeapon(w.id) && this.meta.unlockedWeapons.has(w.id) && !used.has('w' + w.id),
@@ -410,7 +413,7 @@ export class Build {
           cards.push({ kind: 'weapon', def, combo: this.comboScore(def.tags) });
           continue;
         }
-      } else if (roll < 0.28) {
+      } else if (roll < pL) {
         const options = this.weapons.filter((w) => w.level < MAX_LEVEL && !used.has('l' + w.def.id));
         if (options.length) {
           const w = rng.pick(options);

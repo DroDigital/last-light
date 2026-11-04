@@ -5,6 +5,7 @@ import { Emitter } from '../core/events';
 import { SpatialHash } from '../core/spatial';
 import { clamp } from '../core/math';
 import { ENEMY_BY_ID } from '../data/enemies';
+import { DROP_KINDS, dropChance, type DropKind } from '../data/drops';
 import { AFFIX_BY_ID, AFFIX_INDEX, RARITY, rollAffixes, uniqueName, type AffixId, type Rarity } from '../data/affixes';
 import type { EnemyDef, Faction, StatusKind, TriggerDef, TriggerOn, WeaponParams } from './types';
 import { Build, WeaponInstance } from './build';
@@ -71,6 +72,8 @@ export interface WorldEvents {
     enemy: boolean;
   };
   pickup: { x: number; y: number; z: number; value: number; combo: number };
+  /** a drop appeared (picked=false) or was collected (picked=true) */
+  drop: { kind: DropKind; x: number; y: number; z: number; picked: boolean };
   graze: { x: number; y: number; z: number; count: number };
   hurt: { dmg: number; hull: boolean; x: number; y: number; z: number };
   shieldBreak: Record<string, never>;
@@ -232,6 +235,7 @@ export class World {
   }
 
   clearArena(): void {
+    this.drops.length = 0;
     for (const e of this.enemies) this.release(e);
     this.enemies.length = 0;
     this.proj.clear();
@@ -279,6 +283,69 @@ export class World {
   /** enemy damage growth for the current sector (set by the Director) */
   sectorDmgScale = 1;
   private beamHitT = 0;
+
+  /** loot on the field (few at a time, so plain objects) */
+  drops: { x: number; y: number; z: number; vx: number; vy: number; vz: number; kind: DropKind; age: number }[] = [];
+  /** banked drafts, paid out when the fight ends */
+  bank = { shard: 0, prism: 0, cache: 0 };
+
+  /** Roll every drop kind for a kill against the drop table. */
+  private rollDrops(e: Enemy, x: number, y: number, z: number): void {
+    const gilded = e.affixMask !== 0 && e.has('gilded');
+    let shard = false;
+    for (const k of DROP_KINDS) {
+      const hit = this.rng.next() < dropChance(e.def, k, e.rarity, gilded, this.build.ship.luck, e.isBossCore) || (k === 'shard' && e.rarity === 3 && !shard);
+      if (!hit) continue;
+      if (k === 'shard') shard = true;
+      _brk.set(this.rng.next() - 0.5, this.rng.next() * 0.6, this.rng.next() - 0.5).normalize().multiplyScalar(10 + this.rng.next() * 8);
+      this.drops.push({ x, y, z, vx: _brk.x, vy: _brk.y, vz: _brk.z, kind: k, age: 0 });
+      this.events.emit('drop', { kind: k, x, y, z, picked: false });
+    }
+  }
+
+  private updateDrops(dt: number): void {
+    const pl = this.player;
+    const reach = this.build.ship.magnet * 1.4;
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i]!;
+      d.age += dt;
+      const dx = pl.pos.x - d.x;
+      const dy = pl.pos.y - d.y;
+      const dz = pl.pos.z - d.z;
+      const dist = Math.hypot(dx, dy, dz) || 1;
+      if (pl.alive && d.age > 0.6 && (dist < reach || d.age > 12)) {
+        const k = (70 + Math.max(0, reach - dist) * 5) / dist;
+        d.vx += dx * k * dt;
+        d.vy += dy * k * dt;
+        d.vz += dz * k * dt;
+        d.vx *= 1 - dt * 3;
+        d.vy *= 1 - dt * 3;
+        d.vz *= 1 - dt * 3;
+        if (dist < 2.6) {
+          this.collectDrop(i);
+          continue;
+        }
+      } else {
+        d.vx *= 1 - dt * 1.5;
+        d.vy *= 1 - dt * 1.5;
+        d.vz *= 1 - dt * 1.5;
+      }
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.z += d.vz * dt;
+    }
+  }
+
+  /** Collect drop i (or all of them at the end of a fight). */
+  collectDrop(i: number): void {
+    const d = this.drops[i]!;
+    const pl = this.player;
+    if (d.kind === 'repair') pl.hull = Math.min(pl.maxHull, pl.hull + 18);
+    else if (d.kind === 'cell') pl.lumen = Math.min(100, pl.lumen + 35);
+    else this.bank[d.kind]++;
+    this.events.emit('drop', { kind: d.kind, x: d.x, y: d.y, z: d.z, picked: true });
+    this.drops.splice(i, 1);
+  }
 
   /** current sector (0-based), set by the Director; gates affixes */
   sectorIdx = 0;
@@ -350,6 +417,7 @@ export class World {
     this.updateEnemyProjectiles(edt);
     this.updateWells(dt);
     this.updateMotes(dt);
+    this.updateDrops(dt);
     this.updateDebris(dt);
     for (let i = this.decoys.length - 1; i >= 0; i--) {
       const d = this.decoys[i]!;
@@ -723,6 +791,8 @@ export class World {
     const big = clamp((e.radius * e.scale) / 3, 0.2, 3) + (e.elite ? 0.6 : 0) + (d.role === 'boss' ? 3 : 0);
     this.events.emit('kill', { e, x, y, z, chain: this.chain, big });
 
+    // a boss core 'dies' twice (staged death sequence); only the final kill pays out
+    if (!e.isBossCore || this.boss?.dead) this.rollDrops(e, x, y, z);
     // Light motes
     let light = d.light * RARITY[e.rarity].light * (e.affixMask && e.has('gilded') ? 3 : 1);
     if (e.radiantT > 0) light *= 2;

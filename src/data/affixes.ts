@@ -88,9 +88,9 @@ export const AFFIX_INDEX = Object.fromEntries(AFFIXES.map((a, i) => [a.id, i])) 
 export function rarityOdds(sector: number, heat: number, encounter: string): [number, number, number] {
   const k = 1 + heat * 0.08 + (encounter === 'elite' ? 0.6 : encounter === 'rift' ? 1 : encounter === 'endless' ? 0.4 : 0);
   return [
-    Math.min(0.3, (0.07 + sector * 0.018) * k), // magic
-    Math.min(0.12, (0.018 + sector * 0.008) * k), // rare
-    Math.min(0.03, (0.003 + sector * 0.0018) * k), // unique
+    Math.min(0.15, (0.04 + sector * 0.012) * k), // magic
+    Math.min(0.04, (0.006 + sector * 0.004) * k), // rare
+    Math.min(0.006, (0.0006 + sector * 0.0005) * k), // unique
   ];
 }
 

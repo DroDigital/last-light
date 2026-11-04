@@ -10,6 +10,7 @@ import { hexToRgb } from '../core/math';
 import { fxRng } from '../core/rng';
 import { EdgeBatch } from './edges';
 import { RARITY_RGB } from '../data/affixes';
+import { DROP_INFO, type DropKind } from '../data/drops';
 
 const KINDS: MeshKind[] = [
   'hushSpike', 'hushDart', 'hushBlob', 'hushEye', 'salvBox', 'salvRam', 'salvGun', 'salvHauler', 'salvTurret',
@@ -19,7 +20,10 @@ const KINDS: MeshKind[] = [
 /** world props: beacons, map nodes, hearth lanterns, well singularities */
 const PROP_KINDS: MeshKind[] = [
   'beacon', 'beaconCrown', 'wellCore', 'wellDisc', 'navCombat', 'navElite', 'navBoss', 'navShop', 'navWreck', 'navRest', 'navForge', 'navRift', 'navStart', 'pylon',
+  'dropShard', 'dropPrism', 'dropCache', 'dropRepair', 'dropCell',
 ];
+const DROP_MESH: Record<DropKind, MeshKind> = { shard: 'dropShard', prism: 'dropPrism', cache: 'dropCache', repair: 'dropRepair', cell: 'dropCell' };
+const DROP_RGB = Object.fromEntries(Object.entries(DROP_INFO).map(([k, v]) => [k, hexToRgb(v.color)])) as Record<DropKind, [number, number, number]>;
 const PROP_CAP = 48;
 
 const _m = new THREE.Matrix4();
@@ -665,6 +669,14 @@ export class View {
         _v.set(fxRng.next() - 0.5, fxRng.next() - 0.5, fxRng.next() - 0.5).normalize().multiplyScalar(wl.radius);
         this.particles.spawn(wl.x + _v.x, wl.y + _v.y, wl.z + _v.z, -_v.x * 2, -_v.y * 2, -_v.z * 2, 0.5, c[0] * 2, c[1] * 2, c[2] * 2, 2, 0.5, 0, 0);
       }
+    }
+    // loot: small turning dithered objects with a pulsing ring so they read in a busy fight
+    for (const d of w.drops) {
+      const c = DROP_RGB[d.kind];
+      const bob = Math.sin(time * 3 + d.age * 2) * 0.25;
+      const sc = Math.min(1, d.age * 4) * (d.kind === 'prism' || d.kind === 'cache' ? 1.25 : 1);
+      this.queueProp(DROP_MESH[d.kind], d.x, d.y + bob, d.z, sc, time * 2 + d.age, c[0] * 0.75, c[1] * 0.75, c[2] * 0.75, 0.25 + Math.sin(time * 6) * 0.1, 0.3);
+      this.telegraphs.ring(d.x, d.y + bob, d.z, 1.6 + ((time * 1.5) % 1) * 1.2, 0, 1, 0, c[0], c[1], c[2], 0.5 * (1 - ((time * 1.5) % 1)), 16);
     }
     // decoys: a flickering ghost of the ship (the enemy sees a Lantern)
     for (const d of w.decoys) {

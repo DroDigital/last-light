@@ -14,6 +14,7 @@ import { Director, type EncounterKind } from '../src/game/run';
 import { WEAPONS } from '../src/data/weapons';
 import { aim } from '../src/game/weapons';
 import { Rng } from '../src/core/rng';
+import { enemyClass } from '../src/data/drops';
 
 const runs = Number(process.argv[2] ?? 12);
 const skill = (process.argv[3] ?? 'ok') as 'good' | 'ok' | 'poor';
@@ -42,7 +43,7 @@ interface EncLog {
   cause?: string;
 }
 
-function playEncounter(w: World, kind: EncounterKind, sector: number, seed: number, rng: Rng): { died: boolean; log: EncLog } {
+function playEncounter(w: World, kind: EncounterKind, sector: number, seed: number, rng: Rng, depth = 0): { died: boolean; log: EncLog } {
   w.clearArena();
   w.motes.n = 0;
   w.debris.n = 0;
@@ -60,7 +61,7 @@ function playEncounter(w: World, kind: EncounterKind, sector: number, seed: numb
   pl.flareT = 0;
   const hull0 = pl.hull;
   const dmg0 = w.stats.damageTaken;
-  const dir = new Director(kind, sector, seed, w, 0);
+  const dir = new Director(kind, sector, seed, w, 0, depth);
   const c = emptyControls();
   let t = 0;
   const limit = kind === 'boss' ? 60 * 300 : 60 * 180;
@@ -113,16 +114,35 @@ function playRun(seed: number): { reached: string; logs: EncLog[]; won: boolean 
   const b = new Build(HULLS.find((h) => h.id === hullId)!, meta());
   const w = new World('BAL' + seed, b);
   w.refreshParams();
+  if (process.env.DROPLOG) {
+    let last = '';
+    w.events.on('kill', (k) => { last = enemyClass(k.e.def) + '/r' + k.e.rarity + (k.e.def.role === 'boss' ? ':' + k.e.def.id : ''); });
+    w.events.on('drop', (d) => { if (!d.picked && d.kind !== 'repair' && d.kind !== 'cell') dropLog.set(last + ' ' + d.kind, (dropLog.get(last + ' ' + d.kind) ?? 0) + 1); });
+  }
   const logs: EncLog[] = [];
   for (let s = 0; s < 5; s++) {
     for (let e = 0; e < PATH.length; e++) {
       const kind = PATH[e]!;
-      const r = playEncounter(w, kind, s, seed * 100 + s * 10 + e, rng);
+      // the path's fights sit on map rows 0..6; the boss on row 7
+      const r = playEncounter(w, kind, s, seed * 100 + s * 10 + e, rng, kind === 'boss' ? 7 : e);
       logs.push(r.log);
       if (r.died) return { reached: `S${s + 1} ${kind} #${e + 1}`, logs, won: false };
       // a draft after every fight; a random pick models an average player
       const cards = b.draft(rng.fork('d' + s + e), { minRarity: kind === 'boss' ? 'rare' : undefined });
       if (cards.length) b.apply(cards[rng.int(0, cards.length - 1)]!);
+      // banked drops pay out as extra drafts, exactly as in the game
+      for (let i = w.drops.length - 1; i >= 0; i--) w.collectDrop(i);
+      const extra = [
+        ...Array.from({ length: w.bank.prism }, () => ({ minRarity: 'rare' as const })),
+        ...Array.from({ length: w.bank.cache }, () => ({ weaponsOnly: true })),
+        ...Array.from({ length: w.bank.shard }, () => ({})),
+      ].slice(0, 6);
+      drafts += extra.length;
+      w.bank.shard = w.bank.prism = w.bank.cache = 0;
+      for (const [k, o] of extra.entries()) {
+        const c2 = b.draft(rng.fork('x' + s + e + k), o);
+        if (c2.length) b.apply(c2[rng.int(0, c2.length - 1)]!);
+      }
       w.refreshParams();
       // one rest stop per sector (map always offers one): repair 50%
       if (e === 4) w.player.hull = Math.min(w.player.maxHull, w.player.hull + w.player.maxHull * 0.5);
@@ -131,6 +151,8 @@ function playRun(seed: number): { reached: string; logs: EncLog[]; won: boolean 
   return { reached: 'WON', logs, won: true };
 }
 
+let drafts = 0;
+const dropLog = new Map<string, number>();
 aim.strength = 0.5;
 aim.cone = 0.1;
 const results = [];
@@ -147,7 +169,7 @@ const avg = (k: string) => {
   const xs = all.filter((l) => l.kind === k);
   return xs.length ? `${k}: ${(xs.reduce((a, l) => a + l.t, 0) / xs.length).toFixed(0)}s, -${(xs.reduce((a, l) => a + l.hullLost, 0) / xs.length).toFixed(1)} hull, ${(xs.reduce((a, l) => a + l.dmgTaken, 0) / xs.length).toFixed(0)} raw dmg` : '';
 };
-console.log(`\nskill=${skill} hull=${hullId}  wins ${wins}/${runs}  deaths by sector ${bySector.join('/')}`);
+console.log(`\nskill=${skill} hull=${hullId}  wins ${wins}/${runs}  deaths by sector ${bySector.join('/')}  bonus drafts from drops: ${(drafts / runs).toFixed(1)}/run`);
 console.log([avg('combat'), avg('elite'), avg('boss')].join('\n'));
 const rows = [0, 1, 2, 3, 4].map((sct) => {
   const xs = all.filter((l) => l.s === sct);
@@ -159,3 +181,5 @@ console.log(rows.join('\n'));
 const causes = new Map<string, number>();
 for (const l of all) if (l.cause) causes.set(l.cause, (causes.get(l.cause) ?? 0) + 1);
 console.log('deaths:', [...causes].map(([k, v]) => `${k} x${v}`).join(', '));
+
+if (process.env.DROPLOG) console.log([...dropLog].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, v]) => `${k}: ${(v / runs).toFixed(1)}`).join('\n'));

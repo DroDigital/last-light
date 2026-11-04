@@ -7,6 +7,7 @@ import type { Pipeline } from '../render/pipeline';
 import { fxRng } from '../core/rng';
 import { clamp, damp, noise1, hexToRgb } from '../core/math';
 import type { Settings } from '../meta/save';
+import { DROP_INFO } from '../data/drops';
 
 const _v = new Vector3();
 const _w = new Vector3();
@@ -216,6 +217,18 @@ export class Juice {
         if (x.radius > 6) this.sfx('explosion', x.x, x.y, x.z, clamp(x.radius / 20, 0.3, 1), clamp(1.4 - x.radius / 40, 0.6, 1.4));
         const d = this.view.camera.position.distanceTo(_v.set(x.x, x.y, x.z));
         this.addTrauma(clamp((x.radius / 25) * (1 - d / 150), 0, 0.35));
+      }),
+      ev.on('drop', (d) => {
+        const col = hexToRgb(DROP_INFO[d.kind].color);
+        if (!d.picked) {
+          this.view.addRing(d.x, d.y, d.z, 0.4, 5, 0.4, col[0], col[1], col[2]);
+          this.audio.play('cardIn', 0, 0.35, d.kind === 'cache' || d.kind === 'prism' ? 0.8 : 1.3);
+          return;
+        }
+        this.view.addRing(d.x, d.y, d.z, 0.5, 7, 0.35, col[0], col[1], col[2]);
+        for (let i = 0; i < 10; i++) P().spawn(d.x, d.y, d.z, (r() - 0.5) * 30, (r() - 0.5) * 30, (r() - 0.5) * 30, 0.35, col[0] * 3, col[1] * 3, col[2] * 3, 2.5, 0.5, 4);
+        this.audio.play('uiBuy', 0, 0.6, d.kind === 'repair' || d.kind === 'cell' ? 1.2 : 1);
+        this.toast(`+ ${DROP_INFO[d.kind].name.toUpperCase()}`, DROP_INFO[d.kind].color);
       }),
       ev.on('pickup', (p) => {
         P().spawn(p.x, p.y, p.z, 0, 4, 0, 0.3, 3, 2.8, 1.4, 3, 0.5, 3);

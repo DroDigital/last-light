@@ -196,6 +196,27 @@ if (scenario === 'muzzle') {
   await page.waitForTimeout(900);
   await shot('muzzle2');
 }
+if (scenario === 'loot') {
+  await ll(() => window.__ll.startRun({ seed: 'LOOT' }));
+  await page.waitForTimeout(2500);
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 4); g.godMode = true; g.director.update = () => {}; });
+  await page.waitForTimeout(1500);
+  await ll(() => { const g = window.__ll; const w = g.world; w.clearArena(); const p = w.player; const f = p.forward(p.pos.clone()); const r = p.right ? p.right(p.pos.clone()) : p.pos.clone().set(1, 0, 0);
+    const at = (d, s) => p.pos.clone().addScaledVector(f, d).addScaledVector(r, s);
+    let a = at(30, -10); const u = w.spawnEnemy('gunship', a.x, a.y + 2, a.z, 3); u.spawnT = 0; u.speedMul = 0; u.fireMul = 0;
+    a = at(34, 10); const rr = w.spawnEnemy('surveyor', a.x, a.y + 1, a.z, 2); rr.spawnT = 0; rr.speedMul = 0; rr.fireMul = 0;
+    a = at(26, 2); const m = w.spawnEnemy('scrapper', a.x, a.y - 3, a.z, 1); m.spawnT = 0; m.speedMul = 0;
+    const kinds = ['shard', 'prism', 'cache', 'repair', 'cell'];
+    kinds.forEach((k, i) => { const q = at(16, (i - 2) * 3.5); w.drops.push({ x: q.x, y: q.y - 1.5, z: q.z, vx: 0, vy: 0, vz: 0, kind: k, age: 1 }); });
+    w.bank.shard = 2; w.bank.cache = 1; });
+  await page.waitForTimeout(400);
+  await ll(() => { const g = window.__ll; for (const d of g.world.drops) d.age = 0.3; });
+  await page.waitForTimeout(500); await shot('l-loot');
+  await ll(() => { const g = window.__ll; g.world.bank.prism = 1; g.director.done = true; });
+  await page.waitForTimeout(2500); await shot('l-draft1');
+  console.log('queue after first draft opens:', await ll(() => window.__ll.run.draftQueue.length));
+  console.log('hud canvas visible in draft (want hidden):', await ll(() => document.getElementById('hud2d').style.visibility));
+}
 if (scenario === 'props') {
   await page.mouse.click(5, 5);
   await page.waitForTimeout(1500); await shot('p-title');

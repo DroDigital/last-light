@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { AFFIX_BY_ID, RARITY, rankLabel } from '../data/affixes';
+import { DROP_INFO } from '../data/drops';
 import type { Game, State } from '../game/game';
 import type { World } from '../game/world';
 import { PALETTES } from '../data/palettes';
@@ -19,6 +20,7 @@ export class Hud {
   private refs: Record<string, HTMLElement> = {};
   private perfEl: HTMLElement;
   private debugEl: HTMLElement;
+  private lastBank = -1;
   private lastLight = 0;
   private miniMap = false;
   private t = 0;
@@ -55,6 +57,13 @@ export class Hud {
   }
 
   setMode(s: State): void {
+    // the 2D HUD only belongs to flight; menus never show a stale frame of it
+    const flight = s === 'combat' || s === 'pause' || s === 'warp';
+    this.canvas.style.visibility = flight || s === 'map' ? 'visible' : 'hidden';
+    if (!flight) {
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
     if (s === 'combat' || s === 'pause') this.buildCombatHud();
     else if (s !== 'warp') {
       this.el.innerHTML = '';
@@ -72,7 +81,7 @@ export class Hud {
     this.el.innerHTML = `${scan}<div class="brackets"><i></i><i></i><i></i><i></i></div>
       <div class="tl"><div class="display" data-r="sector" style="font-size:var(--s3)"></div><span class="sigbar" style="width:48px"></span><div class="readout" data-r="enc"></div><div class="readout" data-r="coords" style="margin-top:4px;opacity:.6"></div></div>
       <div class="tc"><div data-r="boss" class="bossbar" style="display:none"><div class="name" data-r="bossname"></div><div class="bar"><b data-r="bossghost"></b><i data-r="bosshp"></i></div><div class="dim" data-r="bossphase"></div></div></div>
-      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
+      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="bank" data-r="bank"></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
       <div class="bl">
         <div class="label"><span>Hull</span><b data-r="hullt"></b></div><div class="bar hull"><b data-r="hullghost"></b><i data-r="hull"></i></div>
         <div class="label"><span>Shield</span><b data-r="shieldt"></b></div><div class="bar shield"><i data-r="shield"></i></div>
@@ -162,6 +171,15 @@ export class Hud {
     }
     r.boost!.style.width = `${pl.boostEnergy * 100}%`;
     r.kills!.textContent = String(w.stats.kills).padStart(3, '0');
+    // banked drafts from drops
+    const bk = w.bank;
+    const bankKey = bk.shard * 10000 + bk.prism * 100 + bk.cache;
+    if (bankKey !== this.lastBank && r.bank) {
+      this.lastBank = bankKey;
+      r.bank.innerHTML = bankKey
+        ? (['shard', 'prism', 'cache'] as const).filter((k) => bk[k] > 0).map((k) => `<span style="--dc:${DROP_INFO[k].color}">${DROP_INFO[k].name} ×${bk[k]}</span>`).join('')
+        : '';
+    }
     r.coords!.textContent = `[ x ${pl.pos.x.toFixed(1).padStart(6)}  y ${pl.pos.y.toFixed(1).padStart(6)}  z ${pl.pos.z.toFixed(1).padStart(6)} ]  T+${String(Math.floor(w.time / 60)).padStart(2, '0')}:${String(Math.floor(w.time % 60)).padStart(2, '0')}`;
     const s = w.build.ship;
     r.cddodge!.style.height = pl.dodgeCharges >= s.dodges ? '0%' : `${(1 - pl.dodgeRecharge / s.dodgeCd) * 100}%`;

@@ -7,7 +7,7 @@ export const BAL = {
   /** multiplier on every point of damage the player takes */
   enemyDamage: 1.4,
   /** extra enemy damage per sector (sector 1 = +0) */
-  enemyDamagePerSector: 0.18,
+  enemyDamagePerSector: 0.24,
   /** multiplier on enemy projectile speed */
   enemyShotSpeed: 1.7,
   /** multiplier on how far ahead aimed enemy shots lead the player */
@@ -36,5 +36,9 @@ export const BAL = {
   /** multiplier on everything that hurts the player during a boss fight */
   bossDamage: 1.5,
   /** enemy HP growth per sector */
-  sectorHp: 0.4,
+  sectorHp: 0.6,
+  /** per map row within a sector: budget and HP (damage gets half) */
+  perRow: 0.06,
+  /** the director spawns up to this many times its baseline against a strong build */
+  maxPower: 2.4,
 };

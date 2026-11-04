@@ -6,6 +6,7 @@ import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
 import { ENEMIES } from '../data/enemies';
 import { AFFIXES, RARITY } from '../data/affixes';
+import { DROP_INFO, DROP_TABLE, DROP_KINDS, RARITY_DROP } from '../data/drops';
 import { NODE_INFO } from '../game/run';
 import { Input, ACTION_LABELS, type Action } from '../core/input';
 import { dailySeed } from '../core/rng';
@@ -184,10 +185,12 @@ export function showDraft(g: Game): void {
   const w = g.world!;
   const cards = run.draft ?? [];
   const rerollCost = run.freeRerolls > 0 ? 'FREE' : `${20 + run.rerolls * 15} Light`;
-  const title = run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
+  const src = run.draftCtx?.source;
+  const title = src ? DROP_INFO[src].name : run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
+  const queued = run.draftQueue?.length ?? 0;
   g.ui.show(
     'draft',
-    `<h1>${title}</h1><div class="dim">Light <span class="light mono">${fmtInt(w.player.light)}</span> · Cards marked COMBO work with your build</div>
+    `<h1>${title}</h1><div class="dim">Light <span class="light mono">${fmtInt(w.player.light)}</span> · Cards marked COMBO work with your build${queued ? ` · <span style="color:var(--lantern)">${queued} more draft${queued > 1 ? 's' : ''} queued from drops</span>` : ''}</div>
      <div class="cards">${cards
        .map((c, i) => {
          const r = cardRarity(c);
@@ -369,6 +372,9 @@ export function showCodex(g: Game): void {
       const k = d.codex.enemies.includes(e.id);
       return `<div class="item ${k ? '' : 'disabled'}" style="--rc:${e.accent}"><div class="ic">●</div><div class="grow"><div class="t">${k ? esc(e.name) : unk} <span class="faint">${k ? e.faction : ''}</span></div><div class="d">${k ? esc(e.desc) : 'Not yet encountered.'}</div></div></div>`;
     }).join('') + `<h3 style="margin-top:12px">Rarities</h3>` + RARITY.slice(1).map((r, i) => `<div class="stat"><span style="color:${r.color}">${r.name}</span><span class="dim">${['1 affix', '2–3 affixes', '3–4 affixes and a name'][i]} · ×${r.hp} HP · ×${r.light} Light</span></div>`).join('') + `<h3 style="margin-top:12px">Affixes · ${AFFIXES.length}</h3>` + AFFIXES.map((x) => `<div class="stat"><span>${x.name}</span><span class="dim">${x.desc}</span></div>`).join('') +
+      `<h3 style="margin-top:12px">Drop table · chance per kill</h3><div class="dim" style="margin-bottom:6px">Rarity multiplies these: Magic ×${RARITY_DROP[1]}, Rare ×${RARITY_DROP[2]}, Unique ×${RARITY_DROP[3]}. Gilded doubles them; Luck adds 15% per point.</div>` +
+      `<div class="droptable"><div class="dt-h"><span></span>${DROP_KINDS.map((k) => `<span style="color:${DROP_INFO[k].color}">${DROP_INFO[k].name}</span>`).join('')}</div>` +
+      (Object.keys(DROP_TABLE) as (keyof typeof DROP_TABLE)[]).map((cls) => `<div class="dt-r"><span>${cls}</span>${DROP_KINDS.map((k) => `<span class="mono">${DROP_TABLE[cls][k] >= 1 ? '100%' : (DROP_TABLE[cls][k] * 100).toFixed(DROP_TABLE[cls][k] < 0.01 ? 2 : 1) + '%'}</span>`).join('')}</div>`).join('') + '</div>' +
       `<h3 style="margin-top:12px">Bosses</h3>` + Object.values(BOSSES).map((b) => `<div class="item ${d.bossesKilled.includes(b.id) ? '' : 'disabled'}"><div class="ic">☀</div><div class="grow"><div class="t">${d.bossesKilled.includes(b.id) ? b.name : unk}</div><div class="d">${d.bossesKilled.includes(b.id) ? esc(b.desc) : esc(b.title)}</div></div></div>`).join('');
   } else if (tab === 'weapons') {
     body = WEAPONS.map((w) => {

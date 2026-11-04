@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { DropKind } from '../data/drops';
 import { GameLoop, SIM_DT } from '../core/loop';
 import { Input } from '../core/input';
 import { Rng, dailySeed, randomSeedString, fxRng, hashString } from '../core/rng';
@@ -60,7 +61,9 @@ export interface RunState {
   eventOutcome?: string;
   shop?: ShopItem[];
   draft?: DraftCard[];
-  draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector' };
+  draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector'; weaponsOnly?: boolean; source?: DropKind };
+  /** drafts earned from drops, opened one after another once the fight ends */
+  draftQueue?: NonNullable<RunState['draftCtx']>[];
   lore: string[];
   won: boolean;
   /** an event choice queued a fight; the player may not leave the event */
@@ -523,7 +526,8 @@ export class Game {
     pl.flareT = 0;
     this.view.resetTrail();
     this.camPos.set(0, 3, 82);
-    this.director = new Director(kind, run.sector, seed, w, run.heat);
+    const depth = run.node >= 0 ? run.map.nodes[run.node]!.row : 0;
+    this.director = new Director(kind, run.sector, seed, w, run.heat, depth);
     run.encounters++;
     this.recorder.reset();
     run.pendingFight = false;
@@ -577,7 +581,15 @@ export class Game {
     const dir = this.director!;
     this.director = null;
     this.view.markers.length = 0;
-    // vacuum up remaining motes
+    // vacuum up remaining drops and motes; banked drops become a queue of extra drafts
+    for (let i = w.drops.length - 1; i >= 0; i--) w.collectDrop(i);
+    const after = dir.kind === 'boss' ? 'sector' : 'map';
+    const q: NonNullable<RunState['draftCtx']>[] = [];
+    for (let i = 0; i < w.bank.prism; i++) q.push({ minRarity: 'rare', after, source: 'prism' });
+    for (let i = 0; i < w.bank.cache; i++) q.push({ weaponsOnly: true, after, source: 'cache' });
+    for (let i = 0; i < w.bank.shard; i++) q.push({ after, source: 'shard' });
+    run.draftQueue = q.slice(0, 6);
+    w.bank.shard = w.bank.prism = w.bank.cache = 0;
     for (let i = 0; i < w.motes.n; i++) {
       w.player.light += w.motes.value[i]! * w.build.ship.lightGain;
       w.player.lightTotal += w.motes.value[i]! * w.build.ship.lightGain;
@@ -614,7 +626,7 @@ export class Game {
     const run = this.run!;
     const w = this.world!;
     run.draftCtx = ctx;
-    run.draft = w.build.draft(run.rng.fork('draft' + run.encounters + ':' + run.rerolls), { minRarity: ctx.minRarity, allowArtifacts: ctx.artifacts });
+    run.draft = w.build.draft(run.rng.fork('draft' + run.encounters + ':' + run.rerolls + ':' + (run.draftQueue?.length ?? 0)), { minRarity: ctx.minRarity, allowArtifacts: ctx.artifacts, weaponsOnly: ctx.weaponsOnly });
     if (ctx.curse) {
       const curses = UPGRADES.filter((u) => u.rarity === 'curse' && !w.build.upgrades.has(u.id));
       if (curses.length) {
@@ -694,6 +706,11 @@ export class Game {
 
   private afterDraft(): void {
     const run = this.run!;
+    const next = run.draftQueue?.shift();
+    if (next) {
+      this.openDraft(next);
+      return;
+    }
     if (run.draftCtx?.after === 'sector') this.enterSector(run.sector + 1);
     else this.openMap();
   }

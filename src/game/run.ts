@@ -147,12 +147,17 @@ export class Director {
   private lastKills = 0;
   private noKillT = 0;
 
-  constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number) {
+  /**
+   * @param depth row of the sector map (0 = first jump). Fights get tougher row by
+   * row, so the long sectors keep pace with the build.
+   */
+  constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number, depth = 0) {
     this.kind = kind;
     this.sectorIdx = sectorIdx;
     this.sector = SECTORS[Math.min(sectorIdx, SECTORS.length - 1)]!;
     this.rng = new Rng(seed);
-    const base = BAL.budgetBase + sectorIdx * BAL.budgetPerSector;
+    const depthK = 1 + depth * BAL.perRow;
+    const base = (BAL.budgetBase + sectorIdx * BAL.budgetPerSector) * depthK;
     const heatMul = 1 + (heat >= 9 ? 0.25 : 0);
     this.budget = Math.round(
       {
@@ -170,9 +175,9 @@ export class Director {
     if (w.build.flags.has('hunted')) this.elitesLeft += 1;
     if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
     w.maxTokens = BAL.tokensBase + Math.floor(sectorIdx * BAL.tokensPerSector) + (kind === 'rift' ? 2 : 0);
-    w.sectorHpScale = 1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0);
+    w.sectorHpScale = (1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0)) * depthK;
     w.sectorIdx = sectorIdx;
-    w.sectorDmgScale = 1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0);
+    w.sectorDmgScale = (1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0)) * (1 + depth * BAL.perRow * 0.5);
     this.dress();
     if (kind === 'boss') {
       this.boss = new BossController(this.sector.boss, w, 1 + (heat >= 5 ? 0.25 : 0), this.sector.music.bpm);
@@ -223,7 +228,7 @@ export class Director {
     else if (frac < 0.65) k = 0.35; // breather
     else k = 1.25;
     const w = this.w;
-    const power = Math.max(0.7, Math.min(1.7, w.build.dpsEstimate() / this.expectedDps()));
+    const power = Math.max(0.7, Math.min(BAL.maxPower, w.build.dpsEstimate() / this.expectedDps()));
     const health = w.player.hull / w.player.maxHull;
     const hk = health < 0.3 ? 0.65 : health < 0.55 ? 0.85 : 1;
     this.intensity = k;
@@ -339,7 +344,7 @@ export class Director {
     // guaranteed elites (elite/rift nodes, Heat, Hunted) arrive alone as Rare, sometimes Unique
     let forced: Rarity = 0;
     if (this.elitesLeft > 0 && (this.spent / this.budget > 0.25 || this.kind === 'rift') && def.role !== 'swarmer' && this.rng.chance(0.5)) {
-      forced = this.rng.chance(0.15 + this.sectorIdx * 0.04) ? 3 : 2;
+      forced = this.rng.chance(0.1 + this.sectorIdx * 0.03) ? 3 : 2;
       this.elitesLeft--;
       count = 1;
     }

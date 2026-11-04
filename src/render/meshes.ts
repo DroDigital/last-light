@@ -152,7 +152,12 @@ export type MeshKind =
   | 'navForge'
   | 'navRift'
   | 'navStart'
-  | 'pylon';
+  | 'pylon'
+  | 'dropShard'
+  | 'dropPrism'
+  | 'dropCache'
+  | 'dropRepair'
+  | 'dropCell';
 
 function displaced(geo: THREE.BufferGeometry, rng: Rng, amt: number): THREE.BufferGeometry {
   const g = geo.index ? geo : geo;
@@ -418,6 +423,34 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
     case 'navStart': {
       b.add(new THREE.OctahedronGeometry(0.8, 0), HULL2, 0);
       b.add(new THREE.TorusGeometry(1.4, 0.05, 3, 16), '#ffffff', 0.7, tr(0, 0, 0, Math.PI / 2));
+      break;
+    }
+    case 'dropShard': {
+      b.add(new THREE.OctahedronGeometry(0.55, 0), '#ffffff', 1, tr(0, 0, 0, 0, 0, 0, 0.7, 1.4, 0.7));
+      b.add(new THREE.TorusGeometry(0.85, 0.05, 3, 12), '#ffffff', 0.6, tr(0, 0, 0, Math.PI / 2));
+      break;
+    }
+    case 'dropPrism': {
+      b.add(new THREE.TetrahedronGeometry(0.75, 0), '#ffffff', 1);
+      b.add(new THREE.TetrahedronGeometry(0.75, 0), '#ffffff', 0.7, tr(0, 0, 0, Math.PI, 0.6, 0));
+      break;
+    }
+    case 'dropCache': {
+      b.add(new THREE.BoxGeometry(1.2, 0.75, 0.8), HULL2, 0);
+      b.add(new THREE.BoxGeometry(1.28, 0.12, 0.88), '#ffffff', 1, tr(0, 0.12, 0));
+      b.add(new THREE.BoxGeometry(0.2, 0.8, 0.86), '#ffffff', 0.8, tr(0.35, 0, 0));
+      b.add(new THREE.BoxGeometry(0.2, 0.8, 0.86), '#ffffff', 0.8, tr(-0.35, 0, 0));
+      break;
+    }
+    case 'dropRepair': {
+      b.add(new THREE.BoxGeometry(1.1, 0.34, 0.34), '#ffffff', 1);
+      b.add(new THREE.BoxGeometry(0.34, 1.1, 0.34), '#ffffff', 1);
+      break;
+    }
+    case 'dropCell': {
+      b.add(new THREE.CylinderGeometry(0.32, 0.32, 1, 8), HULL2, 0);
+      b.add(new THREE.CylinderGeometry(0.26, 0.26, 0.7, 8), '#ffffff', 1);
+      b.add(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 8), '#ffffff', 0.6, tr(0, 0.56, 0));
       break;
     }
     case 'pylon': {

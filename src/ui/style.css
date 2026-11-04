@@ -489,3 +489,14 @@ button:focus-visible, [data-nav]:focus-visible, select:focus-visible, input:focu
 /* in-panel counters stay modest; tall panels scroll instead of clipping */
 .panel .lightcount { font-size: var(--s4); text-shadow: none; }
 .panel.center { max-height: 94vh; }
+
+/* codex drop table */
+.droptable { display: grid; gap: 2px; font-size: var(--s1); }
+.droptable .dt-h, .droptable .dt-r { display: grid; grid-template-columns: 1.1fr repeat(5, 1fr); gap: 6px; padding: 4px 6px; }
+.droptable .dt-h { font-family: var(--px); font-size: calc(10px * var(--ui-scale)); text-transform: uppercase; }
+.droptable .dt-r { background: rgba(243, 238, 226, 0.03); color: var(--paper-2); }
+.droptable .dt-r > span:first-child { color: var(--paper); text-transform: capitalize; }
+
+/* banked drafts from drops (top right, under the Light count) */
+.hud .bank { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 6px; }
+.hud .bank span { font-family: var(--px); font-size: calc(10px * var(--ui-scale)); text-transform: uppercase; color: var(--ink); background: var(--dc); padding: 2px 6px 1px; clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px); }
