@@ -104,6 +104,22 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 - **Two hidden non-determinisms found by the replay test:** a global enemy-id counter (moved to `World.nextEnemyId`) and module-level gun-side alternation in `weapons.ts` (moved to `World.gunSide`). `tests/replay.test.ts` now proves same seed gives same hash, and that a recorded run replays bit-for-bit over 40 s of combat with status, chain, split and seeker upgrades.
 - **Staged destruction:** heavy hulls (`threat >= 5`: carriers, bombers, shielders) shed plating at 66% and 33% HP. Each stage spawns seeded debris and fires a `breakup` event: a pop, a ring and sparks fanned out of the breach. From then on the hull vents embers and smoke, more of them at stage 2. On death it goes up in 3–5 staggered secondary detonations. All of this beyond the sim-side debris is visual-only (`fxRng`), so replays are unaffected.
 
+## Draft card previews
+
+- Every draft card has a looping vignette that shows what it does (`ui/preview.ts`). The Lantern sits on the left and Hush targets on the right, with the card's effect between them:
+  - **Shots:** fans for multishot, curving homing and missile paths, pierce and ricochet.
+  - **Impacts:** blast rings, split shots, chain arcs, crit stars, status flicker.
+  - **Kills:** a kill burst, then the upgrade's on-kill trigger (nova, missiles, shards…).
+  - **Ship effects:** shield and armor rings, dodge blink, speed streaks, magnet pull, graze sparks, ability pulse.
+- What a card shows is derived from its data (behaviour, params, stat mods, triggers, tags). New content gets a preview without extra work, and `tests/preview.test.ts` renders every weapon, evolution and upgrade to prove each one is visible and finite.
+- **Rendering:** software, into a 76×44 additive light buffer, resolved with the game's 4×4 ordered dither on the 3 px UI cell grid. Player shots use the reserved player tone and targets the enemy tone, so a preview reads like combat. It steps at 30 fps and stops when the card leaves the DOM. With reduced motion on, a single impact frame is shown instead.
+
+## Readability pass (fresh eyes)
+
+- **Text on plates:** the cause-of-death and victory lines sat directly on the bright dithered world, against the rule that body text always sits on an ink plate. Both now have plates.
+- **Dialogue slide-in:** dialogue boxes reused the centred-hint keyframe (`translate(-50%)`) and slid in from outside their panel. They now have their own keyframe.
+- **Short screens:** at 720p the death summary overflowed the viewport top. A max-height query tightens it.
+
 ## Changes from the brief (and why)
 
 - **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.
@@ -117,5 +133,5 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 - **STATUS:** Visual verification has been done in headless SwiftShader (CPU WebGL) at 1280×720; real-GPU frame timing still needs measuring on Iris Xe-class hardware (see PERF.md).
 - **STATUS:** Destruction uses debris chunks with physics, not true Voronoi fracture. Bosses lose parts; heavy non-boss hulls break apart in two stages and die in secondary detonations.
 - **STATUS:** Replays record and play back bit-for-bit (tested), but there is no replay viewer UI yet.
-- **STATUS:** Animated card previews and WebGPU path are not implemented.
+- **STATUS:** The WebGPU path is not implemented.
 - **STATUS:** Damage numbers and threat indicators draw on a 2D canvas; telegraphs and the readability layer are WebGL.

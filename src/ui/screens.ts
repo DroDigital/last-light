@@ -11,6 +11,7 @@ import { dailySeed } from '../core/rng';
 import { PALETTES } from '../data/palettes';
 import { fmtInt } from '../core/math';
 import { MAX_LEVEL } from '../game/build';
+import { mountPreviews } from './preview';
 
 const FAMILY_ICON: Record<string, string> = { kinetic: '⁂', energy: '✧', ordnance: '✹', exotic: '◎', drone: '⟡', light: '☼' };
 const VISUAL_ICON: Record<string, string> = { projectile: '➶', ship: '⛭', trail: '≋', aura: '◌', explosion: '✺', drone: '⟡', hud: '◈' };
@@ -193,7 +194,7 @@ export function showDraft(g: Game): void {
           <div class="glow"></div>${c.combo >= 2 ? '<div class="combo"></div>' : ''}
           <div class="idx">${String(i + 1).padStart(2, '0')}</div>
           <div class="rar">${c.kind === 'evolve' ? 'Evolution' : c.kind === 'weapon' ? 'New weapon' : c.kind === 'level' ? 'Weapon level' : r}</div>
-          <div class="icon">${cardIcon(c)}</div>
+          <div class="pv"><canvas aria-hidden="true"></canvas><span class="pv-ic">${cardIcon(c)}</span></div>
           <div class="nm">${esc(cardTitle(c))}</div>
           <div class="ds">${cardDesc(c)}</div>
           <div>${cardTags(c, g)}</div>
@@ -205,6 +206,7 @@ export function showDraft(g: Game): void {
      <div class="faint" style="margin-top:12px">Keys <span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> pick</div>`,
     'draft',
   );
+  mountPreviews([...g.ui.root.querySelectorAll<HTMLCanvasElement>('.card .pv canvas')], cards, g.settings.reducedMotion);
 }
 
 export function showShop(g: Game, refresh = false): void {
@@ -310,7 +312,7 @@ export function showDeath(g: Game): void {
     `<div class="row center" style="gap:3vw;align-items:flex-start">
       <div class="col" style="width:360px">
         <div class="display" style="font-size:var(--s6);line-height:.85">The light<br>fades</div><span class="sigbar"></span>
-        <div class="dim">Killed by <span style="color:var(--danger)">${esc(w.player.deathCause)}</span> in ${esc(SECTORS[g.run!.sector]!.name)}</div>
+        <div class="cause">Killed by <b>${esc(w.player.deathCause)}</b> in ${esc(SECTORS[g.run!.sector]!.name)}</div>
         <div class="panel col" style="margin-top:12px">
           <div class="stat"><span>Kills</span><b>${fmtInt(w.stats.kills)}</b></div>
           <div class="stat"><span>Light harvested</span><b>${fmtInt(w.player.lightTotal)}</b></div>
@@ -336,7 +338,7 @@ export function showVictory(g: Game): void {
     'victory',
     `<div class="col center" style="align-items:center;text-align:center;max-width:720px">
       <div class="logo" style="font-size:var(--s6)">THE LAST STAR BURNS</div>
-      <p class="dim" style="font-size:var(--s3)">For now, the dark retreats. Somewhere, a thousand stars remember how to shine.</p>
+      <p class="plate-line" style="font-size:var(--s3)">For now, the dark retreats. Somewhere, a thousand stars remember how to shine.</p>
       <div class="panel" style="width:420px"><div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div><div class="stat"><span>Embers</span><b class="light">+${r.embers}</b></div><div class="stat"><span>Time</span><b>${Math.floor(r.timeSec / 60)}m ${r.timeSec % 60}s</b></div></div>
       <div class="row" style="margin-top:16px"><button class="primary" data-nav data-autofocus data-act="endless">Go beyond · Endless</button><button data-nav data-act="hearth">Return home</button></div>
     </div>`,

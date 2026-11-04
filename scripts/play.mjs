@@ -196,6 +196,22 @@ if (scenario === 'muzzle') {
   await page.waitForTimeout(900);
   await shot('muzzle2');
 }
+if (scenario === 'draft') {
+  await ll(() => window.__ll.startRun({ seed: 'DRAFT' }));
+  await page.waitForTimeout(2500);
+  const W = await import('fs');
+  for (let k = 0; k < 4; k++) {
+    await ll((k) => { const g = window.__ll; const w = g.world; const { WeaponInstance } = window.__llBuild ?? {};
+      g.run.rerolls = k; g.openDraft({ after: 'combat', minRarity: k === 3 ? 'rare' : undefined }); }, k);
+    await page.waitForTimeout(900);
+    await shot('d' + k + '-screen');
+    for (let f = 0; f < 3; f++) {
+      const urls = await ll(() => [...document.querySelectorAll('.card .pv canvas')].map((c) => c.toDataURL()));
+      urls.forEach((u, i) => W.writeFileSync(`${out}/d${k}-c${i}-f${f}.png`, Buffer.from(u.split(',')[1], 'base64')));
+      await page.waitForTimeout(260);
+    }
+  }
+}
 if (scenario === 'music') {
   const probe = (tag) => ll((tag) => { const g = window.__ll; const st = g.audio.soundtrack; const tr = st && st.current; return { tag, state: g.state, cue: st && st.cue, title: st && st.title, active: st && st.active, t: tr ? +tr.el.currentTime.toFixed(2) : null, paused: tr ? tr.el.paused : null, ready: tr ? tr.el.readyState : null, ctx: g.audio.ctx && g.audio.ctx.state }; }, tag).then((r) => console.log(JSON.stringify(r)));
   await page.mouse.click(640, 360); await page.waitForTimeout(2500); await probe('title');
