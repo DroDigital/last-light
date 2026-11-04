@@ -78,6 +78,19 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 - **Only two cameras in a run: 3rd-person chase and 1st-person cockpit.** Bug fixed: every in-run screen except combat/pause/death (draft, shop, event, forge, rest, victory, and warps leaving them) fell back to the title screen's free-drifting camera, parked at a fixed point in the arena — it looked like the camera randomly jumped to a far, free location. The ship camera now persists through all of them; the death orbit cam was removed too. The sector map remains a star-chart screen.
 - **Cockpit HUD redesigned** as a minimal instrument cluster around the reticle (hull/shield and Lumen/boost arc gauges with 10% ticks, heading tape, roll/pitch horizon bars, flight-path marker, one systems line, target readout). The old cockpit frame lines, screen-corner brackets and side panels are hidden in 1st person, and target brackets collapse to a single lock diamond on the aimed target.
 
+## Camera v2 and shots
+
+- **Fixed chase camera.** The camera is now rigidly bolted to the ship's frame (offset 0, 3.2, 12 with a slight downward tilt): no spring, no lag, no trauma shake, no FOV kicks. Boost is the only thing that moves it (eases back, widens FOV, faint rumble). Juice that used to shake the camera still lands through flash, glitch, hit-stop, particles and sound.
+- **Drift root causes fixed:** (1) the lagging camera spring; (2) unlocked-mouse "virtual joystick" steering turned the ship forever whenever the cursor rested off-centre or pointer lock was lost — removed; the HUD now says *Click to take control* instead; (3) turn input (e.g. gamepad stick noise) accumulated on non-combat screens and was dumped into the first combat frame — now discarded outside combat; (4) radial deadzone on the aim stick. Verified headless: heading and camera offset unchanged after 8 s with the cursor parked off-centre.
+- **Projectiles leave the guns.** Per-hull hardpoints matched to each mesh (wingtip/pod guns for primaries, nose for secondaries/beams/arcs), following the visual bank/roll; shots converge on the aim point 90 m out. Rendering never interpolates a fresh shot behind its muzzle, offsets fresh shots by the ship's interpolation delta, and clamps vector tails to the distance flown. Regression test checks every hull's spawn point.
+
+## UI v3: the Lantern interface
+
+- First glass/minimal pass was rejected as generic. The UI is now drawn in the game's own language: chamfered ink plates, vector corner brackets (the same ones that lock onto enemies), **real ordered-dither** fills/fades/glows on the 3px game cell grid (masks baked at boot in `ui/dither.ts`), segmented cell bars, pixel type (Silkscreen) for labels/keys/indices only.
+- **Interaction is light:** focusing any control ignites lantern gold that dithers in from its edge; primary actions are solid lantern plates; the selected thing is always the brightest thing on screen.
+- **Sector tint:** panels, rules and tabs take their accent from the current sector palette (`PaletteDef.ui`).
+- Readability rules: body text is never dithered, never below 12px, always on an ink plate; signal orange stays reserved for alerts.
+
 ## Changes from the brief (and why)
 
 - **No downloaded models/samples.** Procedural assets fit the posterized style better than restyled free packs and keep the build < 1 MB gzipped.

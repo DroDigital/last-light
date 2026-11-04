@@ -54,14 +54,14 @@ export function showTitle(g: Game): void {
     'title',
     `<div class="numeral">${String(d.bossesKilled.length).padStart(2, '0')}</div>
     <div class="title-screen">
-      <div class="logo">Last<br>Light<small>THE UNIVERSE IS GOING DARK — ${String(d.bossesKilled.length).padStart(2, '0')}/05 STARS RELIT</small></div>
+      <div class="logo"><span class="lg-base">Last Light</span><span class="lg-lit" aria-hidden="true">Last Light</span><small>The universe is going dark · ${d.bossesKilled.length}/5 stars relit</small></div>
       <div class="menu">
-        <button class="primary" data-nav data-autofocus data-act="hearth">The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
-        <button data-nav data-act="quickdive">Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
-        <button data-nav data-act="daily">Daily Dive<span class="sub">${daily}${best ? ` · best ${fmtInt(best)}` : ''}</span></button>
-        <button data-nav data-act="codex">Codex</button>
-        <button data-nav data-act="settings">Settings</button>
-        <button data-nav data-act="credits">Credits</button>
+        <button class="primary" data-nav data-autofocus data-act="hearth"><span class="ix">01</span>The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
+        <button data-nav data-act="quickdive"><span class="ix">02</span>Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
+        <button data-nav data-act="daily"><span class="ix">03</span>Daily Dive<span class="sub">${daily}${best ? ` · best ${fmtInt(best)}` : ''}</span></button>
+        <button data-nav data-act="codex"><span class="ix">04</span>Codex</button>
+        <button data-nav data-act="settings"><span class="ix">05</span>Settings</button>
+        <button data-nav data-act="credits"><span class="ix">06</span>Credits</button>
       </div>
       <div class="footer"><span>Runs ${d.runs} · Wins ${d.wins} · Stars relit ${d.bossesKilled.length}</span><span>F1 look panel · F3 perf · click the game to lock the mouse</span></div>
     </div>`,
@@ -410,7 +410,7 @@ function slider(label: string, key: string, v: number, min: number, max: number,
   return `<div class="setting"><span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-input="set" data-key="${key}" data-nav><span class="v">${fmt(v)}</span></div>`;
 }
 function toggle(label: string, key: string, v: boolean): string {
-  return `<div class="setting"><span>${label}</span><button class="small" data-nav data-act="toggle" data-arg="${key}">${v ? 'ON' : 'OFF'}</button><span></span></div>`;
+  return `<div class="setting"><span>${label}</span><button class="switch ${v ? 'on' : ''}" role="switch" aria-checked="${v}" aria-label="${label}" data-nav data-act="toggle" data-arg="${key}"></button><span class="v">${v ? 'On' : 'Off'}</span></div>`;
 }
 function select(label: string, key: string, v: string, opts: [string, string][]): string {
   return `<div class="setting"><span>${label}</span><select data-change="set" data-key="${key}" data-nav>${opts.map(([k, n]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${n}</option>`).join('')}</select><span></span></div>`;

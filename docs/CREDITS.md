@@ -13,6 +13,7 @@ LAST LIGHT ships **no third-party art or audio assets**. Every model is procedur
 | Name | Author | Source | License | Use / changes |
 | --- | --- | --- | --- | --- |
 | Archivo | Omnibus-Type | https://fonts.google.com/specimen/Archivo (via @fontsource/archivo) | SIL Open Font License 1.1 | Swiss grotesk for all UI and display type (weights 400/600/800/900). Unmodified. |
+| Silkscreen | Jason Kottke | https://fonts.google.com/specimen/Silkscreen (via @fontsource/silkscreen) | SIL Open Font License 1.1 | Pixel type for labels, keys, indices and tags only. Unmodified. |
 | JetBrains Mono | JetBrains | https://fonts.google.com/specimen/JetBrains+Mono (via @fontsource/jetbrains-mono) | SIL Open Font License 1.1 | Readouts, coordinates, labels, perf overlay. Unmodified. |
 
 ## Dev tooling (not shipped)

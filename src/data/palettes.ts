@@ -11,6 +11,8 @@ export interface PaletteDef {
   nebula: [string, string, string];
   star: string;
   ambient: string;
+  /** UI accent pair (readable on ink) used to tint the interface in this sector */
+  ui: [string, string];
 }
 
 export const PALETTES: PaletteDef[] = [
@@ -24,6 +26,7 @@ export const PALETTES: PaletteDef[] = [
     nebula: ['#c4307f', '#1a9c98', '#4a1c8a'],
     star: '#ffd6f0',
     ambient: '#140a26',
+    ui: ['#5fd3c0', '#d64596'],
   },
   {
     id: 'ember',
@@ -35,6 +38,7 @@ export const PALETTES: PaletteDef[] = [
     nebula: ['#d8401a', '#8a1c22', '#e88a2a'],
     star: '#ff9a50',
     ambient: '#1e0808',
+    ui: ['#f58b2a', '#df5e17'],
   },
   {
     id: 'ice',
@@ -46,6 +50,7 @@ export const PALETTES: PaletteDef[] = [
     nebula: ['#3a8ac4', '#6a6ad0', '#9adcec'],
     star: '#eaf6ff',
     ambient: '#08121e',
+    ui: ['#7fc4d6', '#a7a9d6'],
   },
   {
     id: 'pulsar',
@@ -57,6 +62,7 @@ export const PALETTES: PaletteDef[] = [
     nebula: ['#8a30d8', '#2a5ad0', '#d060e0'],
     star: '#e8c8ff',
     ambient: '#0e0620',
+    ui: ['#bd5fe0', '#59a2e6'],
   },
   {
     id: 'binary',
@@ -68,6 +74,7 @@ export const PALETTES: PaletteDef[] = [
     nebula: ['#d89a28', '#2a8a7a', '#a05a18'],
     star: '#fff0c0',
     ambient: '#141006',
+    ui: ['#e6b63d', '#6aa08a'],
   },
   {
     id: 'hush',
@@ -79,6 +86,7 @@ export const PALETTES: PaletteDef[] = [
     nebula: ['#5a5068', '#2a2a36', '#7a7088'],
     star: '#d8d0e8',
     ambient: '#060608',
+    ui: ['#b0b0b4', '#7a7a82'],
   },
   {
     id: 'hearth',
@@ -90,6 +98,7 @@ export const PALETTES: PaletteDef[] = [
     nebula: ['#c86a28', '#2a4a8a', '#8a3a5a'],
     star: '#ffd890',
     ambient: '#100a10',
+    ui: ['#e89a3a', '#7a9ac0'],
   },
 ];
 
