@@ -429,14 +429,24 @@ export class View {
   private syncProjectiles(w: World, a: number): void {
     const P = w.proj;
     const inv = 1 - a;
+    // The ship renders interpolated between ticks; shots are born at the current
+    // tick's muzzle. Shift brand-new shots by the same interpolation delta so
+    // they leave the visible gun, fading the correction out over ~2 ticks.
+    const pl = w.player;
+    const sx = (pl.pos.x - pl.prev.x) * inv;
+    const sy = (pl.pos.y - pl.prev.y) * inv;
+    const sz0 = (pl.pos.z - pl.prev.z) * inv;
     for (let i = 0; i < P.n; i++) {
       const vx = P.vx[i]!;
       const vy = P.vy[i]!;
       const vz = P.vz[i]!;
-      // interpolate backwards by (1-alpha) of a tick
-      const x = P.x[i]! - vx * inv / 60;
-      const y = P.y[i]! - vy * inv / 60;
-      const z = P.z[i]! - vz * inv / 60;
+      // interpolate backwards by (1-alpha) of a tick, but never behind the
+      // muzzle it left: fresh shots must visibly start at the gun
+      const back = Math.min(inv / 60, P.age[i]!);
+      const young = Math.max(0, 1 - P.age[i]! * 30);
+      const x = P.x[i]! - vx * back - sx * young;
+      const y = P.y[i]! - vy * back - sy * young;
+      const z = P.z[i]! - vz * back - sz0 * young;
       const sz = P.size[i]! * (P.explode[i]! > 6 ? 1.5 : 1);
       const kind = P.kind[i]!;
       const sp2 = vx * vx + vy * vy + vz * vz;
@@ -445,7 +455,10 @@ export class View {
         this.bullets.push(x, y, z, sz, vx, vy, vz, kind);
         continue;
       }
-      const k = kind === 5 ? 0.05 : 0.035;
+      // tail length clamped to the distance flown so it never pokes back
+      // through the hull at spawn
+      const flown = Math.max(0, P.age[i]! - (inv / 60 - back));
+      const k = Math.min(kind === 5 ? 0.05 : 0.035, flown);
       const bx = x - vx * k;
       const by = y - vy * k;
       const bz = z - vz * k;
@@ -453,7 +466,7 @@ export class View {
       this.telegraphs.seg(x, y, z, bx, by, bz, t.x, t.y, t.z, 1);
       // halo goes into the HDR scene: bloom + dither make it part of the painting
       const h = kind === 5 ? 1.6 : 1.1;
-      this.streaks.push(x, y, z, bx - vx * k, by - vy * k, bz - vz * k, 0.5 * h, 1.6 * h, 2.4 * h, sz * 1.6, sz * 0.6);
+      if (k > 0.002) this.streaks.push(x, y, z, bx, by, bz, 0.5 * h, 1.6 * h, 2.4 * h, sz * 1.6, sz * 0.6);
       if (kind === 5) this.bullets.push(x, y, z, sz * 0.8, 0, 0, 0, 5);
     }
     const E = w.eproj;

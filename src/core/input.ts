@@ -195,8 +195,13 @@ export class Input {
       };
       this.padLX = dz(pad.axes[0] ?? 0);
       this.padLY = dz(pad.axes[1] ?? 0);
-      this.padRX = dz(pad.axes[2] ?? 0);
-      this.padRY = dz(pad.axes[3] ?? 0);
+      // radial deadzone on the aim stick so resting drift never turns the ship
+      const rx = pad.axes[2] ?? 0;
+      const ry = pad.axes[3] ?? 0;
+      const rm = Math.hypot(rx, ry);
+      const rk = rm < 0.2 ? 0 : (rm - 0.2) / 0.8 / rm;
+      this.padRX = rx * rk;
+      this.padRY = ry * rk;
       for (let i = 0; i < pad.buttons.length; i++) {
         const b = pad.buttons[i]!;
         this.padNow[i] = b.pressed || b.value > 0.4;

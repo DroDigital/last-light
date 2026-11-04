@@ -21,6 +21,7 @@ import { Juice } from './juice';
 import { aim } from './weapons';
 import * as S from '../ui/screens';
 import { Hud } from '../ui/hud';
+import { installDitherTextures, setUiTint } from '../ui/dither';
 
 export type State =
   | 'boot' | 'title' | 'hearth' | 'map' | 'combat' | 'draft' | 'shop' | 'event' | 'forge' | 'rest' | 'pause'
@@ -69,7 +70,11 @@ export interface RunState {
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _q = new THREE.Quaternion();
-const _m = new THREE.Matrix4();
+/** Fixed chase-camera rig in ship space. */
+const CHASE_BACK = 12;
+const CHASE_UP = 3.2;
+/** look slightly down so the ship sits below the reticle */
+const CHASE_TILT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.1, 0, 0));
 
 export class Game {
   readonly canvas: HTMLCanvasElement;
@@ -93,7 +98,7 @@ export class Game {
   time = 0;
   camMode: 'chase' | 'cockpit' = 'chase';
   private camPos = new THREE.Vector3(0, 5, 80);
-  private camQuat = new THREE.Quaternion();
+  private boostCam = 0;
   showPerf = false;
   showDebug = false;
   private warp: { t: number; dur: number; then: () => void; switched: boolean; palette: string } | null = null;
@@ -135,6 +140,7 @@ export class Game {
   }
 
   async boot(): Promise<void> {
+    installDitherTextures();
     await this.save.load();
     this.hud = new Hud(this);
     this.applySettings();
@@ -237,7 +243,9 @@ export class Game {
   }
 
   buildBackdrop(palette: string, seed: number): void {
-    this.view.space.build(paletteById(palette), seed);
+    const pal = paletteById(palette);
+    this.view.space.build(pal, seed);
+    setUiTint(pal.ui[0], pal.ui[1]);
   }
 
   // ------------------------------------------------------------ states
@@ -1061,12 +1069,10 @@ export class Game {
     if (inp.locked) {
       yaw += inp.mouseDX * 0.0024 * sens;
       pitch += inp.mouseDY * 0.0024 * sens * inv;
-    } else if (this.state === 'combat' && document.hasFocus()) {
-      // virtual joystick when the pointer is not locked
-      const dz = (v: number) => (Math.abs(v) < 0.06 ? 0 : (v - Math.sign(v) * 0.06) / 0.94);
-      yaw += dz(inp.mouseNX) * 2.4 * frameDt * sens;
-      pitch += dz(inp.mouseNY) * 1.9 * frameDt * sens * inv;
     }
+    // NOTE: no steering from the cursor position when the pointer is not
+    // locked. That "virtual joystick" made the ship (and camera) turn forever
+    // whenever the cursor rested off-centre or lock was lost (alt-tab, Esc).
     yaw += inp.padRX * 2.6 * frameDt * sens;
     pitch += inp.padRY * 2.0 * frameDt * sens * inv;
     if (this.autopilot && this.world && this.state === 'combat') {
@@ -1088,8 +1094,13 @@ export class Game {
     }
     yaw += inp.syntheticAimX * frameDt;
     pitch += inp.syntheticAimY * frameDt;
-    this.pendingYaw += yaw;
-    this.pendingPitch += pitch;
+    if (this.state === 'combat') {
+      this.pendingYaw += yaw;
+      this.pendingPitch += pitch;
+    } else {
+      this.pendingYaw = 0;
+      this.pendingPitch = 0;
+    }
     aim.strength = inp.lastDevice === 'pad' ? Math.min(1, s.aimAssist + 0.35) : s.aimAssist;
     aim.cone = inp.lastDevice === 'pad' ? 0.17 : 0.1;
   }
@@ -1252,8 +1263,9 @@ export class Game {
       const pl = w.player;
       _v.lerpVectors(pl.prev, pl.pos, alpha);
       _q.copy(pl.quat); // rotation uses the latest tick: minimal aim latency
-      if (pl.boosting) fov += 9;
-      fov += this.juice.fovKick;
+      // Boost is the only thing that moves the camera: it eases back and widens.
+      this.boostCam = damp(this.boostCam, pl.boosting && pl.alive ? 1 : 0, pl.boosting ? 5 : 3, dt);
+      fov += 10 * this.boostCam;
       if (this.camMode === 'cockpit') {
         _w.set(0, 0.35, -0.6).applyQuaternion(_q).add(_v);
         cam.position.copy(_w);
@@ -1261,19 +1273,22 @@ export class Game {
         _q.setFromEuler(new THREE.Euler(0, 0, (pl.bank + pl.roll) * 0.3));
         cam.quaternion.multiply(_q);
       } else {
-        const back = 12 + (pl.boosting ? 3 : 0);
-        _w.set(0, 3.3, back).applyQuaternion(_q).add(_v);
-        const k = 1 - Math.exp(-dt * 16);
-        this.camPos.lerp(_w, k);
-        // never lag more than a few units: keeps aim and ship tightly coupled
-        if (this.camPos.distanceTo(_w) > 6) this.camPos.copy(_w).addScaledVector(this.camPos.sub(_w).normalize(), 6);
-        cam.position.copy(this.camPos);
-        const fwd = _w.set(0, 0, -1).applyQuaternion(_q);
-        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_q);
-        const look = _v.clone().addScaledVector(fwd, 40).addScaledVector(up, 2.2);
-        _m.lookAt(cam.position, look, up);
-        this.camQuat.setFromRotationMatrix(_m);
-        cam.quaternion.copy(this.camQuat);
+        // Fixed chase camera: rigidly bolted to the ship's frame (no spring, no
+        // lag, no shake) so the view can never drift. Same offset and the same
+        // slight downward tilt every frame; only boost changes it.
+        const b = this.boostCam;
+        _w.set(0, CHASE_UP + b * 0.6, CHASE_BACK + b * 3.5).applyQuaternion(_q).add(_v);
+        cam.position.copy(_w);
+        this.camPos.copy(_w);
+        cam.quaternion.copy(_q).multiply(CHASE_TILT);
+        // gentle boost rumble, proportional to boost, honouring the screen-shake
+        // slider and reduced motion like every other camera motion
+        const rumble = b * st.shake * (st.reducedMotion ? 0 : 1);
+        if (rumble > 0.01) {
+          const t = this.loop.realTime;
+          _q.setFromEuler(new THREE.Euler(Math.sin(t * 37) * 0.0025 * rumble, Math.sin(t * 29 + 1) * 0.0025 * rumble, 0));
+          cam.quaternion.multiply(_q);
+        }
       }
     } else {
       // menus / map: slow cinematic drift
@@ -1286,9 +1301,10 @@ export class Game {
         cam.lookAt(-6, 2, 0);
       }
     }
-    cam.fov = damp(cam.fov, fov, 10, dt);
+    cam.fov = w ? fov : damp(cam.fov, fov, 10, dt);
     cam.updateProjectionMatrix();
-    this.juice.applyShake(cam, this.loop.realTime);
+    // trauma shake only on menus/cinematics; the flight camera stays fixed
+    if (!w) this.juice.applyShake(cam, this.loop.realTime);
     cam.updateMatrixWorld();
   }
 

@@ -64,12 +64,41 @@ function computeAim(w: World): void {
   pl.aimTarget = best.id;
 }
 
-function muzzle(w: World, side: number, out: Vector3): Vector3 {
+/**
+ * Gun hardpoints in ship space (forward = -Z), matched to each hull's mesh in
+ * render/meshes.ts: primary fire alternates between the left/right guns
+ * (x is mirrored), secondary/beam/arc fire leaves the nose. `scale` matches the
+ * hull's render scale.
+ */
+export const HARDPOINTS: Record<string, { primary: [number, number, number]; nose: [number, number, number]; scale: number }> = {
+  lantern: { primary: [1.75, 0.05, 0.1], nose: [0, -0.05, -1.85], scale: 1 },
+  moth: { primary: [0.62, 0, -0.45], nose: [0, 0, -1.4], scale: 0.8 },
+  bastion: { primary: [1.0, 0, -0.95], nose: [0, 0.35, -1.25], scale: 1.2 },
+  prism: { primary: [1.05, 0, -0.35], nose: [0, 0, -1.65], scale: 1 },
+  ember: { primary: [1.3, -0.1, 0.05], nose: [0, 0, -1.65], scale: 1 },
+  wraith: { primary: [0.8, 0, -0.45], nose: [0, 0, -1.85], scale: 1 },
+};
+
+const _bank = new Quaternion();
+const _ax = new Vector3(0, 0, 1);
+/** World-space muzzle. side ±1 = left/right primary gun, 0 = nose. Follows the visual bank/roll. */
+export function muzzle(w: World, side: number, out: Vector3): Vector3 {
   const pl = w.player;
-  pl.forward(_f);
-  pl.right(_r);
-  return out.copy(pl.pos).addScaledVector(_f, 1.6).addScaledVector(_r, side * 0.7);
+  const hp = HARDPOINTS[w.build.hull.id] ?? HARDPOINTS.lantern!;
+  const src = side === 0 ? hp.nose : hp.primary;
+  _bank.setFromAxisAngle(_ax, pl.bank + pl.roll);
+  out.set(src[0] * (side === 0 ? 1 : side), src[1], src[2]).multiplyScalar(hp.scale).applyQuaternion(_bank).applyQuaternion(pl.quat);
+  return out.add(pl.pos);
 }
+
+const _conv = new Vector3();
+/** Direction from a muzzle to the shared convergence point on the aim line. */
+function convergeDir(w: World, m: Vector3, out: Vector3): Vector3 {
+  const pl = w.player;
+  _conv.copy(pl.pos).addScaledVector(pl.aimDir, 90);
+  return out.copy(_conv).sub(m).normalize();
+}
+const _aim = new Vector3();
 
 /** Random direction inside a cone around dir. */
 function coneDir(w: World, dir: Vector3, angle: number, out: Vector3): Vector3 {
@@ -110,7 +139,9 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
   if (pl.flareT > 0 && w.build.flags.has('overdrive')) count *= 2;
   if (wi.def.id === 'photon' && wi.evolved && pl.flareT > 0) count *= 2;
   side = -side;
-  const m = origin ?? muzzle(w, side, _m);
+  // primary guns alternate; secondaries leave the nose
+  const m = origin ?? muzzle(w, secondary ? 0 : side, _m);
+  convergeDir(w, m, _aim);
   let dmg = p.damage * dmgMul;
   if (wi.def.family === 'light') dmg *= 1 + Math.min(pl.lightTotal, 3000) / 3000;
   // nova7 artifact
@@ -122,9 +153,9 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
       coneDir(w, _f.negate(), 1.3, _d);
       _d.multiplyScalar(p.speed * (0.6 + w.rng.next() * 0.8));
     } else if (isMissile && count > 2) {
-      coneDir(w, pl.aimDir, p.spread, _d).multiplyScalar(p.speed);
+      coneDir(w, _aim, p.spread, _d).multiplyScalar(p.speed);
     } else {
-      fanDir(w, pl.aimDir, i, count, p.spread, _d).multiplyScalar(p.speed * (isMissile ? 1 : 0.95 + w.rng.next() * 0.1));
+      fanDir(w, _aim, i, count, p.spread, _d).multiplyScalar(p.speed * (isMissile ? 1 : 0.95 + w.rng.next() * 0.1));
     }
     const flags = kinetic | (isMissile ? PF_MISSILE : 0) | (isMine ? PF_MINE : 0) | echo;
     const kind = isMissile || isMine ? 5 : 0;
@@ -156,7 +187,7 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
   if (!secondary && w.build.flags.has('prismHull')) {
     for (const s of [-1, 1]) {
       pl.right(_r);
-      _d.copy(pl.aimDir).addScaledVector(_r, s * 0.05).normalize().multiplyScalar(p.speed);
+      _d.copy(_aim).addScaledVector(_r, s * 0.05).normalize().multiplyScalar(p.speed);
       const k = w.proj.spawn(m.x, m.y, m.z, _d.x, _d.y, _d.z, p.life * 0.8, dmg * 0.4, p.size * 0.7, kinetic, 0, wi.slotIndex);
       if (k >= 0) w.proj.pierce[k] = p.pierce;
     }
@@ -165,11 +196,11 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
 
 function fireRail(w: World, wi: WeaponInstance): void {
   const p = wi.params;
-  const pl = w.player;
   side = -side;
   const m = muzzle(w, side, _m);
   for (let n = 0; n < p.count; n++) {
-    const dir = n === 0 ? _d.copy(pl.aimDir) : fanDir(w, pl.aimDir, n, p.count, 0.03, _d);
+    convergeDir(w, m, _aim);
+    const dir = n === 0 ? _d.copy(_aim) : fanDir(w, _aim, n, p.count, 0.03, _d);
     hits.length = 0;
     for (const e of w.enemies) {
       if (!e.alive || !e.revealed) continue;
@@ -201,7 +232,8 @@ function fireBeam(w: World, wi: WeaponInstance, secondary: boolean, doDamage: bo
   if (wi.def.family === 'light') dmg *= 1 + Math.min(pl.lightTotal, 3000) / 1500;
   if (wi.def.id === 'flarebeam' && wi.evolved && pl.flareT > 0) dmg *= 2;
   for (let n = 0; n < p.count; n++) {
-    const dir = n === 0 ? _d.copy(pl.aimDir) : fanDir(w, pl.aimDir, n, p.count, 0.04, _d);
+    convergeDir(w, m, _aim);
+    const dir = n === 0 ? _d.copy(_aim) : fanDir(w, _aim, n, p.count, 0.04, _d);
     hits.length = 0;
     for (const e of w.enemies) {
       if (!e.alive || !e.revealed) continue;
