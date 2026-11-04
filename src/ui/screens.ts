@@ -6,6 +6,7 @@ import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
 import { ENEMIES } from '../data/enemies';
 import { AFFIXES, RARITY } from '../data/affixes';
+import { SUBTYPES } from '../data/subtypes';
 import { DROP_INFO, DROP_TABLE, DROP_KINDS, RARITY_DROP } from '../data/drops';
 import { NODE_INFO } from '../game/run';
 import { Input, ACTION_LABELS, type Action } from '../core/input';
@@ -370,7 +371,7 @@ export function showCodex(g: Game): void {
   if (tab === 'enemies') {
     body = ENEMIES.map((e) => {
       const k = d.codex.enemies.includes(e.id);
-      return `<div class="item ${k ? '' : 'disabled'}" style="--rc:${e.accent}"><div class="ic">●</div><div class="grow"><div class="t">${k ? esc(e.name) : unk} <span class="faint">${k ? e.faction : ''}</span></div><div class="d">${k ? esc(e.desc) : 'Not yet encountered.'}</div></div></div>`;
+      return `<div class="item ${k ? '' : 'disabled'}" style="--rc:${e.accent}"><div class="ic">●</div><div class="grow"><div class="t">${k ? esc(e.name) : unk} <span class="faint">${k ? e.faction : ''}</span></div><div class="d">${k ? esc(e.desc) + (SUBTYPES[e.id] ? `<br><span class="faint">Variants: ${SUBTYPES[e.id]!.map((s) => s.name + (s.moves.length ? ' (' + s.moves.join(', ') + ')' : '')).join(' · ')}</span>` : '') : 'Not yet encountered.'}</div></div></div>`;
     }).join('') + `<h3 style="margin-top:12px">Rarities</h3>` + RARITY.slice(1).map((r, i) => `<div class="stat"><span style="color:${r.color}">${r.name}</span><span class="dim">${['1 affix', '2–3 affixes', '3–4 affixes and a name'][i]} · ×${r.hp} HP · ×${r.light} Light</span></div>`).join('') + `<h3 style="margin-top:12px">Affixes · ${AFFIXES.length}</h3>` + AFFIXES.map((x) => `<div class="stat"><span>${x.name}</span><span class="dim">${x.desc}</span></div>`).join('') +
       `<h3 style="margin-top:12px">Drop table · chance per kill</h3><div class="dim" style="margin-bottom:6px">Rarity multiplies these: Magic ×${RARITY_DROP[1]}, Rare ×${RARITY_DROP[2]}, Unique ×${RARITY_DROP[3]}. Gilded doubles them; Luck adds 15% per point.</div>` +
       `<div class="droptable"><div class="dt-h"><span></span>${DROP_KINDS.map((k) => `<span style="color:${DROP_INFO[k].color}">${DROP_INFO[k].name}</span>`).join('')}</div>` +

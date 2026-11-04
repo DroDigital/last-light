@@ -38,6 +38,14 @@ export class Enemy {
   enragedOn = false;
   /** Unstable: nova telegraphed and armed */
   affArm = false;
+  /** subtype index into SUBTYPES[def.id] (-1 = none) */
+  subtype = -1;
+  /** signature move state */
+  move = '';
+  moveTime = 0;
+  moveT = 0;
+  moveToken = false;
+  moveVec = new Vector3();
   /** buff from an Empowering ally */
   buffT = 0;
   speedMul = 1;
@@ -127,6 +135,11 @@ export class Enemy {
     this.rankName = '';
     this.affT = this.affT2 = this.thornT = this.buffT = 0;
     this.enragedOn = this.affArm = false;
+    this.subtype = -1;
+    this.move = '';
+    this.moveTime = 0;
+    this.moveT = 2;
+    this.moveToken = false;
     this.spawnT = 0.6;
     this.isBossCore = false;
     this.dmgTaken = 1;

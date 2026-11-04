@@ -5,6 +5,7 @@ import { Emitter } from '../core/events';
 import { SpatialHash } from '../core/spatial';
 import { clamp } from '../core/math';
 import { ENEMY_BY_ID } from '../data/enemies';
+import { SUBTYPES, pickSubtype } from '../data/subtypes';
 import { DROP_KINDS, dropChance, type DropKind } from '../data/drops';
 import { AFFIX_BY_ID, AFFIX_INDEX, RARITY, rollAffixes, uniqueName, type AffixId, type Rarity } from '../data/affixes';
 import type { EnemyDef, Faction, StatusKind, TriggerDef, TriggerOn, WeaponParams } from './types';
@@ -272,6 +273,16 @@ export class World {
     e.tint.set(r, g, b);
     e.orbitDir = this.rng.chance(0.5) ? 1 : -1;
     e.timer = this.rng.range(0.5, 2.5);
+    e.moveT = this.rng.range(1.5, 4);
+    if (!isBoss && d.role !== 'inert') {
+      e.subtype = pickSubtype(d.id, this.sectorIdx, (w) => this.rng.weighted(w));
+      const st = e.subtype >= 0 ? SUBTYPES[d.id]![e.subtype] : undefined;
+      if (st) {
+        if (st.hp) e.hp = e.maxHp = e.maxHp * st.hp;
+        if (st.speed) e.speedMul *= st.speed;
+        if (st.fire) e.fireMul *= st.fire;
+      }
+    }
     if (rarity > 0 && !isBoss && d.role !== 'inert') this.applyRank(e, rarity, affixes ?? rollAffixes(this.rng, rarity, d.role, this.sectorIdx));
     this.enemies.push(e);
     this.stats.enemiesSeen.add(d.id);

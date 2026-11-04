@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AFFIX_BY_ID, RARITY, rankLabel } from '../data/affixes';
 import { DROP_INFO } from '../data/drops';
+import { subtypeName } from '../data/subtypes';
 import type { Game, State } from '../game/game';
 import type { World } from '../game/world';
 import { PALETTES } from '../data/palettes';
@@ -359,7 +360,7 @@ export class Hud {
           c.textAlign = 'center';
           c.font = '800 10px Archivo';
           c.fillStyle = rc;
-          c.fillText(e.rarity === 3 ? e.rankName.toUpperCase() : `${RARITY[e.rarity].name.toUpperCase()} ${e.def.name.toUpperCase()}`, p.x, p.y - 42);
+          c.fillText(e.rarity === 3 ? e.rankName.toUpperCase() : `${RARITY[e.rarity].name.toUpperCase()} ${e.def.name.toUpperCase()}${e.subtype >= 0 ? ' · ' + subtypeName(e.def.id, e.subtype).toUpperCase() : ''}`, p.x, p.y - 42);
           if (e.rarity < 3 || e.affixes.length) {
             c.font = '400 9px "JetBrains Mono"';
             c.fillStyle = 'rgba(243,238,226,0.8)';
@@ -689,7 +690,8 @@ export class Hud {
       c.fillRect(tx, ty - 9, 2, 40);
       c.fillStyle = PAPER;
       c.font = '900 12px Archivo';
-      c.fillText(tgt.def.name.toUpperCase(), tx + 8, ty);
+      const stn = subtypeName(tgt.def.id, tgt.subtype);
+      c.fillText(tgt.def.name.toUpperCase() + (stn ? ' · ' + stn.toUpperCase() : ''), tx + 8, ty);
       c.font = '400 10px "JetBrains Mono"';
       c.fillText(`TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.rarity > 0 ? ' · ' + RARITY[tgt.rarity].name.toUpperCase() : ''}`, tx + 8, ty + 14);
       if (tgt.rarity > 0) {

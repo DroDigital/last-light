@@ -5,6 +5,8 @@ import type { Enemy } from './entities';
 import { damp } from '../core/math';
 import { BAL } from '../data/balance';
 import { updateAffixAI } from './affixai';
+import { updateMoves } from './moves';
+import { SUBTYPES } from '../data/subtypes';
 
 const _d = new Vector3();
 const _t = new Vector3();
@@ -393,6 +395,7 @@ export function updateEnemyAI(w: World, dt: number): void {
       }
     }
 
+    if (e.subtype >= 0 && e.revealed && !inStasis) updateMoves(w, e, tdt, dist, SUBTYPES[def.id]![e.subtype]!.moves);
     updateAffixAI(w, e, tdt, dist);
 
     // separation (cheap): only against a few neighbors

@@ -72,11 +72,12 @@ describe('enemy rarities and affixes', () => {
   it('stat affixes change the numbers they promise', () => {
     const b = new Build(HULLS[0]!, meta());
     const w = new World('AFX2', b);
-    const base = w.spawnEnemy('gunship', 0, 0, 0, 1, ['brutal']);
+    // cutter variants carry no HP leanings, so HP comparisons are exact
+    const base = w.spawnEnemy('cutter', 0, 0, 0, 1, ['brutal']);
     expect(base.dmgMul).toBeCloseTo(1.5);
-    const t = w.spawnEnemy('gunship', 0, 0, 0, 1, ['titanic']);
+    const t = w.spawnEnemy('cutter', 0, 0, 0, 1, ['titanic']);
     expect(t.maxHp).toBeCloseTo(base.maxHp * 1.9, 0);
-    const h = w.spawnEnemy('gunship', 0, 0, 0, 1, ['hardened']);
+    const h = w.spawnEnemy('cutter', 0, 0, 0, 1, ['hardened']);
     expect(h.dmgTaken).toBeCloseTo(0.7);
   });
 });
