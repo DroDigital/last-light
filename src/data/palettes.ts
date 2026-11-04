@@ -13,6 +13,8 @@ export interface PaletteDef {
   ambient: string;
   /** UI accent pair (readable on ink) used to tint the interface in this sector */
   ui: [string, string];
+  /** backdrop layout: how the painted nebula is arranged for this environment */
+  feature?: 'forge' | 'blackhole' | 'jets' | 'fieldlines' | 'rift';
 }
 
 export const PALETTES: PaletteDef[] = [
@@ -99,6 +101,72 @@ export const PALETTES: PaletteDef[] = [
     star: '#ffd890',
     ambient: '#100a10',
     ui: ['#e89a3a', '#7a9ac0'],
+  },
+  // --- Act II: the Deep
+  {
+    id: 'forge',
+    name: 'Nebula Forge (molten pillars)',
+    colors: [
+      '#070208', '#1a0614', '#2e0a1f', '#4a0f2a', '#6d1631', '#952136', '#bd3434', '#e0573a',
+      '#f78a45', '#ffb860', '#ffe08f', '#fff6dd', '#1c0b2e', '#33154f', '#57247a', '#8a3ca8',
+    ],
+    nebula: ['#e0573a', '#952136', '#8a3ca8'],
+    star: '#ffb070',
+    ambient: '#1a0610',
+    ui: ['#f78a45', '#e0573a'],
+    feature: 'forge',
+  },
+  {
+    id: 'horizon',
+    name: 'Event Horizon (gold accretion)',
+    colors: [
+      '#020103', '#0a0710', '#140d1e', '#21142e', '#321c40', '#4a2753', '#683466', '#8a4675',
+      '#b05e7c', '#d4807d', '#ecaa82', '#f8d396', '#fff1c8', '#0e1626', '#1c2f4a', '#33547a',
+    ],
+    nebula: ['#ecaa82', '#683466', '#33547a'],
+    star: '#1a1020',
+    ambient: '#0a0712',
+    ui: ['#ecaa82', '#b05e7c'],
+    feature: 'blackhole',
+  },
+  {
+    id: 'quasar',
+    name: 'Quasar Jets (electric blue)',
+    colors: [
+      '#010310', '#040a26', '#08143f', '#0c2160', '#123288', '#1a49b0', '#2466d2', '#3487ea',
+      '#4fabf8', '#7fcdfd', '#b7e8ff', '#ecfbff', '#200a36', '#3e1460', '#6e2a96', '#b05ad6',
+    ],
+    nebula: ['#3487ea', '#b05ad6', '#7fcdfd'],
+    star: '#d8f2ff',
+    ambient: '#040a1e',
+    ui: ['#7fcdfd', '#b05ad6'],
+    feature: 'jets',
+  },
+  {
+    id: 'magnetar',
+    name: 'Shattered Magnetar (iron and verdigris)',
+    colors: [
+      '#040506', '#0d1012', '#171c1f', '#232a2e', '#323b40', '#465156', '#5f6c70', '#7d8a8b',
+      '#a2aca9', '#2a0d0d', '#4f1714', '#7a221a', '#a8331f', '#d45227', '#14403f', '#2a7a72',
+    ],
+    nebula: ['#a8331f', '#2a7a72', '#7d8a8b'],
+    star: '#ffc8a0',
+    ambient: '#0b0d0f',
+    ui: ['#2a7a72', '#d45227'],
+    feature: 'fieldlines',
+  },
+  {
+    id: 'edge',
+    name: 'The Edge of Night (last green)',
+    colors: [
+      '#000000', '#050607', '#0b0d0c', '#121614', '#1b211c', '#252d26', '#313b31', '#3f4b3d',
+      '#55634f', '#728566', '#99ad85', '#cfdcb2', '#f2f7e0', '#1a0f24', '#2d1640', '#4a1f63',
+    ],
+    nebula: ['#55634f', '#4a1f63', '#99ad85'],
+    star: '#e8f0c8',
+    ambient: '#050605',
+    ui: ['#99ad85', '#7a4aa8'],
+    feature: 'rift',
   },
 ];
 

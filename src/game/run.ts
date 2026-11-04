@@ -1,5 +1,6 @@
 import { Rng } from '../core/rng';
 import { BAL } from '../data/balance';
+import { Hazard } from './hazards';
 import { SECTORS, type SectorDef } from '../data/world';
 import { ENEMY_BY_ID } from '../data/enemies';
 import { RARITY, rollRarity, type Rarity } from '../data/affixes';
@@ -47,7 +48,7 @@ export const NODE_INFO: Record<NodeType, { name: string; desc: string; icon: str
  * fights, an elite, a shop and a rest on any path.
  */
 export const MAP_ROWS = 8;
-const ROW_Z = 22;
+const ROW_Z = 28;
 export function generateMap(seed: number, sector: number, opts: { rifts: boolean; heat: number }): SectorMap {
   const rng = new Rng(seed);
   const rowsN = MAP_ROWS;
@@ -135,6 +136,7 @@ export class Director {
   done = false;
   cleared = false;
   elitesLeft = 0;
+  hazard: Hazard | null = null;
   wave = 0;
   private spawnCd = 1.5;
   private rng: Rng;
@@ -179,6 +181,11 @@ export class Director {
     w.sectorIdx = sectorIdx;
     w.sectorDmgScale = (1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0)) * (1 + depth * BAL.perRow * 0.5);
     this.dress();
+    // the Horizon Eater IS the gravity well; don't stack a second one under it
+    if (this.sector.hazard && kind !== 'tutorial' && !(kind === 'boss' && this.sector.hazard === 'gravity')) {
+      this.hazard = new Hazard(this.sector.hazard, kind === 'boss' ? 0.6 : 1, (x, y, z) => this.spawnRift(x, y, z));
+      w.hazard = this.hazard;
+    }
     if (kind === 'boss') {
       this.boss = new BossController(this.sector.boss, w, 1 + (heat >= 5 ? 0.25 : 0), this.sector.music.bpm);
       w.boss = this.boss;
@@ -244,6 +251,7 @@ export class Director {
   update(dt: number): void {
     const w = this.w;
     this.time += dt;
+    this.hazard?.update(w, dt);
     if (this.kind === 'boss') {
       if (this.boss?.dead) {
         this.calm += dt;
@@ -312,6 +320,17 @@ export class Director {
     if (this.kind === 'endless' && this.spent > this.budget * (this.endlessWave + 1)) {
       this.endlessWave++;
       w.sectorHpScale *= 1.08;
+    }
+  }
+
+  /** a void rift spills three hostiles of the sector's pool */
+  private spawnRift(x: number, y: number, z: number): void {
+    const w = this.w;
+    if (w.liveEnemyCount() > 160) return;
+    for (let i = 0; i < 3; i++) {
+      const id = this.pickEnemy();
+      const e = w.spawnEnemy(id, x + this.rng.range(-4, 4), y + this.rng.range(-3, 3), z + this.rng.range(-4, 4), rollRarity(this.rng, this.sectorIdx, w.heat, this.kind));
+      e.spawnT = 0.4;
     }
   }
 

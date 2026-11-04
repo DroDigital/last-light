@@ -10,7 +10,7 @@ import { AudioEngine } from '../audio/audio';
 import { UI } from '../ui/ui';
 import { SaveSystem, type RunRecord } from '../meta/save';
 import { PALETTES, paletteById } from '../data/palettes';
-import { SECTORS, HULLS, HULL_BY_ID, EVENTS, CHALLENGES, LORE, HEARTH_UNLOCKS, type EventDef, type EventEffect } from '../data/world';
+import { SECTORS, ACT2_START, HULLS, HULL_BY_ID, EVENTS, CHALLENGES, LORE, HEARTH_UNLOCKS, type EventDef, type EventEffect } from '../data/world';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES } from '../data/upgrades';
 import { SYNERGIES } from '../data/upgrades';
@@ -55,6 +55,8 @@ export interface RunState {
   startTime: number;
   sectorLight: number;
   endless: boolean;
+  /** pressed on past the Last Dark into Act II */
+  deep?: boolean;
   endlessWaves: number;
   encounters: number;
   lastEvent?: EventDef;
@@ -422,7 +424,7 @@ export class Game {
       if (this.audio.music) this.audio.music.targetIntensity = 0.15;
       this.world!.stats.sectorGrazes = 0;
       this.sectorTitle = { name: sec.name, sub: sec.intro, t: 4.5 };
-      this.discoverLore(['vela', 'antares', 'sirius', 'pulsar', 'laststar'][idx]!);
+      this.discoverLore(sec.lore ?? ['vela', 'antares', 'sirius', 'pulsar', 'laststar'][idx]!);
       this.openMap();
     };
     if (first) {
@@ -606,7 +608,9 @@ export class Game {
       this.view.space.applyStarPower();
       this.juice.toast('THE STAR IS RELIT', '#fff6c0');
       if (run.sector === 0) this.challenge('first_boss');
-      if (run.sector >= SECTORS.length - 1 && !run.endless) {
+      // Act I ends at the Last Dark (unless you pressed on); Act II at the Endless Night
+      const actEnd = run.sector === ACT2_START - 1 && !run.deep;
+      if ((run.sector >= SECTORS.length - 1 || actEnd) && !run.endless) {
         run.won = true;
         this.setState('victory');
         this.finishRun(true);
@@ -992,6 +996,15 @@ export class Game {
     this.save.save();
   }
 
+  /** Press on past the Last Dark into Act II: the Deep. */
+  startDeep(): void {
+    const run = this.run!;
+    run.deep = true;
+    run.won = false;
+    this.juice.toast('INTO THE DEEP', '#99ad85');
+    this.enterSector(ACT2_START);
+  }
+
   startEndless(): void {
     const run = this.run!;
     run.endless = true;
@@ -1372,9 +1385,10 @@ export class Game {
         // the chart is long: follow the row you are on
         const nodes = this.run.map.nodes;
         const cur = this.run.node >= 0 ? nodes[this.run.node] : undefined;
-        const fz = (cur ? cur.z : 40) - 34;
+        const fz = (cur ? cur.z : 40) - 44;
         this.mapFocusZ = this.mapFocusZ === null ? fz : damp(this.mapFocusZ, fz, 2.5, dt);
-        cam.position.set(Math.sin(t * 0.07) * 18, 56 + Math.sin(t * 0.11) * 4, this.mapFocusZ + 100);
+        // steep, nearly overhead: rows spread down the screen instead of stacking up
+        cam.position.set(Math.sin(t * 0.07) * 12, 104 + Math.sin(t * 0.11) * 3, this.mapFocusZ + 62);
         cam.lookAt(0, 0, this.mapFocusZ);
       } else {
         cam.position.set(Math.sin(t * 0.05) * 20 + 30, 8 + Math.sin(t * 0.08) * 3, 60);

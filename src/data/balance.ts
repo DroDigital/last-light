@@ -5,7 +5,9 @@
  */
 export const BAL = {
   /** multiplier on every point of damage the player takes */
-  enemyDamage: 1.4,
+  enemyDamage: 1.25,
+  /** multiplier on signature-move cooldowns (higher = fewer special attacks) */
+  moveCooldown: 1.35,
   /** extra enemy damage per sector (sector 1 = +0) */
   enemyDamagePerSector: 0.24,
   /** multiplier on enemy projectile speed */

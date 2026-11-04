@@ -26,6 +26,7 @@ export class Space {
   private strokeCount: number;
   /** 0..1, how relit the star is (boss kill brings it to 1). */
   starPower = 0.5;
+  private featureAxis = new THREE.Vector3(0, 0.2, -1);
 
   constructor(private lights: LightRig, strokeCount = 1400) {
     this.strokeCount = strokeCount;
@@ -122,6 +123,8 @@ export class Space {
       col[i * 4 + 2] = t.z * k;
       col[i * 4 + 3] = rng.next();
     }
+    // environment features re-arrange part of the painting around the star
+    if (pal.feature) this.applyFeature(pal.feature, rng, stroke, dir, col, n, tints);
     this.nebulaGeo.setAttribute('aStroke', new THREE.InstancedBufferAttribute(stroke, 4));
     this.nebulaGeo.setAttribute('aDir', new THREE.InstancedBufferAttribute(dir, 4));
     this.nebulaGeo.setAttribute('aCol', new THREE.InstancedBufferAttribute(col, 4));
@@ -177,8 +180,9 @@ export class Space {
     sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
     sg.setAttribute('aCol', new THREE.BufferAttribute(sc, 3));
 
-    // The dying star
-    this.starDir.set(rng.range(-1, 1), rng.range(0.05, 0.45), rng.range(-1, -0.3)).normalize();
+    // The dying star (features are built around their own axis; the star sits on it)
+    if (pal.feature) this.starDir.copy(this.featureAxis);
+    else this.starDir.set(rng.range(-1, 1), rng.range(0.05, 0.45), rng.range(-1, -0.3)).normalize();
     const sd = opts.starDist ?? 700;
     this.star.position.copy(this.starDir).multiplyScalar(sd);
     this.star.scale.setScalar(sd * 0.32);
@@ -186,6 +190,88 @@ export class Space {
     this.lights.uniforms.uStarDir.value.copy(this.starDir);
     this.lights.uniforms.uAmbient.value.copy(hexToLinearVec(pal.ambient, 1.2));
     this.applyStarPower();
+  }
+
+  /**
+   * Feature layouts (Act II environments). Positions are on the backdrop shell;
+   * `starDir` is chosen below, so features are built around a provisional axis
+   * that build() then copies to the star.
+   */
+  private applyFeature(f: NonNullable<PaletteDef['feature']>, rng: Rng, stroke: Float32Array, dir: Float32Array, col: Float32Array, n: number, tints: THREE.Vector3[]): void {
+    const axis = new THREE.Vector3(rng.range(-1, 1), rng.range(0.1, 0.4), rng.range(-1, -0.4)).normalize();
+    this.featureAxis.copy(axis);
+    const u = new THREE.Vector3().crossVectors(axis, new THREE.Vector3(0, 1, 0)).normalize();
+    const v = new THREE.Vector3().crossVectors(u, axis).normalize();
+    const c = axis.clone().multiplyScalar(640);
+    const p = new THREE.Vector3();
+    const d = new THREE.Vector3();
+    const share = f === 'rift' ? 0.85 : 0.6;
+    for (let i = 0; i < n; i++) {
+      if (rng.next() > share) continue;
+      let k = 1;
+      switch (f) {
+        case 'forge': {
+          // tall pillars of gas rising from below the star
+          const pillar = i % 4;
+          const px = (pillar - 1.5) * 90 + rng.range(-20, 20);
+          const h = rng.range(-260, 120);
+          p.copy(c).addScaledVector(u, px + Math.sin(h * 0.02 + pillar) * 25).addScaledVector(v, h);
+          d.copy(v).addScaledVector(u, rng.range(-0.3, 0.3)).normalize();
+          k = 1.3;
+          break;
+        }
+        case 'blackhole': {
+          // a flattened accretion disc around a dark centre, plus a thin photon ring
+          const a = rng.next() * Math.PI * 2;
+          const ring = rng.chance(0.18);
+          const r = ring ? rng.range(70, 80) : rng.range(90, 330) * (1 + rng.next() * 0.3);
+          p.copy(c).addScaledVector(u, Math.cos(a) * r).addScaledVector(v, Math.sin(a) * r * (ring ? 1 : 0.22));
+          d.copy(u).multiplyScalar(-Math.sin(a)).addScaledVector(v, Math.cos(a) * 0.22).normalize();
+          k = ring ? 3 : 1.6 * (90 / r) + 0.4;
+          break;
+        }
+        case 'jets': {
+          // two opposed jets along v, flaring as they leave the core
+          const s = rng.chance(0.5) ? 1 : -1;
+          const t = Math.pow(rng.next(), 0.7) * 520;
+          const w = 8 + t * 0.12;
+          p.copy(c).addScaledVector(v, s * t).addScaledVector(u, rng.range(-w, w));
+          d.copy(v).multiplyScalar(s);
+          k = 2.2 - t / 400;
+          break;
+        }
+        case 'fieldlines': {
+          // dipole field lines looping out of the poles
+          const line = i % 9;
+          const L = 120 + line * 34;
+          const th = rng.range(0.15, Math.PI - 0.15);
+          const r = L * Math.sin(th) ** 2;
+          const side = line % 2 ? 1 : -1;
+          p.copy(c).addScaledVector(u, side * r * Math.sin(th)).addScaledVector(v, r * Math.cos(th));
+          d.copy(u).multiplyScalar(side * Math.cos(th)).addScaledVector(v, -Math.sin(th)).normalize();
+          k = 1.4;
+          break;
+        }
+        case 'rift': {
+          // sparse, broken slivers: the painting is coming apart
+          p.set(rng.range(-1, 1), rng.range(-0.6, 0.6), rng.range(-1, 1)).normalize().multiplyScalar(rng.range(420, 820));
+          d.set(rng.range(-1, 1), rng.range(-1, 1), rng.range(-1, 1)).normalize();
+          k = rng.chance(0.1) ? 2.5 : 0.35;
+          break;
+        }
+      }
+      stroke[i * 4] = p.x;
+      stroke[i * 4 + 1] = p.y;
+      stroke[i * 4 + 2] = p.z;
+      dir[i * 4] = d.x;
+      dir[i * 4 + 1] = d.y;
+      dir[i * 4 + 2] = d.z;
+      const t = tints[f === 'blackhole' && k > 2 ? 0 : rng.weighted([5, 3, 2])]!;
+      const kk = rng.range(0.05, 0.14) * k;
+      col[i * 4] = t.x * kk;
+      col[i * 4 + 1] = t.y * kk;
+      col[i * 4 + 2] = t.z * kk;
+    }
   }
 
   applyStarPower(): void {

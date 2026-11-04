@@ -6,6 +6,7 @@ import { SpatialHash } from '../core/spatial';
 import { clamp } from '../core/math';
 import { ENEMY_BY_ID } from '../data/enemies';
 import { SUBTYPES, pickSubtype } from '../data/subtypes';
+import type { Hazard } from './hazards';
 import { DROP_KINDS, dropChance, type DropKind } from '../data/drops';
 import { AFFIX_BY_ID, AFFIX_INDEX, RARITY, rollAffixes, uniqueName, type AffixId, type Rarity } from '../data/affixes';
 import type { EnemyDef, Faction, StatusKind, TriggerDef, TriggerOn, WeaponParams } from './types';
@@ -237,6 +238,8 @@ export class World {
 
   clearArena(): void {
     this.drops.length = 0;
+    this.timers.length = 0;
+    this.hazard = null;
     for (const e of this.enemies) this.release(e);
     this.enemies.length = 0;
     this.proj.clear();
@@ -294,6 +297,14 @@ export class World {
   /** enemy damage growth for the current sector (set by the Director) */
   sectorDmgScale = 1;
   private beamHitT = 0;
+
+  /** the sector's environment hazard for this fight (read by the view) */
+  hazard: Hazard | null = null;
+  /** sim-time delayed actions (deterministic: advanced by update) */
+  private timers: { t: number; fn: () => void }[] = [];
+  later(delay: number, fn: () => void): void {
+    this.timers.push({ t: delay, fn });
+  }
 
   /** loot on the field (few at a time, so plain objects) */
   drops: { x: number; y: number; z: number; vx: number; vy: number; vz: number; kind: DropKind; age: number }[] = [];
@@ -429,6 +440,14 @@ export class World {
     this.updateWells(dt);
     this.updateMotes(dt);
     this.updateDrops(dt);
+    for (let i = this.timers.length - 1; i >= 0; i--) {
+      const tm = this.timers[i]!;
+      tm.t -= dt;
+      if (tm.t <= 0) {
+        this.timers.splice(i, 1);
+        tm.fn();
+      }
+    }
     this.updateDebris(dt);
     for (let i = this.decoys.length - 1; i >= 0; i--) {
       const d = this.decoys[i]!;

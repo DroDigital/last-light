@@ -196,6 +196,20 @@ if (scenario === 'muzzle') {
   await page.waitForTimeout(900);
   await shot('muzzle2');
 }
+if (scenario === 'deep') {
+  await ll(() => window.__ll.startRun({ seed: 'DEEP' }));
+  await page.waitForTimeout(2000);
+  for (let idx = 5; idx < 10; idx++) {
+    await ll((idx) => { const g = window.__ll; g.run.deep = true; g.run.sector = idx; g.enterSector(idx, true); }, idx);
+    await page.waitForTimeout(900);
+    if (idx === 6) await shot('deep-map-' + idx);
+    await ll(() => { const g = window.__ll; g.startEncounter('boss', 7); g.godMode = true; });
+    await page.waitForTimeout(6500);
+    await ll(() => { const g = window.__ll; const b = g.world.boss; const p = g.world.player; const d = b.core.pos.clone().sub(p.pos).normalize(); p.quat.setFromUnitVectors(p.pos.clone().set(0, 0, -1), d); p.prevQuat.copy(p.quat); });
+    await page.waitForTimeout(1500);
+    await shot('deep-boss-' + idx);
+  }
+}
 if (scenario === 'loot') {
   await ll(() => window.__ll.startRun({ seed: 'LOOT' }));
   await page.waitForTimeout(2500);

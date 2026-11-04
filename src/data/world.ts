@@ -10,6 +10,12 @@ export interface SectorDef {
   asteroids: number;
   music: { root: number; scale: number[]; bpm: number; voice: 'glass' | 'warm' | 'cold' | 'pulse' | 'void' };
   intro: string;
+  /** 1 = the first five stars, 2 = the Deep (unlocked by finishing Act I) */
+  act?: 1 | 2;
+  /** environment hazard active in this sector's fights */
+  hazard?: 'storms' | 'gravity' | 'jets' | 'pulses' | 'rifts';
+  /** lore entry discovered on arrival */
+  lore?: string;
 }
 
 export const SECTORS: SectorDef[] = [
@@ -38,7 +44,36 @@ export const SECTORS: SectorDef[] = [
     pool: [['moteeater', 5], ['gloom', 3], ['umbra', 3], ['hollow', 2], ['mawspawn', 1.5], ['whisper', 2], ['eclipse', 2], ['nullwisp', 3], ['shroud', 2]],
     music: { root: 38, scale: [0, 1, 3, 6, 7], bpm: 90, voice: 'void' }, intro: 'Where the light went. Where you must go.',
   },
+  // --- Act II: the Deep. Every environment has a live hazard.
+  {
+    id: 'forge', name: 'VI · The Nebula Forge', star: 'Kiln Prime', palette: 'forge', boss: 'kilnmother', asteroids: 30, act: 2, hazard: 'storms', lore: 'forge',
+    pool: [['scrapper', 3], ['gunship', 3], ['cutter', 3], ['hauler', 1.5], ['turretrig', 2], ['welder', 1.5], ['bulwark', 1.5], ['ramdrone', 2], ['rivet', 2], ['surveyor', 2]],
+    music: { root: 41, scale: [0, 1, 4, 5, 7, 8], bpm: 118, voice: 'warm' }, intro: 'Where new stars were forged, ion storms still break.',
+  },
+  {
+    id: 'horizon', name: 'VII · Event Horizon', star: 'Gargantua', palette: 'horizon', boss: 'horizoneater', asteroids: 20, act: 2, hazard: 'gravity', lore: 'horizon',
+    pool: [['moteeater', 4], ['gloom', 3], ['umbra', 3], ['eclipse', 2], ['nullwisp', 3], ['mawspawn', 1.5], ['shroud', 1.5], ['whisper', 2], ['hollow', 2]],
+    music: { root: 36, scale: [0, 2, 3, 7, 8], bpm: 84, voice: 'void' }, intro: 'A black hole wearing a crown of dying light. It pulls.',
+  },
+  {
+    id: 'quasar', name: 'VIII · The Quasar Jets', star: 'Regent Core', palette: 'quasar', boss: 'quasarregent', asteroids: 16, act: 2, hazard: 'jets', lore: 'quasar',
+    pool: [['seraph', 4], ['cantor', 3], ['hymnlancer', 3], ['resonator', 2], ['prismwarden', 1.5], ['chorale', 1.5], ['facet', 2], ['shardling', 4], ['lure', 1.5]],
+    music: { root: 47, scale: [0, 2, 4, 7, 9, 11], bpm: 132, voice: 'pulse' }, intro: 'Two beams brighter than galaxies. Do not cross them.',
+  },
+  {
+    id: 'magnetar', name: 'IX · Shattered Magnetar', star: 'SGR Iron', palette: 'magnetar', boss: 'ironmagnetar', asteroids: 40, act: 2, hazard: 'pulses', lore: 'magnetar',
+    pool: [['ramdrone', 3], ['bulwark', 2], ['gunship', 3], ['surveyor', 2.5], ['cutter', 3], ['turretrig', 2.5], ['hauler', 1.5], ['seraph', 2], ['umbra', 2], ['rivet', 2]],
+    music: { root: 39, scale: [0, 1, 3, 5, 6, 10], bpm: 126, voice: 'cold' }, intro: 'A dead star with a field strong enough to tear iron.',
+  },
+  {
+    id: 'edge', name: 'X · The Edge of Night', star: 'The First Light', palette: 'edge', boss: 'endlessnight', asteroids: 12, act: 2, hazard: 'rifts', lore: 'edge',
+    pool: [['moteeater', 3], ['shardling', 3], ['scrapper', 3], ['umbra', 2.5], ['hymnlancer', 2.5], ['gunship', 2], ['mawspawn', 1.5], ['eclipse', 2], ['seraph', 2.5], ['shroud', 1.5], ['whisper', 2]],
+    music: { root: 35, scale: [0, 1, 3, 6, 8], bpm: 100, voice: 'void' }, intro: 'Beyond the last star, the oldest light in the universe still burns.',
+  },
 ];
+
+/** first sector of Act II */
+export const ACT2_START = 5;
 
 export interface BossDef {
   id: string;
@@ -54,6 +89,11 @@ export const BOSSES: Record<string, BossDef> = {
   leviathan: { id: 'leviathan', name: 'CINDER LEVIATHAN', title: 'Coiled Around Antares Pyre', hp: 3400, desc: 'A star-eating serpent armored in molten plates. Crack them open, plate by plate.', phases: ['Coiled volley', 'Burning dives', 'Molten fury'] },
   glasschoir: { id: 'glasschoir', name: 'THE GLASS CHOIR', title: 'Cathedral of the White Dwarf', hp: 5600, desc: 'A cathedral of singing crystal. Silence the choir shards to expose the heart.', phases: ['Hymn of beams', 'Refraction', 'Requiem'] },
   pulsarheart: { id: 'pulsarheart', name: 'PULSAR HEART', title: 'The Lighthouse at the End', hp: 6000, desc: 'A spinning neutron heart whose beams sweep in time with the music.', phases: ['Lighthouse', 'Twin beams', 'Magnetar'] },
+  kilnmother: { id: 'kilnmother', name: 'THE KILN MOTHER', title: 'Crucible of the Nebula Forge', hp: 6000, desc: 'A crucible the size of a moon, ringed by eight kilns. Break the kilns and the heart cools enough to wound.', phases: ['Bellows', 'Slag rain', 'Meltdown', 'White heat'] },
+  horizoneater: { id: 'horizoneater', name: 'HORIZON EATER', title: 'The Mouth at Gargantua', hp: 7000, desc: 'It lives on the event horizon and eats what falls. Shatter its accretion crown before it drags you in.', phases: ['Accretion', 'Tidal', 'Spaghettification', 'Singularity'] },
+  quasarregent: { id: 'quasarregent', name: 'QUASAR REGENT', title: 'Throne of the Twin Jets', hp: 8000, desc: 'A crowned engine pouring light from both poles. Its jets sweep the arena; its court sings in crossfire.', phases: ['Court', 'Crossfire', 'Jet storm', 'Supernal'] },
+  ironmagnetar: { id: 'ironmagnetar', name: 'IRON MAGNETAR', title: 'Heart of the Shattered Field', hp: 9000, desc: 'Shell after shell of magnetised iron. Peel them away while the field throws you around.', phases: ['First shell', 'Second shell', 'Bare field', 'Collapse'] },
+  endlessnight: { id: 'endlessnight', name: 'THE ENDLESS NIGHT', title: 'What the Hush Was Hiding', hp: 11000, desc: 'The dark before the first star. It remembers every boss you have killed and wears them like masks.', phases: ['Masks', 'Echoes', 'Unmaking', 'The First Light'] },
   lastdark: { id: 'lastdark', name: 'THE LAST DARK', title: 'The Hush Made Whole', hp: 7800, desc: 'The dark that eats light. It drinks the color from the world as it fights.', phases: ['The Swallowing', 'Colorless', 'Relight the Last Star'] },
 };
 
@@ -158,6 +198,11 @@ export const LORE: LoreDef[] = [
   { id: 'salvage', title: 'The Salvage Swarm', text: 'Mining drones, built to harvest dying stars. Their makers are long gone. The drones never stopped.' },
   { id: 'lantern', title: 'The Lantern', text: 'The last lightship carries a captured sunlet in its keel. It is the only light that does not fade.' },
   { id: 'hush', title: 'The Hush', text: 'Not darkness, exactly. A hunger for the absence of light. It is quiet because it ate the sound too.' },
+  { id: 'forge', title: 'The Nebula Forge', text: 'Stars were born here once, poured like metal. The Salvage found the furnaces still warm and never left.' },
+  { id: 'horizon', title: 'Gargantua', text: 'Light that falls in here does not die. It waits, stretched thin along the edge, for something to free it.' },
+  { id: 'quasar', title: 'The Regent', text: 'The Choir worships the Quasar. They say its jets are the last two prayers anyone ever answered.' },
+  { id: 'magnetar', title: 'Iron Weather', text: 'The magnetar\'s field still turns. Ships that drift too close have their hulls pulled apart one rivet at a time.' },
+  { id: 'edge', title: 'The First Light', text: 'At the very edge, past the last star, the oldest light still burns. The Hush was never hunting stars. It was hunting this.' },
   { id: 'ash', title: 'Ash', text: 'A Salvage drone that woke up. It trades in parts and jokes, and it is the only one who can fix the Lantern.' },
   { id: 'vela', title: 'Vela Minor', text: 'Once a nursery where a thousand stars were born. Now the cradle holds only embers.' },
   { id: 'antares', title: 'Antares Pyre', text: 'A red giant so old it remembers the first light. The Leviathan coiled around it to keep warm.' },

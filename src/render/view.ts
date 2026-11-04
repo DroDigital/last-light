@@ -15,6 +15,7 @@ import { DROP_INFO, type DropKind } from '../data/drops';
 const KINDS: MeshKind[] = [
   'hushSpike', 'hushDart', 'hushBlob', 'hushEye', 'salvBox', 'salvRam', 'salvGun', 'salvHauler', 'salvTurret',
   'choirShard', 'choirPrism', 'choirHalo', 'choirSeraph', 'asteroid', 'plate', 'segment', 'bossCore',
+  'crucible', 'singularity', 'regent', 'shellPlate', 'mask',
 ];
 
 /** world props: beacons, map nodes, hearth lanterns, well singularities */
@@ -668,6 +669,18 @@ export class View {
       if (fxRng.next() < 0.6) {
         _v.set(fxRng.next() - 0.5, fxRng.next() - 0.5, fxRng.next() - 0.5).normalize().multiplyScalar(wl.radius);
         this.particles.spawn(wl.x + _v.x, wl.y + _v.y, wl.z + _v.z, -_v.x * 2, -_v.y * 2, -_v.z * 2, 0.5, c[0] * 2, c[1] * 2, c[2] * 2, 2, 0.5, 0, 0);
+      }
+    }
+    // Act II hazards that live in the arena itself
+    const hz = w.hazard;
+    if (hz?.kind === 'gravity') {
+      const r = hz.horizon;
+      this.queueProp('wellCore', 0, 0, 0, r * 0.75, time * 0.2, 0.4, 0.3, 0.25, 0);
+      this.queueProp('wellDisc', 0, 0, 0, r * 0.9, time * 0.6, 2.2, 1.6, 0.9, 0.6, 0.3);
+      this.telegraphs.ring(0, 0, 0, r, 0.3, 1, 0, 1, 0.65, 0.4, 0.5, 48);
+      if (fxRng.next() < 0.8) {
+        _v.set(fxRng.next() - 0.5, (fxRng.next() - 0.5) * 0.2, fxRng.next() - 0.5).normalize().multiplyScalar(r * (2 + fxRng.next() * 3));
+        this.particles.spawn(_v.x, _v.y, _v.z, -_v.x * 0.8, -_v.y * 0.8, -_v.z * 0.8, 1.2, 1.6, 1.1, 0.6, 2, 0.5, 0, 0);
       }
     }
     // loot: small turning dithered objects with a pulsing ring so they read in a busy fight

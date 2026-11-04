@@ -3,6 +3,7 @@ import type { World } from './world';
 import type { Enemy } from './entities';
 import { fireAt, ringBurst } from './ai';
 import { raySphere } from './world';
+import { BAL } from '../data/balance';
 
 /**
  * Signature moves. Role code (ai.ts) gives every enemy its baseline behaviour;
@@ -318,7 +319,7 @@ export function updateMoves(w: World, e: Enemy, dt: number, dist: number, moves:
     }
     e.move = id;
     e.moveTime = 0;
-    e.moveT = w.rng.range(m.cd[0], m.cd[1]);
+    e.moveT = w.rng.range(m.cd[0], m.cd[1]) * BAL.moveCooldown;
     m.start?.(w, e, dist);
     if (m.dur <= 0) {
       if (e.moveToken) {

@@ -58,7 +58,7 @@ export function showTitle(g: Game): void {
     'title',
     `<div class="numeral">${String(d.bossesKilled.length).padStart(2, '0')}</div>
     <div class="title-screen">
-      <div class="logo"><span class="lg-base">Last Light</span><span class="lg-lit" aria-hidden="true">Last Light</span><small>The universe is going dark · ${d.bossesKilled.length}/5 stars relit</small></div>
+      <div class="logo"><span class="lg-base">Last Light</span><span class="lg-lit" aria-hidden="true">Last Light</span><small>The universe is going dark · ${d.bossesKilled.length}/${Object.keys(BOSSES).length} stars relit</small></div>
       <div class="menu">
         <button class="primary" data-nav data-autofocus data-act="hearth"><span class="ix">01</span>The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
         <button data-nav data-act="quickdive"><span class="ix">02</span>Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
@@ -339,13 +339,14 @@ export function showDeath(g: Game): void {
 
 export function showVictory(g: Game): void {
   const r = g.lastRecord!;
+  const finalAct = !!g.run?.deep;
   g.ui.show(
     'victory',
     `<div class="col center" style="align-items:center;text-align:center;max-width:720px">
-      <div class="logo" style="font-size:var(--s6)">THE LAST STAR BURNS</div>
-      <p class="plate-line" style="font-size:var(--s3)">For now, the dark retreats. Somewhere, a thousand stars remember how to shine.</p>
+      <div class="logo" style="font-size:var(--s6)">${finalAct ? 'THE FIRST LIGHT BURNS' : 'THE LAST STAR BURNS'}</div>
+      <p class="plate-line" style="font-size:var(--s3)">${finalAct ? 'The Night is unmade. Past the edge, the oldest light in the universe is yours to carry home.' : 'For now, the dark retreats. But past the Last Dark, something older is still hiding: the Deep.'}</p>
       <div class="panel" style="width:420px"><div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div><div class="stat"><span>Embers</span><b class="light">+${r.embers}</b></div><div class="stat"><span>Time</span><b>${Math.floor(r.timeSec / 60)}m ${r.timeSec % 60}s</b></div></div>
-      <div class="row" style="margin-top:16px"><button class="primary" data-nav data-autofocus data-act="endless">Go beyond · Endless</button><button data-nav data-act="hearth">Return home</button></div>
+      <div class="row" style="margin-top:16px">${finalAct ? '' : '<button class="primary" data-nav data-autofocus data-act="deep">Into the Deep · Act II</button>'}<button ${finalAct ? 'class="primary" data-autofocus' : ''} data-nav data-act="endless">Go beyond · Endless</button><button data-nav data-act="hearth">Return home</button></div>
     </div>`,
   );
 }
@@ -626,6 +627,7 @@ export function registerActions(g: Game): void {
     if (r) navigator.clipboard?.writeText(`LAST LIGHT · seed ${r.seed} · ${r.won ? 'WON' : 'sector ' + r.sector} · score ${r.score}${r.daily ? ' · daily' : ''}`).catch(() => {});
   });
   ui.on('endless', () => g.startEndless());
+  ui.on('deep', () => g.startDeep());
   ui.onBack = () => {
     if (g.state === 'map') {
       g.setState('pause');

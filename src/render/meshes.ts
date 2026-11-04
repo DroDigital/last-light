@@ -157,7 +157,13 @@ export type MeshKind =
   | 'dropPrism'
   | 'dropCache'
   | 'dropRepair'
-  | 'dropCell';
+  | 'dropCell'
+  // Act II bosses
+  | 'crucible'
+  | 'singularity'
+  | 'regent'
+  | 'shellPlate'
+  | 'mask';
 
 function displaced(geo: THREE.BufferGeometry, rng: Rng, amt: number): THREE.BufferGeometry {
   const g = geo.index ? geo : geo;
@@ -423,6 +429,51 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
     case 'navStart': {
       b.add(new THREE.OctahedronGeometry(0.8, 0), HULL2, 0);
       b.add(new THREE.TorusGeometry(1.4, 0.05, 3, 16), '#ffffff', 0.7, tr(0, 0, 0, Math.PI / 2));
+      break;
+    }
+    case 'crucible': {
+      // a molten bowl: dark rim, glowing melt, three pour spouts
+      b.add(new THREE.CylinderGeometry(1.5, 1.0, 1.2, 10, 1, true), HULL2, 0);
+      b.add(new THREE.CylinderGeometry(1.42, 1.42, 0.1, 10), '#ffffff', 1, tr(0, 0.45, 0));
+      b.add(new THREE.TorusGeometry(1.55, 0.14, 4, 10), HULL, 0, tr(0, 0.6, 0, Math.PI / 2));
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        b.add(new THREE.ConeGeometry(0.22, 0.7, 4), '#ffffff', 0.8, tr(Math.cos(a) * 1.5, 0.3, Math.sin(a) * 1.5, Math.cos(a) * 1.2, 0, -Math.sin(a) * 1.2));
+      }
+      b.add(new THREE.SphereGeometry(0.5, 8, 6), '#ffffff', 1, tr(0, -0.7, 0));
+      break;
+    }
+    case 'singularity': {
+      b.add(new THREE.IcosahedronGeometry(1, 2), DARK, 0);
+      b.add(new THREE.TorusGeometry(1.25, 0.05, 3, 40), '#ffffff', 1, tr(0, 0, 0, Math.PI / 2));
+      b.add(new THREE.TorusGeometry(1.7, 0.03, 3, 40), '#ffffff', 0.6, tr(0, 0, 0, Math.PI / 2 + 0.15));
+      b.add(new THREE.TorusGeometry(2.3, 0.02, 3, 40), '#ffffff', 0.35, tr(0, 0, 0, Math.PI / 2 - 0.1));
+      break;
+    }
+    case 'regent': {
+      // a crowned engine: tall body, crown points, two pole nozzles
+      b.add(new THREE.OctahedronGeometry(1, 0), HULL2, 0, tr(0, 0, 0, 0, 0, 0, 0.9, 1.5, 0.9));
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2;
+        b.add(new THREE.ConeGeometry(0.12, 0.7, 4), '#ffffff', 0.9, tr(Math.cos(a) * 0.7, 1.25, Math.sin(a) * 0.7));
+      }
+      b.add(new THREE.CylinderGeometry(0.35, 0.55, 0.6, 8), HULL, 0, tr(0, -1.6, 0));
+      b.add(new THREE.SphereGeometry(0.3, 8, 6), '#ffffff', 1, tr(0, -1.95, 0));
+      b.add(new THREE.TorusGeometry(1.1, 0.06, 3, 24), '#ffffff', 0.7);
+      break;
+    }
+    case 'shellPlate': {
+      b.add(new THREE.BoxGeometry(2.4, 2.4, 0.45), HULL2, 0);
+      b.add(new THREE.BoxGeometry(1.6, 0.18, 0.5), '#ffffff', 0.7, tr(0, 0.6, 0));
+      b.add(new THREE.BoxGeometry(1.6, 0.18, 0.5), '#ffffff', 0.7, tr(0, -0.6, 0));
+      break;
+    }
+    case 'mask': {
+      // a pale face over the dark: two eye slits, a crack
+      b.add(new THREE.SphereGeometry(1.2, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), '#cfc8bc', 0.15, tr(0, 0, 0, -Math.PI / 2));
+      b.mirrorX(() => new THREE.BoxGeometry(0.5, 0.12, 0.2), '#ffffff', 1, 0.42, 0.2, -1.05, 0, 0, 0.25);
+      b.add(new THREE.BoxGeometry(0.06, 1.1, 0.2), DARK, 0, tr(0.15, -0.2, -1.1, 0, 0, 0.3));
+      b.add(new THREE.IcosahedronGeometry(0.9, 1), DARK, 0, tr(0, 0, 0.4));
       break;
     }
     case 'dropShard': {

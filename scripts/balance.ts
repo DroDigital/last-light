@@ -8,7 +8,7 @@
 import { Vector3, Quaternion } from 'three';
 import { World } from '../src/game/world';
 import { Build } from '../src/game/build';
-import { HULLS } from '../src/data/world';
+import { HULLS, SECTORS } from '../src/data/world';
 import { emptyControls } from '../src/game/player';
 import { Director, type EncounterKind } from '../src/game/run';
 import { WEAPONS } from '../src/data/weapons';
@@ -120,7 +120,7 @@ function playRun(seed: number): { reached: string; logs: EncLog[]; won: boolean 
     w.events.on('drop', (d) => { if (!d.picked && d.kind !== 'repair' && d.kind !== 'cell') dropLog.set(last + ' ' + d.kind, (dropLog.get(last + ' ' + d.kind) ?? 0) + 1); });
   }
   const logs: EncLog[] = [];
-  for (let s = 0; s < 5; s++) {
+  for (let s = 0; s < SECTORS.length; s++) {
     for (let e = 0; e < PATH.length; e++) {
       const kind = PATH[e]!;
       // the path's fights sit on map rows 0..6; the boss on row 7
@@ -162,8 +162,8 @@ for (let i = 0; i < runs; i++) {
   console.log(`run ${i}: ${r.reached}  ` + r.logs.map((l) => `${l.s + 1}${l.kind[0]}:${l.t}s/-${l.hullLost}`).join(' '));
 }
 const wins = results.filter((r) => r.won).length;
-const bySector = [0, 0, 0, 0, 0];
-for (const r of results) if (!r.won) bySector[Number(r.reached[1]) - 1]!++;
+const bySector = SECTORS.map(() => 0);
+for (const r of results) if (!r.won) bySector[Number(r.reached.slice(1).split(' ')[0]) - 1]!++;
 const all = results.flatMap((r) => r.logs);
 const avg = (k: string) => {
   const xs = all.filter((l) => l.kind === k);
@@ -171,7 +171,7 @@ const avg = (k: string) => {
 };
 console.log(`\nskill=${skill} hull=${hullId}  wins ${wins}/${runs}  deaths by sector ${bySector.join('/')}  bonus drafts from drops: ${(drafts / runs).toFixed(1)}/run`);
 console.log([avg('combat'), avg('elite'), avg('boss')].join('\n'));
-const rows = [0, 1, 2, 3, 4].map((sct) => {
+const rows = SECTORS.map((_, sct) => {
   const xs = all.filter((l) => l.s === sct);
   const raw = xs.reduce((a, l) => a + l.dmgTaken, 0) / Math.max(1, xs.length);
   const bossT = xs.filter((l) => l.kind === 'boss');

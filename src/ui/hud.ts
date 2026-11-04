@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AFFIX_BY_ID, RARITY, rankLabel } from '../data/affixes';
 import { DROP_INFO } from '../data/drops';
 import { subtypeName } from '../data/subtypes';
+import { HAZARD_INFO } from '../game/hazards';
 import type { Game, State } from '../game/game';
 import type { World } from '../game/world';
 import { PALETTES } from '../data/palettes';
@@ -201,7 +202,7 @@ export class Hud {
       if (run) {
         r.sector!.textContent = run.endless ? 'SECTOR ∞ — BEYOND' : `SECTOR ${String(run.sector + 1).padStart(2, '0')} — ${SECTORS[run.sector]!.name.replace(/^[IVX]+ · /, '')}`;
         const dir = g.director;
-        r.enc!.textContent = dir ? (dir.kind === 'derelict' ? `Relight the beacons · ${dir.beacons.filter((b) => b.lit).length}/3` : dir.kind === 'endless' ? `Wave ${dir.endlessWave + 1}` : `${dir.kind.toUpperCase()} · ${w.liveEnemyCount()} hostiles`) : '';
+        r.enc!.textContent = dir ? (dir.kind === 'derelict' ? `Relight the beacons · ${dir.beacons.filter((b) => b.lit).length}/3` : dir.kind === 'endless' ? `Wave ${dir.endlessWave + 1}` : `${dir.kind.toUpperCase()} · ${w.liveEnemyCount()} hostiles${dir.hazard ? ' · ' + HAZARD_INFO[dir.hazard.kind].name.toUpperCase() : ''}`) : '';
       }
     }
     // boss
