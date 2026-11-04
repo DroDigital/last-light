@@ -63,9 +63,10 @@ export function showTitle(g: Game): void {
         <button class="primary" data-nav data-autofocus data-act="hearth"><span class="ix">01</span>The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
         <button data-nav data-act="quickdive"><span class="ix">02</span>Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
         <button data-nav data-act="daily"><span class="ix">03</span>Daily Dive<span class="sub">${daily}${best ? ` · best ${fmtInt(best)}` : ''}</span></button>
-        <button data-nav data-act="codex"><span class="ix">04</span>Codex</button>
-        <button data-nav data-act="settings"><span class="ix">05</span>Settings</button>
-        <button data-nav data-act="credits"><span class="ix">06</span>Credits</button>
+        <button data-nav data-act="endlessrun"><span class="ix">04</span>Endless<span class="sub">Waves through all ten sectors${d.endlessBest ? ` · best wave ${d.endlessBest}` : ''}</span></button>
+        <button data-nav data-act="codex"><span class="ix">05</span>Codex</button>
+        <button data-nav data-act="settings"><span class="ix">06</span>Settings</button>
+        <button data-nav data-act="credits"><span class="ix">07</span>Credits</button>
       </div>
       <div class="footer"><span>Runs ${d.runs} · Wins ${d.wins} · Stars relit ${d.bossesKilled.length}</span><span>F1 look panel · F3 perf · click the game to lock the mouse</span></div>
     </div>`,
@@ -628,6 +629,7 @@ export function registerActions(g: Game): void {
   });
   ui.on('endless', () => g.startEndless());
   ui.on('deep', () => g.startDeep());
+  ui.on('endlessrun', () => g.startRun({ endless: true }));
   ui.onBack = () => {
     if (g.state === 'map') {
       g.setState('pause');

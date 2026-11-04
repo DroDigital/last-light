@@ -196,6 +196,30 @@ if (scenario === 'muzzle') {
   await page.waitForTimeout(900);
   await shot('muzzle2');
 }
+if (scenario === 'endless') {
+  const log = await page.evaluate(async () => {
+    const g = window.__ll;
+    const out = [];
+    g.startRun({ endless: true });
+    g.godMode = true; g.autopilot = true; g.input.synthetic.add('fire1'); g.input.synthetic.add('fire2'); g.input.synthetic.add('forward');
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let guard = 0;
+    while (guard++ < 60 && g.run.endlessWaves < 7) {
+      if (g.state === 'warp') { g.simulate(0); await wait(50); for (let i = 0; i < 40 && g.state === 'warp'; i++) g.render(0, 0.1); continue; }
+      if (g.state === 'combat') {
+        let t = 0; while (g.state === 'combat' && t < 300) { g.simulate(2); t += 2; }
+        out.push(`wave ${g.run.endlessWaves} done: ${g.director ? g.director.kind : 'cleared'} sector=${g.run.sector} t=${t}s state=${g.state} queue=${g.run.draftQueue ? g.run.draftQueue.length : 0}`);
+        if (t >= 300) { out.push('STUCK'); break; }
+        continue;
+      }
+      if (g.state === 'draft') { g.pickCard(0); continue; }
+      out.push('state ' + g.state); break;
+    }
+    out.push('best=' + g.save.data.endlessBest);
+    return out;
+  });
+  console.log(log.join('\n'));
+}
 if (scenario === 'deep') {
   await ll(() => window.__ll.startRun({ seed: 'DEEP' }));
   await page.waitForTimeout(2000);

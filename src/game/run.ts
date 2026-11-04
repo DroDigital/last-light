@@ -281,11 +281,12 @@ export class Director {
       this.lastKills = w.stats.kills;
       this.noKillT = 0;
     } else this.noKillT += dt;
-    if (this.noKillT > 25 && this.kind !== 'endless' && this.spent > this.budget * 0.5) {
+    if (this.noKillT > 25 && this.spent > this.budget * 0.5) {
       this.spent = this.budget;
       this.elitesLeft = 0;
     }
-    const exhausted = this.kind !== 'endless' && this.spent >= this.budget && this.elitesLeft <= 0;
+    // endless waves are finite too: each wave ends, pays a draft, and the next one is harder
+    const exhausted = this.spent >= this.budget && this.elitesLeft <= 0;
     if (exhausted) {
       // safety net: stragglers hunt the player, then retreat into the dark
       this.straggleT += dt;
@@ -317,10 +318,6 @@ export class Director {
       this.spawnGroup(target - live);
       this.spawnCd = 1.2 + this.rng.next() * 1.4;
     } else this.spawnCd = 0.5;
-    if (this.kind === 'endless' && this.spent > this.budget * (this.endlessWave + 1)) {
-      this.endlessWave++;
-      w.sectorHpScale *= 1.08;
-    }
   }
 
   /** a void rift spills three hostiles of the sector's pool */

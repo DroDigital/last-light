@@ -63,7 +63,7 @@ export interface RunState {
   eventOutcome?: string;
   shop?: ShopItem[];
   draft?: DraftCard[];
-  draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector'; weaponsOnly?: boolean; source?: DropKind };
+  draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector' | 'endless'; weaponsOnly?: boolean; source?: DropKind };
   /** drafts earned from drops, opened one after another once the fight ends */
   draftQueue?: NonNullable<RunState['draftCtx']>[];
   lore: string[];
@@ -360,7 +360,7 @@ export class Game {
 
   // ------------------------------------------------------------ run flow
 
-  startRun(opts: { daily?: boolean; seed?: string; hull?: string; heat?: number; primary?: string } = {}): void {
+  startRun(opts: { daily?: boolean; seed?: string; hull?: string; heat?: number; primary?: string; endless?: boolean } = {}): void {
     const d = this.save.data;
     const daily = !!opts.daily;
     const seed = opts.seed ?? (daily ? dailySeed() : randomSeedString());
@@ -389,7 +389,39 @@ export class Game {
     d.runs++;
     this.save.save();
     this.hintStep = d.tutorialDone ? 99 : 0;
+    if (opts.endless) {
+      // straight into the waves: no map, no tutorial
+      this.hintStep = 99;
+      this.run.endless = true;
+      this.pipe.setPalette(paletteById(SECTORS[0]!.palette), 1.2);
+      this.buildBackdrop(SECTORS[0]!.palette, hashString(seed));
+      this.nextEndlessWave();
+      return;
+    }
     this.enterSector(0, true);
+  }
+
+  /**
+   * Endless: waves of rising difficulty. Every three waves the environment moves on
+   * through all ten sectors; every fifth wave is a boss. Each cleared wave pays a draft.
+   */
+  nextEndlessWave(): void {
+    const run = this.run!;
+    const wave = run.endlessWaves;
+    const env = Math.floor(wave / 3) % SECTORS.length;
+    const boss = wave % 5 === 4;
+    const go = () => this.startEncounter(boss ? 'boss' : 'endless', Math.floor(run.rng.next() * 1e9));
+    if (env !== run.sector || wave === 0) {
+      run.sector = env;
+      const sec = SECTORS[env]!;
+      if (wave === 0) go();
+      else
+        this.doWarp(sec.palette, () => {
+          this.buildBackdrop(sec.palette, hashString(run.seed + 'e' + wave));
+          this.sectorTitle = { name: sec.name, sub: `Endless · wave ${wave + 1}`, t: 3.5 };
+          go();
+        });
+    } else go();
   }
 
   private hookWorld(w: World): void {
@@ -528,8 +560,10 @@ export class Game {
     pl.flareT = 0;
     this.view.resetTrail();
     this.camPos.set(0, 3, 82);
-    const depth = run.node >= 0 ? run.map.nodes[run.node]!.row : 0;
+    // map row inside a sector; in Endless the wave number drives the same scaling
+    const depth = run.endless ? run.endlessWaves : run.node >= 0 ? run.map.nodes[run.node]!.row : 0;
     this.director = new Director(kind, run.sector, seed, w, run.heat, depth);
+    this.director.endlessWave = run.endlessWaves;
     run.encounters++;
     this.recorder.reset();
     run.pendingFight = false;
@@ -585,7 +619,7 @@ export class Game {
     this.view.markers.length = 0;
     // vacuum up remaining drops and motes; banked drops become a queue of extra drafts
     for (let i = w.drops.length - 1; i >= 0; i--) w.collectDrop(i);
-    const after = dir.kind === 'boss' ? 'sector' : 'map';
+    const after = run.endless ? 'endless' : dir.kind === 'boss' ? 'sector' : 'map';
     const q: NonNullable<RunState['draftCtx']>[] = [];
     for (let i = 0; i < w.bank.prism; i++) q.push({ minRarity: 'rare', after, source: 'prism' });
     for (let i = 0; i < w.bank.cache; i++) q.push({ weaponsOnly: true, after, source: 'cache' });
@@ -603,6 +637,21 @@ export class Game {
       this.save.save();
     }
     const kind = dir.kind;
+    if (run.endless) {
+      run.endlessWaves++;
+      const d = this.save.data;
+      if (run.endlessWaves > d.endlessBest) {
+        d.endlessBest = run.endlessWaves;
+        this.juice.toast(`NEW BEST · WAVE ${run.endlessWaves}`, '#ffd890');
+      }
+      if (kind === 'boss') {
+        this.view.space.starPower = 1;
+        this.view.space.applyStarPower();
+      }
+      this.save.save();
+      this.openDraft({ minRarity: kind === 'boss' ? 'rare' : undefined, after: 'endless' });
+      return;
+    }
     if (kind === 'boss') {
       this.view.space.starPower = 1;
       this.view.space.applyStarPower();
@@ -620,7 +669,6 @@ export class Game {
       this.openDraft({ minRarity: 'rare', after: 'sector' });
       return;
     }
-    if (kind === 'endless') return;
     if (kind === 'elite') this.openDraft({ minRarity: 'rare', artifacts: true, after: 'map' });
     else if (kind === 'rift') this.openDraft({ minRarity: 'legendary', artifacts: true, curse: true, after: 'map' });
     else this.openDraft({ after: 'map' });
@@ -715,7 +763,8 @@ export class Game {
       this.openDraft(next);
       return;
     }
-    if (run.draftCtx?.after === 'sector') this.enterSector(run.sector + 1);
+    if (run.draftCtx?.after === 'endless') this.nextEndlessWave();
+    else if (run.draftCtx?.after === 'sector') this.enterSector(run.sector + 1);
     else this.openMap();
   }
 
@@ -1005,13 +1054,13 @@ export class Game {
     this.enterSector(ACT2_START);
   }
 
+  /** After a victory: keep going into Endless with the build you have. */
   startEndless(): void {
     const run = this.run!;
     run.endless = true;
-    this.doWarp('binary', () => {
-      this.buildBackdrop('binary', 99);
-      this.startEncounter('endless', Math.floor(run.rng.next() * 1e9));
-    });
+    // a finished build starts deep into the waves
+    run.endlessWaves = run.deep ? 30 : 15;
+    this.nextEndlessWave();
   }
 
   abandonRun(): void {
