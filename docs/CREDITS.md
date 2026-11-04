@@ -1,6 +1,22 @@
 # Credits & asset log
 
-LAST LIGHT ships **no third-party art or audio assets**. Every model is procedural geometry built in code (`src/render/meshes.ts`), every texture is computed in shaders, every sound effect and every note of music is synthesized at runtime with the Web Audio API (`src/audio/audio.ts`). This keeps the download tiny and the look fully consistent with the Dithered Cosmos style.
+LAST LIGHT ships **no third-party art assets**. Every model is procedural geometry built in code (`src/render/meshes.ts`), every texture is computed in shaders, and every sound effect is synthesized at runtime with the Web Audio API (`src/audio/audio.ts`). The recorded soundtrack below was supplied by the project owner. The original procedural score is still in the engine as a fallback and a settings option.
+
+## Music
+
+Supplied by the project owner for the sound-design phase. The tracks are by **digitaldro**, made with Suno (per the ID3 tags), and ship unmodified as 64 kbps / 48 kHz MP3 in `public/music/`.
+
+| Track | Cue | Length | File |
+| --- | --- | --- | --- |
+| Last Analog Dawn | Title / Hearth | 3:40 | `menu-last-analog-dawn.mp3` |
+| Proximity to Earth | Exploration (map, shop, events, drafts) | 3:44 | `explore-proximity-to-earth.mp3` |
+| Proximity to Earth (II) | Exploration, alternates | 3:59 | `explore-proximity-to-earth-2.mp3` |
+| Warp Drive | Combat | 3:09 | `combat-warp-drive.mp3` |
+| Void Engagements | Combat, alternates | 1:39 | `combat-void-engagements.mp3` |
+| Void Leviathan | Boss fights | 3:42 | `boss-void-leviathan.mp3` |
+| Last Transmission | Victory / finale | 3:07 | `finale-last-transmission.mp3` |
+
+Licensing note: Suno's terms tie commercial rights to the subscription tier the tracks were generated on. Confirm that tier before any commercial release.
 
 ## Code libraries
 

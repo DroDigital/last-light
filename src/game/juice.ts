@@ -12,6 +12,9 @@ const _v = new Vector3();
 const _w = new Vector3();
 const _q = new Quaternion();
 const _e = new Euler();
+const _ax = new Vector3();
+const _ay = new Vector3();
+const _up = new Vector3(0, 1, 0);
 
 export interface DamageNumber {
   x: number;
@@ -50,6 +53,9 @@ export class Juice {
   toasts: { text: string; t: number; color: string }[] = [];
   heartbeatT = 0;
   lowHpMix = 0;
+  /** delayed secondary detonations after a heavy hull dies (visual only) */
+  private secondaries: { x: number; y: number; z: number; t: number; s: number; r: number; g: number; b: number; f: string }[] = [];
+  private ventT = 0;
 
   constructor(
     private view: View,
@@ -140,6 +146,22 @@ export class Juice {
           this.view.addSpark(h.x, h.y, h.z, (h.nx + (r() - 0.5)) * sp, (h.ny + (r() - 0.5)) * sp, (h.nz + (r() - 0.5)) * sp, 0.22, 0.03, 1, h.crit ? 1 : 0.85, h.crit ? 0.6 : 0.4, 4);
         }
       }),
+      ev.on('breakup', (b) => {
+        const e = b.e;
+        const t = e.tint;
+        const rr = e.radius * e.scale;
+        // plating blows off: a small layered pop, a ring, a fan of hot sparks
+        this.explosionFx(b.x, b.y, b.z, rr * (0.35 + b.stage * 0.15), t.x, t.y, t.z, e.def.faction, 0.3 + b.stage * 0.2);
+        this.view.addRing(b.x, b.y, b.z, rr * 0.2, rr * (1.6 + b.stage * 0.6), 0.35, 1, 0.95, 0.36);
+        _w.set(b.x - e.pos.x, b.y - e.pos.y, b.z - e.pos.z).normalize();
+        for (let i = 0; i < 6 + b.stage * 4; i++) {
+          const sp = 40 + r() * 70;
+          this.view.addSpark(b.x, b.y, b.z, (_w.x + (r() - 0.5) * 1.4) * sp, (_w.y + (r() - 0.5) * 1.4) * sp, (_w.z + (r() - 0.5) * 1.4) * sp, 0.35 + r() * 0.3, 0.05, 1, 0.75, 0.3, 3);
+        }
+        lights.spawn(b.x, b.y, b.z, 40, 30, 16, 26, 0.25);
+        this.sfx('explosion', b.x, b.y, b.z, 0.35 + b.stage * 0.15, 1.3 - b.stage * 0.15);
+        this.addTrauma(0.06 + b.stage * 0.05);
+      }),
       ev.on('block', (b) => {
         for (let i = 0; i < 4; i++) P().spawn(b.x, b.y, b.z, (r() - 0.5) * 50, (r() - 0.5) * 50, (r() - 0.5) * 50, 0.15, 1.5, 1.5, 2, 1.5, 0.5, 5);
         this.sfx('block', b.x, b.y, b.z, 0.4);
@@ -179,6 +201,14 @@ export class Juice {
           this.killSoundT = 0.03;
         }
         if (big > 1.5) this.audio.duck(0.4, 0.4);
+        // heavy hulls go up in a staggered chain of secondary detonations
+        if (e.heavy) {
+          const n = 3 + Math.min(2, Math.floor(big));
+          for (let i = 0; i < n; i++) {
+            _v.set(r() - 0.5, r() - 0.5, r() - 0.5).normalize().multiplyScalar(rr * (0.5 + r() * 0.9));
+            this.secondaries.push({ x: k.x + _v.x, y: k.y + _v.y, z: k.z + _v.z, t: 0.12 + i * 0.13 + r() * 0.08, s: rr * (0.4 + r() * 0.4), r: tint.x, g: tint.y, b: tint.z, f: e.def.faction });
+          }
+        }
         if (k.chain === 10 || k.chain === 20 || k.chain === 40) this.toast(`CHAIN ×${k.chain}`, '#ffd890');
       }),
       ev.on('explosion', (x) => {
@@ -350,8 +380,8 @@ export class Juice {
     // shockwave ring in a random plane
     const nr = Math.round((16 + s * 4) * budget);
     _w.set(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
-    const ax = new Vector3().crossVectors(_w, new Vector3(0, 1, 0)).normalize();
-    const ay = new Vector3().crossVectors(_w, ax).normalize();
+    const ax = _ax.crossVectors(_w, _up).normalize();
+    const ay = _ay.crossVectors(_w, ax).normalize();
     for (let i = 0; i < nr; i++) {
       const a = (i / nr) * Math.PI * 2;
       const vx = (ax.x * Math.cos(a) + ay.x * Math.sin(a)) * s * 28;
@@ -396,6 +426,34 @@ export class Juice {
     this.breath = damp(this.breath, 0, 3, dt);
     this.killSoundT -= dt;
     this.killTagT -= dt;
+    for (let i = this.secondaries.length - 1; i >= 0; i--) {
+      const sc = this.secondaries[i]!;
+      sc.t -= dt;
+      if (sc.t > 0) continue;
+      this.explosionFx(sc.x, sc.y, sc.z, sc.s, sc.r, sc.g, sc.b, sc.f, 0.5);
+      this.view.addRing(sc.x, sc.y, sc.z, sc.s * 0.3, sc.s * 3, 0.32, 1, 0.95, 0.36);
+      this.pipe.lights.spawn(sc.x, sc.y, sc.z, 60, 44, 24, 30, 0.3);
+      this.sfx('explosion', sc.x, sc.y, sc.z, 0.45, 0.9 + r() * 0.3);
+      this.addTrauma(0.08);
+      this.secondaries.splice(i, 1);
+    }
+    // damaged heavy hulls vent embers and smoke from their breaches
+    this.ventT -= dt;
+    if (w && this.ventT <= 0) {
+      this.ventT = 1 / 30;
+      const P = this.P;
+      for (const e of w.enemies) {
+        if (!e.alive || e.breakStage === 0) continue;
+        if (r() > 0.35 * e.breakStage) continue;
+        const rr = e.radius * e.scale * 0.7;
+        _v.set(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
+        const x = e.pos.x + _v.x * rr;
+        const y = e.pos.y + _v.y * rr;
+        const z = e.pos.z + _v.z * rr;
+        const hot = r() < 0.5;
+        P.spawn(x, y, z, e.vel.x * 0.6 + _v.x * 8, e.vel.y * 0.6 + _v.y * 8 + 2, e.vel.z * 0.6 + _v.z * 8, 0.5 + r() * 0.6, hot ? 3 : 0.5, hot ? 1.6 : 0.45, hot ? 0.5 : 0.5, hot ? 0.9 : 1.6, hot ? 0.2 : 3.2, 1.5, 0, 0.6);
+      }
+    }
     for (let i = this.killTags.length - 1; i >= 0; i--) {
       this.killTags[i]!.t += dt;
       if (this.killTags[i]!.t > 1.4) this.killTags.splice(i, 1);

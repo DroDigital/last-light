@@ -9,8 +9,8 @@ Budgets from the brief and how the build measures against them. Numbers marked *
 | Particles | 50,000+ | **65,536-slot GPU ring buffer** | analytic motion in the vertex shader; CPU writes only spawned slots |
 | Projectiles | 3,000+ | **4,096 player + 3,072 enemy** pooled SoA | instanced quads in the readability layer |
 | Enemies | 300+ | **325** live in the stress scene | spatial hash broadphase |
-| GC | no per-frame allocation in hot paths | sim hot paths use scratch vectors and typed arrays | known small allocations remain in ricochet/chain target sets and a few view helpers (tracked below) |
-| Download | < 60 MB | **~0.9 MB** total `dist/` (JS ~240 kB gzip) | no external assets; fonts are woff2 |
+| GC | no per-frame allocation in hot paths | sim hot paths use scratch vectors and typed arrays | swept: ricochet/chain sets, hit records, afterimages, boss/explosion vectors and target brackets are all pooled or scratch |
+| Download | < 60 MB | **~33 MB** total `dist/`: ~0.9 MB code/fonts (JS ~250 kB gzip) + 31 MB music | music streams per cue, so first play needs code + the 5 MB menu track |
 | First playable | < 5 s | boot is synchronous after JS parse; shader prewarm < 1 s on desktop GPUs | |
 
 ## Quality presets
@@ -33,6 +33,7 @@ The final palette pass is the only full-resolution shader (16 OKLab distance tes
 
 ## Known costs / TODO
 
-- `new Set` allocations in ricochet targeting and chain lightning; replace with a stamp array.
-- Afterimage matrices and a couple of per-instance quaternions in `View` allocate per frame.
+- ~~`new Set` allocations in ricochet/chain lightning~~ done: ricochet passes the hit id, chain reuses one Set per recursion depth.
+- ~~Afterimage matrices and per-instance quaternions in `View`~~ done: ghost pool plus module scratch, `rgb()` colour cache.
+- Weapon hit records come from `hitPool`, HUD target brackets from `bracketPool`, and enemy colours from `World.colorCache`.
 - Real-GPU profiling on an Iris Xe laptop and a mid-range discrete GPU is still to do; headless SwiftShader runs at ~5 fps at 720p, which says nothing about GPU timing.

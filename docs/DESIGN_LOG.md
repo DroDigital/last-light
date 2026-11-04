@@ -70,8 +70,15 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 
 ## Audio
 
-- **Everything synthesized** (no samples): layered transient/body/tail, randomized pitch, per-sound voice limits, stereo pan by screen position, distance attenuation, music ducking, master limiter.
-- **Procedural adaptive soundtrack:** pad / bass / drums / arp stems faded by intensity (live enemies, Flare, boss). Each sector has its own root, scale, tempo and timbre. Silence before boss reveals. Pulsar Heart's ring bursts are scheduled from the sector BPM so they land on the beat.
+- **SFX synthesized** (no samples): layered transient/body/tail, randomized pitch, per-sound voice limits, stereo pan by screen position, distance attenuation, music ducking, master limiter.
+- **Recorded soundtrack (sound-design phase):** seven tracks by digitaldro stream through `audio/soundtrack.ts`, one `<audio>` element per track and each with its own gain on the music bus.
+  - **Mixing:** the volume slider, the low-HP low-pass, the Flare filter opening and the explosion ducks all still apply. The procedural stems go silent and stop scheduling while a recorded cue is active.
+  - **Cues follow game state:** menu on title/Hearth; exploration on map/shop/event/draft/forge/rest; combat on fights; boss on boss fights, entering after the 2.2 s reveal silence; finale on victory. Pause dips the music to 55% and death to 40%, with the low-pass on top.
+  - **Tracks resume rather than restart:** a faded-out track keeps its position, so the exploration song carries on across a 90-second fight. Two-track cues alternate when a song ends; single-track cues loop.
+  - **Beat pulse:** a low-band onset detector on the soundtrack bus drives the same UI/world breath pulse the procedural score did.
+  - **Fallback:** a missing or blocked file falls back to the procedural score. Settings → Audio → Music switches between the two.
+  - **Download:** about 32 MB of audio, streamed lazily per cue. Only the menu track loads at first input; the next likely cue is prefetched.
+- **Procedural adaptive score (fallback / option):** pad / bass / drums / arp stems faded by intensity (live enemies, Flare, boss). Each sector has its own root, scale, tempo and timbre. Silence before boss reveals. Pulsar Heart's ring bursts are scheduled from the sector BPM so they land on the beat.
 
 ## Camera
 
@@ -91,9 +98,16 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 - **Sector tint:** panels, rules and tabs take their accent from the current sector palette (`PaletteDef.ui`).
 - Readability rules: body text is never dithered, never below 12px, always on an ink plate; signal orange stays reserved for alerts.
 
+## Determinism, replays, staged destruction
+
+- **Replays:** `ReplayRecorder` (`game/replay.ts`) captures 18 bytes per tick. That covers movement as int16, yaw/pitch at 1e-6, button bits and the aim-assist values. Controls are quantized *before* the sim reads them, so a live run and its replay see identical inputs. `hashWorld` folds the float bits of every entity into an FNV hash.
+- **Two hidden non-determinisms found by the replay test:** a global enemy-id counter (moved to `World.nextEnemyId`) and module-level gun-side alternation in `weapons.ts` (moved to `World.gunSide`). `tests/replay.test.ts` now proves same seed gives same hash, and that a recorded run replays bit-for-bit over 40 s of combat with status, chain, split and seeker upgrades.
+- **Staged destruction:** heavy hulls (`threat >= 5`: carriers, bombers, shielders) shed plating at 66% and 33% HP. Each stage spawns seeded debris and fires a `breakup` event: a pop, a ring and sparks fanned out of the breach. From then on the hull vents embers and smoke, more of them at stage 2. On death it goes up in 3–5 staggered secondary detonations. All of this beyond the sim-side debris is visual-only (`fxRng`), so replays are unaffected.
+
 ## Changes from the brief (and why)
 
-- **No downloaded models/samples.** Procedural assets fit the posterized style better than restyled free packs and keep the build < 1 MB gzipped.
+- **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.
+- **No downloaded models or SFX samples.** Procedural assets fit the posterized style better than restyled free packs and keep the code build < 1 MB gzipped.
 - **Abilities Q/E defined** as Shockwave/Stasis (brief left them open).
 - **Gold Binary palette** is used for endless mode rather than a sector (five sectors, five bosses, six-plus palettes).
 - **Vertical movement on R/C** (brief's table had no vertical keys); pad uses d-pad.
@@ -101,7 +115,7 @@ The style brief evolved into a fusion of three explored directions. Each owns on
 ## STATUS / honest notes
 
 - **STATUS:** Visual verification has been done in headless SwiftShader (CPU WebGL) at 1280×720; real-GPU frame timing still needs measuring on Iris Xe-class hardware (see PERF.md).
-- **STATUS:** Destruction uses debris chunks with physics, not true Voronoi fracture. Large ships break apart in stages only for bosses.
-- **STATUS:** Replays are architecturally possible (deterministic sim) but input recording is not implemented.
+- **STATUS:** Destruction uses debris chunks with physics, not true Voronoi fracture. Bosses lose parts; heavy non-boss hulls break apart in two stages and die in secondary detonations.
+- **STATUS:** Replays record and play back bit-for-bit (tested), but there is no replay viewer UI yet.
 - **STATUS:** Animated card previews and WebGPU path are not implemented.
 - **STATUS:** Damage numbers and threat indicators draw on a 2D canvas; telegraphs and the readability layer are WebGL.

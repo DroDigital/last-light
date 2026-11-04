@@ -406,7 +406,7 @@ export class Telegraphs {
     // build orthonormal basis
     let ux = 0;
     let uy = 1;
-    let uz = 0;
+    const uz = 0;
     if (Math.abs(ny) > 0.9) {
       ux = 1;
       uy = 0;

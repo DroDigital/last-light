@@ -3,7 +3,6 @@ import type { EnemyDef } from './types';
 import type { EliteMod } from '../data/enemies';
 import type { MeshKind } from '../render/meshes';
 
-let NEXT_ID = 1;
 
 export class Enemy {
   id = 0;
@@ -66,11 +65,14 @@ export class Enemy {
   shieldedBy = 0; // >0 when a shielder protects it
   lastSrc = -1;
   spawnT = 0;
+  /** staged break-apart for heavy ships: 0 intact, 1 cracked, 2 venting */
+  breakStage = 0;
   isBossCore = false;
   dmgTaken = 1;
 
-  reset(def: EnemyDef): this {
-    this.id = NEXT_ID++;
+  /** ids come from the owning World so a seeded run always numbers its enemies the same way */
+  reset(def: EnemyDef, id: number): this {
+    this.id = id;
     this.def = def;
     this.alive = true;
     this.dying = 0;
@@ -101,10 +103,16 @@ export class Enemy {
     this.bossKey = '';
     this.shieldedBy = 0;
     this.lastSrc = -1;
+    this.breakStage = 0;
     this.spawnT = 0.6;
     this.isBossCore = false;
     this.dmgTaken = 1;
     return this;
+  }
+
+  /** Heavy hulls (carriers, bombers, shielders) break apart in stages. */
+  get heavy(): boolean {
+    return this.def.threat >= 5 && this.def.role !== 'boss' && this.def.role !== 'part';
   }
 
   get frozen(): boolean {

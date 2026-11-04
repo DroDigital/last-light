@@ -347,9 +347,10 @@ export function showCredits(g: Game): void {
   g.ui.show(
     'credits',
     `<div class="panel center col" style="width:min(640px,92vw)"><h1>Credits</h1>
-      <p>LAST LIGHT — design, code, shaders, VFX, synthesized audio and procedural music generated in-engine.</p>
-      <p class="dim">Rendering: three.js (MIT) as a rendering library. Fonts: Unica One, Chakra Petch, Syne Mono (SIL Open Font License) via Fontsource.</p>
-      <p class="dim">No third-party art or audio assets are used: every model is procedural geometry and every sound is synthesized with the Web Audio API. See docs/CREDITS.md.</p>
+      <p>LAST LIGHT — design, code, shaders, VFX and synthesized sound effects generated in-engine.</p>
+      <p><b>Music</b> by digitaldro: Last Analog Dawn, Proximity to Earth I &amp; II, Warp Drive, Void Engagements, Void Leviathan, Last Transmission. The procedural in-engine score remains available under Settings → Audio.</p>
+      <p class="dim">Rendering: three.js (MIT) as a rendering library. Fonts: Archivo, JetBrains Mono, Silkscreen (SIL Open Font License) via Fontsource.</p>
+      <p class="dim">Every model is procedural geometry and every sound effect is synthesized with the Web Audio API. See docs/CREDITS.md.</p>
       <p class="faint">Mood references: Signalis, Return of the Obra Dinn, Chris Foss, Outer Wilds. No assets copied.</p>
       <button data-nav data-autofocus data-act="title" data-back>Back</button></div>`,
   );
@@ -358,7 +359,7 @@ export function showCredits(g: Game): void {
 export function showCodex(g: Game): void {
   const d = g.save.data;
   const tab = g.codexTab;
-  let body = '';
+  let body: string;
   const unk = '<span class="faint">???</span>';
   if (tab === 'enemies') {
     body = ENEMIES.map((e) => {
@@ -419,12 +420,12 @@ function select(label: string, key: string, v: string, opts: [string, string][])
 export function showSettings(g: Game, refresh = false): void {
   const s = g.settings;
   const tab = g.settingsTab;
-  let body = '';
+  let body: string;
   if (tab === 'video') {
     body = select('Quality', 'quality', s.quality, [['auto', 'Auto (adaptive)'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']]) +
       slider('Field of view', 'fov', s.fov, 55, 100, 1, (x) => x.toFixed(0)) + toggle('CRT scanlines', 'scanlines', s.scanlines) + toggle('Cockpit camera (V)', 'cockpit', s.cockpit);
   } else if (tab === 'audio') {
-    body = slider('Master', 'volumes.master', s.volumes.master, 0, 1, 0.05) + slider('Music', 'volumes.music', s.volumes.music, 0, 1, 0.05) + slider('Effects', 'volumes.sfx', s.volumes.sfx, 0, 1, 0.05) +
+    body = select('Music', 'music', s.music, [['recorded', 'Soundtrack · digitaldro'], ['procedural', 'Procedural score']]) + slider('Master', 'volumes.master', s.volumes.master, 0, 1, 0.05) + slider('Music', 'volumes.music', s.volumes.music, 0, 1, 0.05) + slider('Effects', 'volumes.sfx', s.volumes.sfx, 0, 1, 0.05) +
       slider('Interface', 'volumes.ui', s.volumes.ui, 0, 1, 0.05) + slider('Ambience', 'volumes.ambience', s.volumes.ambience, 0, 1, 0.05) + toggle('Mono audio', 'mono', s.mono) + toggle('Visual cues for sounds', 'visualCues', s.visualCues);
   } else if (tab === 'controls') {
     body = slider('Mouse/stick sensitivity', 'sensitivity', s.sensitivity, 0.2, 3, 0.05) + toggle('Invert Y', 'invertY', s.invertY) + slider('Aim assist', 'aimAssist', s.aimAssist, 0, 1, 0.05) +
@@ -500,7 +501,7 @@ export function registerActions(g: Game): void {
     const key = el.dataset.key!;
     const s = g.settings as unknown as Record<string, unknown>;
     const num = Number(v);
-    const val = isNaN(num) || key === 'quality' || key === 'colorblind' ? v : num;
+    const val = isNaN(num) || key === 'quality' || key === 'colorblind' || key === 'music' ? v : num;
     if (key.startsWith('volumes.')) (s.volumes as Record<string, number>)[key.slice(8)] = num;
     else s[key] = val;
     const label = el.parentElement?.querySelector('.v');

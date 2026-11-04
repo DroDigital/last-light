@@ -64,7 +64,7 @@ Menus are fully navigable with arrow keys + Enter/Esc or the d-pad + A/B. On the
 src/core     loop (fixed 60 Hz + interpolation), seeded RNG, input, events, spatial hash
 src/render   pipeline (HDR → bloom → OKLab palette dither → overlay), shaders, GPU particles, streaks, meshes, view
 src/game     world sim, player flight, weapons, AI, bosses, director, run/map, juice, game state machine
-src/audio    Web Audio mixer, synthesized SFX, adaptive procedural music
+src/audio    Web Audio mixer, synthesized SFX, recorded soundtrack router, procedural fallback score
 src/ui       DOM screens, HUD, 2D overlay, navigation
 src/meta     versioned IndexedDB saves with migrations
 src/data     palettes, weapons, upgrades, synergies, enemies, sectors, bosses, events, lore, unlocks

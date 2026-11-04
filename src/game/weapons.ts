@@ -31,7 +31,15 @@ export interface RailFx {
 /** Aim assist tuning, set by the game from settings/device. */
 export const aim = { strength: 0.55, cone: 0.07, range: 240 };
 
+/** pooled hit records for beams/rails (no per-tick object allocation) */
+const hitPool: { e: Enemy; t: number }[] = [];
 const hits: { e: Enemy; t: number }[] = [];
+function pushHit(e: Enemy, t: number): void {
+  const h = hitPool[hits.length] ?? (hitPool[hits.length] = { e, t });
+  h.e = e;
+  h.t = t;
+  hits.push(h);
+}
 
 function computeAim(w: World): void {
   const pl = w.player;
@@ -126,7 +134,6 @@ function fanDir(w: World, dir: Vector3, i: number, n: number, spread: number, ou
     .normalize();
 }
 
-let side = 1;
 
 function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 1, origin?: Vector3): void {
   const p = wi.params;
@@ -138,7 +145,7 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
   let count = p.count;
   if (pl.flareT > 0 && w.build.flags.has('overdrive')) count *= 2;
   if (wi.def.id === 'photon' && wi.evolved && pl.flareT > 0) count *= 2;
-  side = -side;
+  const side = (w.gunSide = -w.gunSide);
   // primary guns alternate; secondaries leave the nose
   const m = origin ?? muzzle(w, secondary ? 0 : side, _m);
   convergeDir(w, m, _aim);
@@ -196,7 +203,7 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
 
 function fireRail(w: World, wi: WeaponInstance): void {
   const p = wi.params;
-  side = -side;
+  const side = (w.gunSide = -w.gunSide);
   const m = muzzle(w, side, _m);
   for (let n = 0; n < p.count; n++) {
     convergeDir(w, m, _aim);
@@ -205,7 +212,7 @@ function fireRail(w: World, wi: WeaponInstance): void {
     for (const e of w.enemies) {
       if (!e.alive || !e.revealed) continue;
       const t = raySphere(m.x, m.y, m.z, dir.x, dir.y, dir.z, e.pos.x, e.pos.y, e.pos.z, e.radius + p.size);
-      if (t >= 0 && t < p.range) hits.push({ e, t });
+      if (t >= 0 && t < p.range) pushHit(e, t);
     }
     hits.sort((a, b) => a.t - b.t);
     let endT = p.range;
@@ -238,7 +245,7 @@ function fireBeam(w: World, wi: WeaponInstance, secondary: boolean, doDamage: bo
     for (const e of w.enemies) {
       if (!e.alive || !e.revealed) continue;
       const t = raySphere(m.x, m.y, m.z, dir.x, dir.y, dir.z, e.pos.x, e.pos.y, e.pos.z, e.radius + p.size);
-      if (t >= 0 && t < p.range) hits.push({ e, t });
+      if (t >= 0 && t < p.range) pushHit(e, t);
     }
     hits.sort((a, b) => a.t - b.t);
     let endT = p.range;
