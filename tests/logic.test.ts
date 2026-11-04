@@ -25,11 +25,11 @@ describe('rng', () => {
 
 describe('content scale', () => {
   it('meets launch targets', () => {
-    expect(WEAPONS.length).toBeGreaterThanOrEqual(30);
-    expect(UPGRADES.length).toBeGreaterThanOrEqual(150);
+    expect(WEAPONS.length).toBeGreaterThanOrEqual(44);
+    expect(UPGRADES.length).toBeGreaterThanOrEqual(200);
     expect(SYNERGIES.length + WEAPONS.length).toBeGreaterThanOrEqual(40); // synergies + evolutions
-    expect(ENEMIES.filter((e) => e.role !== 'inert').length).toBeGreaterThanOrEqual(25);
-    expect(PALETTES.length).toBeGreaterThanOrEqual(6);
+    expect(ENEMIES.filter((e) => e.role !== 'inert').length).toBeGreaterThanOrEqual(40);
+    expect(PALETTES.length).toBeGreaterThanOrEqual(12);
   });
   it('every upgrade declares a visible layer and unique id', () => {
     const ids = new Set<string>();

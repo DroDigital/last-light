@@ -47,27 +47,27 @@ export const SECTORS: SectorDef[] = [
   // --- Act II: the Deep. Every environment has a live hazard.
   {
     id: 'forge', name: 'VI · The Nebula Forge', star: 'Kiln Prime', palette: 'forge', boss: 'kilnmother', asteroids: 30, act: 2, hazard: 'storms', lore: 'forge',
-    pool: [['scrapper', 3], ['gunship', 3], ['cutter', 3], ['hauler', 1.5], ['turretrig', 2], ['welder', 1.5], ['bulwark', 1.5], ['ramdrone', 2], ['rivet', 2], ['surveyor', 2]],
+    pool: [['sparkler', 4], ['smelter', 1.5], ['scrapper', 3], ['gunship', 3], ['cutter', 3], ['hauler', 1.5], ['turretrig', 2], ['welder', 1.5], ['bulwark', 1.5], ['ramdrone', 2], ['rivet', 2], ['surveyor', 2]],
     music: { root: 41, scale: [0, 1, 4, 5, 7, 8], bpm: 118, voice: 'warm' }, intro: 'Where new stars were forged, ion storms still break.',
   },
   {
     id: 'horizon', name: 'VII · Event Horizon', star: 'Gargantua', palette: 'horizon', boss: 'horizoneater', asteroids: 20, act: 2, hazard: 'gravity', lore: 'horizon',
-    pool: [['moteeater', 4], ['gloom', 3], ['umbra', 3], ['eclipse', 2], ['nullwisp', 3], ['mawspawn', 1.5], ['shroud', 1.5], ['whisper', 2], ['hollow', 2]],
+    pool: [['tidewraith', 3], ['spaghettifier', 2], ['gravemind', 1], ['moteeater', 4], ['gloom', 3], ['umbra', 3], ['eclipse', 2], ['nullwisp', 3], ['mawspawn', 1.5], ['shroud', 1.5], ['whisper', 2], ['hollow', 2]],
     music: { root: 36, scale: [0, 2, 3, 7, 8], bpm: 84, voice: 'void' }, intro: 'A black hole wearing a crown of dying light. It pulls.',
   },
   {
     id: 'quasar', name: 'VIII · The Quasar Jets', star: 'Regent Core', palette: 'quasar', boss: 'quasarregent', asteroids: 16, act: 2, hazard: 'jets', lore: 'quasar',
-    pool: [['seraph', 4], ['cantor', 3], ['hymnlancer', 3], ['resonator', 2], ['prismwarden', 1.5], ['chorale', 1.5], ['facet', 2], ['shardling', 4], ['lure', 1.5]],
+    pool: [['jetwing', 3.5], ['regentguard', 2], ['seraph', 4], ['cantor', 3], ['hymnlancer', 3], ['resonator', 2], ['prismwarden', 1.5], ['chorale', 1.5], ['facet', 2], ['shardling', 4], ['lure', 1.5]],
     music: { root: 47, scale: [0, 2, 4, 7, 9, 11], bpm: 132, voice: 'pulse' }, intro: 'Two beams brighter than galaxies. Do not cross them.',
   },
   {
     id: 'magnetar', name: 'IX · Shattered Magnetar', star: 'SGR Iron', palette: 'magnetar', boss: 'ironmagnetar', asteroids: 40, act: 2, hazard: 'pulses', lore: 'magnetar',
-    pool: [['ramdrone', 3], ['bulwark', 2], ['gunship', 3], ['surveyor', 2.5], ['cutter', 3], ['turretrig', 2.5], ['hauler', 1.5], ['seraph', 2], ['umbra', 2], ['rivet', 2]],
+    pool: [['lodestone', 1.5], ['railbug', 2.5], ['ramdrone', 3], ['bulwark', 2], ['gunship', 3], ['surveyor', 2.5], ['cutter', 3], ['turretrig', 2.5], ['hauler', 1.5], ['seraph', 2], ['umbra', 2], ['rivet', 2]],
     music: { root: 39, scale: [0, 1, 3, 5, 6, 10], bpm: 126, voice: 'cold' }, intro: 'A dead star with a field strong enough to tear iron.',
   },
   {
     id: 'edge', name: 'X · The Edge of Night', star: 'The First Light', palette: 'edge', boss: 'endlessnight', asteroids: 12, act: 2, hazard: 'rifts', lore: 'edge',
-    pool: [['moteeater', 3], ['shardling', 3], ['scrapper', 3], ['umbra', 2.5], ['hymnlancer', 2.5], ['gunship', 2], ['mawspawn', 1.5], ['eclipse', 2], ['seraph', 2.5], ['shroud', 1.5], ['whisper', 2]],
+    pool: [['nightmask', 3], ['riftling', 4], ['unmaker', 1.5], ['moteeater', 3], ['shardling', 3], ['scrapper', 3], ['umbra', 2.5], ['hymnlancer', 2.5], ['gunship', 2], ['mawspawn', 1.5], ['eclipse', 2], ['seraph', 2.5], ['shroud', 1.5], ['whisper', 2]],
     music: { root: 35, scale: [0, 1, 3, 6, 8], bpm: 100, voice: 'void' }, intro: 'Beyond the last star, the oldest light in the universe still burns.',
   },
 ];

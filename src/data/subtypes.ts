@@ -144,6 +144,55 @@ export const SUBTYPES: Record<string, SubtypeDef[]> = {
     { id: 'glint', name: 'Glint', moves: ['dive'], w: 2 },
     { id: 'siren', name: 'Siren', moves: ['blink', 'dive'], w: 1 },
   ],
+  // --- the Deep
+  sparkler: [
+    { id: 'ember', name: 'Ember', moves: ['dive'], w: 2 },
+    { id: 'slag', name: 'Slag', moves: ['mines'], w: 1 },
+  ],
+  smelter: [
+    { id: 'pourer', name: 'Pourer', moves: ['artillery'], w: 2 },
+    { id: 'furnace', name: 'Furnace', moves: ['spiral', 'bulwark'], w: 1 },
+  ],
+  tidewraith: [
+    { id: 'eddy', name: 'Eddy', moves: ['evade', 'burst'], w: 2 },
+    { id: 'undertow', name: 'Undertow', moves: ['flank', 'orb'], w: 1 },
+  ],
+  spaghettifier: [
+    { id: 'tidal', name: 'Tidal', moves: ['sweep'], w: 2 },
+    { id: 'stretcher', name: 'Stretcher', moves: ['blink', 'snipe'], w: 1 },
+  ],
+  gravemind: [
+    { id: 'well', name: 'Well', moves: ['call'], w: 2 },
+    { id: 'maw', name: 'Maw', moves: ['orb', 'ring'], w: 1 },
+  ],
+  jetwing: [
+    { id: 'lancer', name: 'Jet Lancer', moves: ['dash', 'burst'], w: 2 },
+    { id: 'raptor', name: 'Raptor', moves: ['dive', 'fan'], w: 2 },
+  ],
+  regentguard: [
+    { id: 'herald', name: 'Herald', moves: ['fan', 'bulwark'], w: 2 },
+    { id: 'executor', name: 'Executor', moves: ['snipe', 'flank'], w: 1 },
+  ],
+  lodestone: [
+    { id: 'anchor', name: 'Anchor', moves: ['bulwark'], w: 2 },
+    { id: 'repulsor', name: 'Repulsor', moves: ['ring', 'retreat'], w: 1 },
+  ],
+  railbug: [
+    { id: 'spotter', name: 'Spotter', moves: ['snipe', 'evade'], w: 2 },
+    { id: 'gauss', name: 'Gauss', moves: ['snipe', 'blink'], w: 1 },
+  ],
+  nightmask: [
+    { id: 'grin', name: 'Grin', moves: ['ram', 'blink'], w: 2 },
+    { id: 'weeper', name: 'Weeper', moves: ['feint', 'orb'], w: 1 },
+  ],
+  riftling: [
+    { id: 'shard', name: 'Shard', moves: [], w: 3 },
+    { id: 'skipper', name: 'Skipper', moves: ['blink'], w: 1 },
+  ],
+  unmaker: [
+    { id: 'unweaver', name: 'Unweaver', moves: ['ring', 'spiral'], w: 2 },
+    { id: 'eraser', name: 'Eraser', moves: ['artillery', 'call'], w: 1 },
+  ],
 };
 
 /** Display name for an enemy's variant, or '' */
