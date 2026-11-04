@@ -60,6 +60,25 @@ Action buttons are rebindable in Settings → Controls; rebinding one device pre
 
 Menus are navigable with arrow keys + Enter/Esc or the D-pad / left stick + A/B. Use left/right to change sliders and selection lists. On the draft screen, `1` `2` `3` pick a card. On the death screen, `R` dives again.
 
+### Local co-op
+
+A second player drops in during any fight by pressing **Start** on a spare controller. They can also take the only controller while Player 1 flies with keyboard and mouse. Player 2 uses the gamepad layout above.
+
+- **Sharing:** both ships share the build and the Light, and each keeps its own hull and shield. Enemies go after whichever pilot is nearer.
+- **Camera:** it stays behind Player 1 and pulls back to keep Player 2 in frame. A soft tether keeps the pair together.
+- **Downed pilots:** hover close to a downed partner for 3 s to revive them. The run ends only when both pilots are down.
+- **Leaving:** Player 2 leaves by holding **View/Back** for 1.5 s. Co-op carries over into the next run while their controller stays assigned.
+
+## Modes
+
+- **Run:** Act I is five sectors. Beating the Last Dark offers **Act II, the Deep**: five harder sectors, each with a live hazard and a four-phase boss. You can also go Endless or return home.
+- **Endless** (title menu): waves through all ten environments, a boss every fifth wave, a draft after every wave, and a recorded best wave.
+- **Daily Dive:** one seeded run per UTC day.
+
+## Balance
+
+`npm run balance -- 10 ok` plays 10 headless full runs (both acts) with a bot (`good`, `ok` or `poor`). It reports win rate, deaths by sector, damage per fight and bonus drafts from drops. `DROPLOG=1` adds a breakdown of where drops come from. The tuning levers live in `src/data/balance.ts`.
+
 ## Structure
 
 ```

@@ -196,6 +196,15 @@ if (scenario === 'muzzle') {
   await page.waitForTimeout(900);
   await shot('muzzle2');
 }
+if (scenario === 'coop') {
+  await ll(() => window.__ll.startRun({ seed: 'COOP' }));
+  await page.waitForTimeout(2000);
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 6); g.godMode = true; g.world.addPlayer2(); const p = g.input.p2; p.now = []; p.now[7] = true; p.ly = -0.4; p.rx = 0.15; });
+  await page.waitForTimeout(5000); await shot('coop-1');
+  await ll(() => { const g = window.__ll; const w = g.world; w.withPlayer(w.player2, () => w.killPlayer('test')); });
+  await page.waitForTimeout(1500); await shot('coop-down');
+  console.log('coop:', JSON.stringify(await ll(() => { const g = window.__ll; const w = g.world; return { p2: !!w.player2, p2alive: w.player2.alive, state: g.state, kills: w.stats.kills, d: +w.player2.pos.distanceTo(w.p1.pos).toFixed(1) }; })));
+}
 if (scenario === 'endless') {
   const log = await page.evaluate(async () => {
     const g = window.__ll;

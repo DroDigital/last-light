@@ -70,15 +70,20 @@ function steerTo(e: Enemy, dx: number, dy: number, dz: number, speed: number, dt
 }
 
 export function updateEnemyAI(w: World, dt: number): void {
-  const pl = w.player;
-  const target = w.decoys.length ? w.decoys[0]!.pos : pl.pos;
-  const stasis = pl.stasisT > 0;
+  const coop = !!w.player2;
   const stasisR2 = (34 * w.build.ship.stasis) ** 2;
-  const ramBoost = w.build.flags.has('ramBoost') && pl.boosting;
-  const burnAura = pl.boosting && w.build.triggers.some((t) => t.do === 'burnAura');
   const wake = w.build.flags.has('wakeFire');
+  const hasBurnAura = w.build.triggers.some((t) => t.do === 'burnAura');
   for (const e of w.enemies) {
     if (!e.alive) continue;
+    // each enemy hunts the nearer living pilot; every nested call (fireAt, moves,
+    // affixes, contact damage) then reads w.player as that target
+    if (coop) w.player = w.nearestPlayer(e.pos.x, e.pos.y, e.pos.z);
+    const pl = w.player;
+    const target = w.decoys.length ? w.decoys[0]!.pos : pl.pos;
+    const stasis = pl.stasisT > 0;
+    const ramBoost = pl.boosting && w.build.flags.has('ramBoost');
+    const burnAura = pl.boosting && hasBurnAura;
     e.prev.copy(e.pos);
     e.prevQuat.copy(e.quat);
     const def = e.def;
@@ -464,4 +469,5 @@ export function updateEnemyAI(w: World, dt: number): void {
       }
     }
   }
+  w.player = w.p1;
 }

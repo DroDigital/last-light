@@ -4,7 +4,7 @@ import { DROP_INFO } from '../data/drops';
 import { subtypeName } from '../data/subtypes';
 import { HAZARD_INFO } from '../game/hazards';
 import type { Game, State } from '../game/game';
-import type { World } from '../game/world';
+import { World } from '../game/world';
 import { PALETTES } from '../data/palettes';
 import { fmtInt, clamp } from '../core/math';
 import { esc } from './ui';
@@ -238,6 +238,68 @@ export class Hud {
     this.el.classList.toggle('cockpit', g.camMode === 'cockpit');
   }
 
+  /** Local co-op overlay: P2's plate, an edge arrow when off-screen, the downed banner, the join hint. */
+  private drawCoop(w: World, W: number, H: number): void {
+    const c = this.ctx;
+    const p2 = w.player2;
+    c.textAlign = 'center';
+    if (!p2) {
+      if (this.g.input.padConnected && this.g.input.lastDevice === 'kbm') {
+        c.font = '400 10px "JetBrains Mono"';
+        c.fillStyle = 'rgba(127,224,168,0.7)';
+        c.fillText('P2 · PRESS START ON A CONTROLLER TO JOIN', W / 2, H - 16);
+      }
+      return;
+    }
+    const MINT = '#7fe0a8';
+    const p = this.project(p2.pos.x, p2.pos.y, p2.pos.z);
+    if (p.on) {
+      const bw = 40;
+      c.fillStyle = 'rgba(0,0,0,0.6)';
+      c.fillRect(p.x - bw / 2, p.y - 30, bw, 4);
+      c.fillRect(p.x - bw / 2, p.y - 25, bw, 2);
+      c.fillStyle = MINT;
+      c.fillRect(p.x - bw / 2, p.y - 30, bw * clamp(p2.hull / p2.maxHull, 0, 1), 4);
+      c.fillStyle = '#9adcf0';
+      c.fillRect(p.x - bw / 2, p.y - 25, bw * clamp(p2.shield / Math.max(1, p2.maxShield), 0, 1), 2);
+      c.font = '800 10px Archivo';
+      c.fillStyle = MINT;
+      c.fillText(p2.alive ? 'P2' : 'P2 · DOWN', p.x, p.y - 34);
+    } else {
+      // edge arrow toward P2
+      let dx = p.x - W / 2;
+      let dy = p.y - H / 2;
+      if (p.behind) {
+        dx = -dx;
+        dy = -dy;
+      }
+      const ang = Math.atan2(dy, dx);
+      const r = Math.min(W, H) / 2 - 40;
+      const ax = W / 2 + Math.cos(ang) * r;
+      const ay = H / 2 + Math.sin(ang) * r;
+      c.save();
+      c.translate(ax, ay);
+      c.rotate(ang);
+      c.fillStyle = MINT;
+      c.beginPath();
+      c.moveTo(10, 0);
+      c.lineTo(-6, -7);
+      c.lineTo(-6, 7);
+      c.closePath();
+      c.fill();
+      c.restore();
+      c.font = '800 10px Archivo';
+      c.fillText('P2', ax, ay - 12);
+    }
+    const downed = !w.p1.alive ? 'P1' : !p2.alive ? 'P2' : '';
+    if (downed) {
+      const k = Math.round((w.reviveT / World.REVIVE_TIME) * 100);
+      c.font = '900 13px Archivo';
+      c.fillStyle = Math.floor(this.t * 3) % 2 ? MINT : '#f3eee2';
+      c.fillText(`${downed} DOWN · ${downed === 'P1' ? 'P2' : 'P1'}: HOVER CLOSE TO REVIVE${k > 0 ? ` · ${k}%` : ''}`, W / 2, H * 0.3);
+    }
+  }
+
   private project(x: number, y: number, z: number): { x: number; y: number; on: boolean; behind: boolean } {
     const cam = this.g.view.camera;
     _v.set(x, y, z).project(cam);
@@ -253,6 +315,7 @@ export class Hud {
     const W = window.innerWidth;
     const H = window.innerHeight;
     const pl = w.player;
+    this.drawCoop(w, W, H);
     if (!pl.alive) return;
     // reticle at aim point
     const aimP = _w.copy(pl.pos).addScaledVector(pl.aimDir, 90);

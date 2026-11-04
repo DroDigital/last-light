@@ -30,9 +30,9 @@ import {
   Telegraph,
   Well,
 } from './entities';
-import { Player, type Controls } from './player';
+import { Player, emptyControls, type Controls } from './player';
 import { updateEnemyAI } from './ai';
-import { updateWeapons, syncDrones, type RailFx } from './weapons';
+import { updateWeapons, updateWingWeapons, syncDrones, type RailFx } from './weapons';
 import type { BossController } from './bosses';
 import { hexToRgb } from '../core/math';
 
@@ -76,6 +76,8 @@ export interface WorldEvents {
   pickup: { x: number; y: number; z: number; value: number; combo: number };
   /** a drop appeared (picked=false) or was collected (picked=true) */
   drop: { kind: DropKind; x: number; y: number; z: number; picked: boolean };
+  /** local co-op: player 2 joined/left/was revived */
+  coop: { joined: boolean; revived?: boolean };
   graze: { x: number; y: number; z: number; count: number };
   hurt: { dmg: number; hull: boolean; x: number; y: number; z: number };
   shieldBreak: Record<string, never>;
@@ -109,6 +111,7 @@ export interface ExplodeOpts {
 
 const _a = new Vector3();
 const _b = new Vector3();
+const EMPTY_CONTROLS = emptyControls();
 const _brk = new Vector3();
 const _brk2 = new Vector3();
 const _c = new Vector3();
@@ -204,7 +207,101 @@ export class World {
     this.build = build;
     this.player = new Player(this);
     this.player.reset(this);
+    this.p1 = this.player;
     this.refreshParams();
+  }
+
+  // ------------------------------------------------------------ local co-op
+  /**
+   * Player 1. `player` is the ship a system is currently acting for: the world
+   * re-points it at Player 2 for P2's flight, weapons and the enemies hunting
+   * P2, then restores it. Outside update() it is always P1.
+   */
+  p1: Player;
+  /** Player 2 (drop-in local co-op), or null */
+  player2: Player | null = null;
+  /** P2's weapon cooldowns (the build's weapons are shared) */
+  p2Cd = { primary: 0, secondary: 0 };
+  /** seconds a partner has hovered beside a downed pilot */
+  reviveT = 0;
+  static readonly REVIVE_TIME = 3;
+  static readonly REVIVE_RANGE = 12;
+  static readonly TETHER = 70;
+
+  get players(): Player[] {
+    return this.player2 ? [this.p1, this.player2] : [this.p1];
+  }
+
+  anyAlive(): boolean {
+    return this.p1.alive || !!this.player2?.alive;
+  }
+
+  /** Nearest living player to a point (P1 if nobody is alive). */
+  nearestPlayer(x: number, y: number, z: number): Player {
+    const p2 = this.player2;
+    if (!p2 || !p2.alive) return this.p1;
+    if (!this.p1.alive) return p2;
+    const d1 = (this.p1.pos.x - x) ** 2 + (this.p1.pos.y - y) ** 2 + (this.p1.pos.z - z) ** 2;
+    const d2 = (p2.pos.x - x) ** 2 + (p2.pos.y - y) ** 2 + (p2.pos.z - z) ** 2;
+    return d2 < d1 ? p2 : this.p1;
+  }
+
+  /** Run fn with `player` pointed at p. */
+  withPlayer<T>(p: Player, fn: () => T): T {
+    const prev = this.player;
+    this.player = p;
+    try {
+      return fn();
+    } finally {
+      this.player = prev;
+    }
+  }
+
+  /** Player 2 drops in beside Player 1, sharing the build and the Light. */
+  addPlayer2(): Player {
+    if (this.player2) return this.player2;
+    const p = new Player(this);
+    this.withPlayer(p, () => p.reset(this));
+    p.pos.copy(this.p1.pos).add(_brk.set(6, 1, 2));
+    p.prev.copy(p.pos);
+    p.quat.copy(this.p1.quat);
+    p.prevQuat.copy(p.quat);
+    p.vel.copy(this.p1.vel);
+    this.player2 = p;
+    this.events.emit('coop', { joined: true });
+    return p;
+  }
+
+  removePlayer2(): void {
+    if (!this.player2) return;
+    this.player2 = null;
+    this.events.emit('coop', { joined: false });
+  }
+
+  /** Downed pilots come back when their partner hovers close for a few seconds. */
+  private updateCoop(dt: number): void {
+    const p2 = this.player2;
+    if (!p2) return;
+    const p1 = this.p1;
+    const down = !p1.alive ? p1 : !p2.alive ? p2 : null;
+    const up = down === p1 ? p2 : p1;
+    if (down && up.alive && down.pos.distanceTo(up.pos) < World.REVIVE_RANGE) {
+      this.reviveT += dt;
+      if (this.reviveT >= World.REVIVE_TIME) {
+        this.reviveT = 0;
+        down.alive = true;
+        down.hull = down.maxHull * 0.4;
+        down.shield = down.maxShield;
+        down.iframeT = 2;
+        this.events.emit('coop', { joined: true, revived: true });
+      }
+    } else this.reviveT = Math.max(0, this.reviveT - dt * 2);
+    // a soft tether keeps the pair in one fight (and one camera)
+    if (p1.alive && p2.alive) {
+      _brk.copy(p1.pos).sub(p2.pos);
+      const d = _brk.length();
+      if (d > World.TETHER) p2.vel.addScaledVector(_brk, ((d - World.TETHER) * 3 * dt) / d);
+    }
   }
 
   // ------------------------------------------------------------ setup
@@ -326,11 +423,11 @@ export class World {
   }
 
   private updateDrops(dt: number): void {
-    const pl = this.player;
     const reach = this.build.ship.magnet * 1.4;
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const d = this.drops[i]!;
       d.age += dt;
+      const pl = this.player2 ? this.nearestPlayer(d.x, d.y, d.z) : this.player;
       const dx = pl.pos.x - d.x;
       const dy = pl.pos.y - d.y;
       const dz = pl.pos.z - d.z;
@@ -344,7 +441,7 @@ export class World {
         d.vy *= 1 - dt * 3;
         d.vz *= 1 - dt * 3;
         if (dist < 2.6) {
-          this.collectDrop(i);
+          this.collectDrop(i, pl);
           continue;
         }
       } else {
@@ -359,9 +456,9 @@ export class World {
   }
 
   /** Collect drop i (or all of them at the end of a fight). */
-  collectDrop(i: number): void {
+  collectDrop(i: number, by?: Player): void {
     const d = this.drops[i]!;
-    const pl = this.player;
+    const pl = by ?? this.player;
     if (d.kind === 'repair') pl.hull = Math.min(pl.maxHull, pl.hull + 18);
     else if (d.kind === 'cell') pl.lumen = Math.min(100, pl.lumen + 35);
     else this.bank[d.kind]++;
@@ -413,11 +510,14 @@ export class World {
 
   // ------------------------------------------------------------ main update
 
-  update(c: Controls, dt: number): void {
+  update(c: Controls, dt: number, c2?: Controls): void {
+    this.player = this.p1;
     this.time += dt;
     if (this.beamHitT > 0) this.beamHitT -= dt;
     this.killsThisTick = 0;
     this.player.update(c, dt);
+    const p2 = this.player2;
+    if (p2) this.withPlayer(p2, () => p2.update(c2 ?? EMPTY_CONTROLS, dt));
     const edt = dt * this.enemyTimeScale;
     if (this.chainT > 0) {
       this.chainT -= dt;
@@ -430,8 +530,10 @@ export class World {
     for (const [t, v] of this.triggerCd) if (v > 0) this.triggerCd.set(t, v - dt);
 
     updateWeapons(this, c, dt);
+    if (p2?.alive) this.withPlayer(p2, () => updateWingWeapons(this, c2 ?? EMPTY_CONTROLS, dt));
     this.rebuildHash();
-    this.boss?.update(this, edt);
+    const boss = this.boss;
+    if (boss) this.withPlayer(this.nearestPlayer(boss.core.pos.x, boss.core.pos.y, boss.core.pos.z), () => boss.update(this, edt));
     updateEnemyAI(this, edt);
     this.updateStatuses(edt);
     this.rebuildHash();
@@ -440,6 +542,7 @@ export class World {
     this.updateWells(dt);
     this.updateMotes(dt);
     this.updateDrops(dt);
+    this.updateCoop(dt);
     for (let i = this.timers.length - 1; i >= 0; i--) {
       const tm = this.timers[i]!;
       tm.t -= dt;
@@ -937,8 +1040,11 @@ export class World {
     const col = opts.color ?? [1, 0.6, 0.3];
     this.events.emit('explosion', { x, y, z, radius, r: col[0], g: col[1], b: col[2], enemy: !!opts.enemy });
     if (opts.enemy) {
-      const d = this.player.pos.distanceTo(_a.set(x, y, z));
-      if (d < radius + this.player.radius) this.hurtPlayer(dmg * (1 - (d / (radius + 1)) * 0.5), 'Explosion');
+      for (const p of this.players) {
+        if (!p.alive) continue;
+        const d = p.pos.distanceTo(_a.set(x, y, z));
+        if (d < radius + p.radius) this.withPlayer(p, () => this.hurtPlayer(dmg * (1 - (d / (radius + 1)) * 0.5), 'Explosion'));
+      }
       return;
     }
     const depth = opts.depth ?? 0;
@@ -1531,27 +1637,36 @@ export class World {
       P.x[i] = x1;
       P.y[i] = y1;
       P.z[i] = z1;
-      if (!pl.alive) continue;
       const sz = P.size[i]!;
-      const t = segSphere(x0, y0, z0, x1, y1, z1, pl.pos.x, pl.pos.y, pl.pos.z, pr + sz * 0.6);
-      if (t >= 0) {
-        if (pl.iframeT > 0) {
-          // dodged through: wraith crit buff
-          if (this.build.flags.has('wraith')) pl.critBuff = true;
-          continue;
+      // co-op: a round can hit (or graze) either ship
+      let consumed = false;
+      for (let pi = 0; pi < (this.player2 ? 2 : 1); pi++) {
+        const tp = pi === 0 ? pl : this.player2!;
+        if (!tp.alive) continue;
+        const t = segSphere(x0, y0, z0, x1, y1, z1, tp.pos.x, tp.pos.y, tp.pos.z, pr + sz * 0.6);
+        if (t >= 0) {
+          if (tp.iframeT > 0) {
+            // dodged through: wraith crit buff
+            if (this.build.flags.has('wraith')) tp.critBuff = true;
+            consumed = true;
+            break;
+          }
+          const dmg = P.dmg[i]!;
+          const cause = P.kind[i] === 4 ? 'Mine' : 'Enemy fire';
+          this.withPlayer(tp, () => this.hurtPlayer(dmg, cause));
+          P.kill(i);
+          consumed = true;
+          break;
         }
-        this.hurtPlayer(P.dmg[i]!, P.kind[i] === 4 ? 'Mine' : 'Enemy fire');
-        P.kill(i);
-        continue;
-      }
-      // graze
-      if (!(P.flags[i]! & PF_GRAZED)) {
-        const tg = segSphere(x0, y0, z0, x1, y1, z1, pl.pos.x, pl.pos.y, pl.pos.z, gr);
-        if (tg >= 0) {
-          P.flags[i] |= PF_GRAZED;
-          this.onGraze(x1, y1, z1);
+        if (!(P.flags[i]! & PF_GRAZED)) {
+          const tg = segSphere(x0, y0, z0, x1, y1, z1, tp.pos.x, tp.pos.y, tp.pos.z, gr);
+          if (tg >= 0) {
+            P.flags[i] |= PF_GRAZED;
+            this.withPlayer(tp, () => this.onGraze(x1, y1, z1));
+          }
         }
       }
+      if (consumed) continue;
       // Sentinel pods block shots
       if (this.blockers.length) {
         for (let b = 0; b < this.blockers.length; b += 4) {
@@ -1672,13 +1787,14 @@ export class World {
 
   private updateMotes(dt: number): void {
     const M = this.motes;
-    const pl = this.player;
     const s = this.build.ship;
     const mag = s.magnet;
     const mag2 = mag * mag;
     const lodestar = this.build.flags.has('lodestar');
+    const coop = !!this.player2?.alive;
     for (let i = M.n - 1; i >= 0; i--) {
       M.age[i] += dt;
+      const pl = coop ? this.nearestPlayer(M.x[i]!, M.y[i]!, M.z[i]!) : this.player;
       const dx = pl.pos.x - M.x[i]!;
       const dy = pl.pos.y - M.y[i]!;
       const dz = pl.pos.z - M.z[i]!;

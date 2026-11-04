@@ -107,6 +107,12 @@ export class Game {
   run: RunState | null = null;
   director: Director | null = null;
   controls: Controls = emptyControls();
+  /** local co-op: Player 2's controls (built from the second gamepad) */
+  controls2: Controls = emptyControls();
+  private p2Yaw = 0;
+  private p2Pitch = 0;
+  private p2LeaveT = 0;
+  private coopPull = 0;
   private pendingYaw = 0;
   private pendingPitch = 0;
   time = 0;
@@ -380,6 +386,8 @@ export class Game {
     (this.world as unknown as { deathBloom: boolean }).deathBloom = d.equippedCosmetics.death === 'c_death_bloom';
     this.juice.attach(this.world);
     this.hookWorld(this.world);
+    // co-op carries over between runs while Player 2's controller stays assigned
+    if (this.input.p2Index !== null) this.world.addPlayer2();
     this.view.setHull(hull.id, hull.accent);
     const trail = d.equippedCosmetics.trail;
     const tc = trail === 'c_trail_gold' ? '#ffc040' : trail === 'c_trail_violet' ? '#b070ff' : hull.accent;
@@ -558,6 +566,22 @@ export class Game {
     pl.dodgeCharges = w.build.ship.dodges;
     pl.lumen = Math.min(pl.lumen, 99);
     pl.flareT = 0;
+    const p2 = w.player2;
+    if (p2) {
+      // Player 2 starts each fight on P1's wing, back on their feet if they were down
+      p2.alive = true;
+      p2.hull = Math.max(p2.hull, p2.maxHull * 0.4);
+      p2.pos.set(7, 1, 72);
+      p2.prev.copy(p2.pos);
+      p2.vel.set(0, 0, -30);
+      p2.quat.identity();
+      p2.prevQuat.identity();
+      p2.shield = p2.maxShield;
+      p2.boostEnergy = 1;
+      p2.dodgeCharges = w.build.ship.dodges;
+      p2.flareT = 0;
+      w.reviveT = 0;
+    }
     this.view.resetTrail();
     this.camPos.set(0, 3, 82);
     // map row inside a sector; in Endless the wave number drives the same scaling
@@ -595,7 +619,8 @@ export class Game {
       w.player.lumen = Math.max(w.player.lumen, 50);
     }
     dir.update(dt);
-    w.update(this.controls, dt);
+    w.update(this.controls, dt, w.player2 ? this.controls2 : undefined);
+    this.controls2.dodge = this.controls2.ability1 = this.controls2.ability2 = this.controls2.flare = false;
     if (dir.kind === 'derelict') {
       this.view.markers = dir.beacons.map((b) => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z, r: 12, lit: b.lit ? 1 : b.progress }));
     }
@@ -603,7 +628,8 @@ export class Game {
     if (dir.kind === 'endless') run.endlessWaves = dir.endlessWave;
     // codex: enemies seen
     for (const id of w.stats.enemiesSeen) if (!this.save.data.codex.enemies.includes(id)) this.save.data.codex.enemies.push(id);
-    if (!w.player.alive) {
+    // co-op: the run only ends when both pilots are down
+    if (!w.anyAlive()) {
       this.deathT -= dt;
       if (this.deathT <= 0) this.onDeath();
       return;
@@ -1241,8 +1267,61 @@ export class Game {
       this.pendingYaw = 0;
       this.pendingPitch = 0;
     }
+    this.gatherP2(frameDt);
     aim.strength = inp.lastDevice === 'pad' ? Math.min(1, s.aimAssist + 0.35) : s.aimAssist;
     aim.cone = inp.lastDevice === 'pad' ? 0.17 : 0.1;
+  }
+
+  /**
+   * Local co-op input. Any spare gamepad joins as Player 2 with START during a
+   * fight; holding BACK for 1.5 s leaves. P2 uses P1's pad layout.
+   */
+  private gatherP2(frameDt: number): void {
+    const inp = this.input;
+    const w = this.world;
+    if (!w || !this.run) return;
+    if (!w.player2) {
+      if (inp.joinRequest !== null && this.state === 'combat') {
+        inp.assignP2(inp.joinRequest);
+        w.addPlayer2();
+        this.juice.toast('PLAYER 2 JOINED', '#7fe0a8');
+        this.audio.play('uiSelect', 0, 0.8);
+      }
+      return;
+    }
+    if (inp.p2Lost) {
+      this.leaveCoop('PLAYER 2 DISCONNECTED');
+      return;
+    }
+    const p = inp.p2;
+    const c = this.controls2;
+    const btn = (a: Parameters<typeof inp.padButton>[0]) => inp.padButton(a);
+    c.mx = p.lx;
+    c.mz = -p.ly;
+    c.my = (p.held(12) ? 1 : 0) - (p.held(13) ? 1 : 0);
+    c.fire1 = p.held(btn('fire1'));
+    c.fire2 = p.held(btn('fire2'));
+    c.boost = p.held(btn('boost'));
+    if (p.pressed(btn('dodge'))) c.dodge = true;
+    if (p.pressed(btn('ability1'))) c.ability1 = true;
+    if (p.pressed(btn('ability2'))) c.ability2 = true;
+    if (p.pressed(btn('flare'))) c.flare = true;
+    c.autoLevel = this.settings.autoLevel;
+    const sens = this.settings.sensitivity;
+    const inv = this.settings.invertY ? -1 : 1;
+    if (this.state === 'combat') {
+      this.p2Yaw += p.rx * 2.6 * frameDt * sens;
+      this.p2Pitch += p.ry * 2.0 * frameDt * sens * inv;
+    } else this.p2Yaw = this.p2Pitch = 0;
+    this.p2LeaveT = p.held(8) ? this.p2LeaveT + frameDt : 0;
+    if (this.p2LeaveT > 1.5) this.leaveCoop('PLAYER 2 LEFT');
+  }
+
+  leaveCoop(msg: string): void {
+    this.world?.removePlayer2();
+    this.input.assignP2(null);
+    this.p2LeaveT = 0;
+    this.juice.toast(msg, '#ff8a6a');
   }
 
   update(dt: number): void {
@@ -1250,6 +1329,9 @@ export class Game {
     if (this.state === 'combat' && this.world) {
       this.controls.yaw = this.pendingYaw;
       this.controls.pitch = this.pendingPitch;
+      this.controls2.yaw = this.p2Yaw;
+      this.controls2.pitch = this.p2Pitch;
+      this.p2Yaw = this.p2Pitch = 0;
       this.pendingYaw = 0;
       this.pendingPitch = 0;
       this.recorder.capture(this.controls);
@@ -1414,7 +1496,11 @@ export class Game {
         // lag, no shake) so the view can never drift. Same offset and the same
         // slight downward tilt every frame; only boost changes it.
         const b = this.boostCam;
-        _w.set(0, CHASE_UP + b * 0.6, CHASE_BACK + b * 3.5).applyQuaternion(_q).add(_v);
+        // co-op: pull the rigid chase camera back so Player 2 stays in frame
+        const p2 = w.player2;
+        const spread = p2 ? clamp((p2.pos.distanceTo(pl.pos) - 18) * 0.35, 0, 22) : 0;
+        this.coopPull = damp(this.coopPull, spread, 2, dt);
+        _w.set(0, CHASE_UP + b * 0.6 + this.coopPull * 0.35, CHASE_BACK + b * 3.5 + this.coopPull).applyQuaternion(_q).add(_v);
         cam.position.copy(_w);
         this.camPos.copy(_w);
         cam.quaternion.copy(_q).multiply(CHASE_TILT);

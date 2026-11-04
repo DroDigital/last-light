@@ -39,9 +39,21 @@ export class Hazard {
   ) {}
 
   update(w: World, dt: number): void {
-    const pl = w.player;
-    if (!pl.alive) return;
+    if (!w.anyAlive()) return;
     this.t -= dt * this.pressure;
+    // continuous hazards act on every ship; periodic ones aim at the nearest
+    if (this.kind === 'gravity' || this.kind === 'jets') {
+      const fire = this.kind === 'gravity' ? this.t <= 0 : false;
+      for (const p of w.players) if (p.alive) w.withPlayer(p, () => this.tick(w, dt, fire));
+      if (fire) this.t = 0.5;
+      if (this.kind === 'jets') this.phase += dt;
+      return;
+    }
+    this.tick(w, dt, false);
+  }
+
+  private tick(w: World, dt: number, gravityBurn: boolean): void {
+    const pl = w.player;
     switch (this.kind) {
       case 'storms': {
         if (this.t > 0) return;
@@ -65,17 +77,13 @@ export class Hazard {
         _a.copy(pl.pos);
         const d = _a.length() || 1;
         pl.vel.addScaledVector(_a, (-6 * this.pressure * dt) / d);
-        if (d < this.horizon + pl.radius && this.t <= 0) {
-          this.t = 0.5;
-          w.hurtPlayer(9, 'Event horizon');
-        }
+        if (d < this.horizon + pl.radius && gravityBurn) w.hurtPlayer(9, 'Event horizon');
         return;
       }
       case 'jets': {
-        // cycle: 1.6 s warm-up line, 7 s sweeping, 4 s rest
-        this.phase += dt;
+        // cycle: 1.6 s warm-up line, 7 s sweeping, 4 s rest (phase advanced once per tick by update)
         const cycle = this.phase % 12.6;
-        this.jetDir.applyAxisAngle(JET_AXIS, dt * 0.16 * this.pressure);
+        if (pl === w.p1 || !w.p1.alive) this.jetDir.applyAxisAngle(JET_AXIS, dt * 0.16 * this.pressure);
         this.jetWarm = cycle < 1.6 ? cycle / 1.6 : 0;
         this.jetOn = cycle >= 1.6 && cycle < 8.6;
         const len = w.arenaRadius * 1.25;

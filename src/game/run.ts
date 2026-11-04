@@ -177,7 +177,8 @@ export class Director {
     if (w.build.flags.has('hunted')) this.elitesLeft += 1;
     if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
     w.maxTokens = BAL.tokensBase + Math.floor(sectorIdx * BAL.tokensPerSector) + (kind === 'rift' ? 2 : 0);
-    w.sectorHpScale = (1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0)) * depthK;
+    // bosses have their own HP multiplier and sector growth; row depth only scales the rank and file
+    w.sectorHpScale = (1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0)) * (kind === 'boss' ? 1 : depthK);
     w.sectorIdx = sectorIdx;
     w.sectorDmgScale = (1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0)) * (1 + depth * BAL.perRow * 0.5);
     this.dress();
