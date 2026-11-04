@@ -39,11 +39,11 @@ Vitest covers RNG determinism, map generation, save migrations, draft rules, evo
 
 ## Controls
 
-All bindings are rebindable in Settings → Controls.
+Action buttons are rebindable in Settings → Controls; rebinding one device preserves the other device’s binding. Stick movement, D-pad vertical movement, and menu navigation use fixed mappings.
 
 | Action | Keyboard & mouse | Gamepad |
 | --- | --- | --- |
-| Steer / aim | Mouse (click to lock; unlocked = virtual stick) | Right stick (aim assist) |
+| Steer / aim | Mouse (click to lock) | Right stick (aim assist) |
 | Thrust / strafe | W S / A D | Left stick |
 | Rise / sink | R / C | D-pad up / down |
 | Primary / secondary fire | LMB / RMB | RT / LT |
@@ -52,11 +52,11 @@ All bindings are rebindable in Settings → Controls.
 | Shockwave / Stasis | Q / E | LB / RB |
 | Flare (when Lumen is full) | F | Y |
 | Camera: chase / cockpit | V | View |
-| Radar | Tab | Menu |
+| Radar | Tab | Left stick click |
 | Pause | Esc / P | Menu |
 | Look panel / perf overlay | F1 / F3 | — |
 
-Menus are fully navigable with arrow keys + Enter/Esc or the d-pad + A/B. On the draft screen, `1` `2` `3` pick a card. On the death screen, `R` dives again.
+Menus are navigable with arrow keys + Enter/Esc or the D-pad / left stick + A/B. Use left/right to change sliders and selection lists. On the draft screen, `1` `2` `3` pick a card. On the death screen, `R` dives again.
 
 ## Structure
 
