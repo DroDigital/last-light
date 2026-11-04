@@ -134,6 +134,13 @@ export class UI {
       this.audio.play('uiMove', 0, 0.3);
       dx = 0;
     }
+    if (dx && fe && fe.tagName === 'SELECT') {
+      const select = fe as unknown as HTMLSelectElement;
+      select.selectedIndex = Math.min(select.options.length - 1, Math.max(0, select.selectedIndex + dx));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      this.audio.play('uiMove', 0, 0.3);
+      dx = 0;
+    }
     if ((dx || dy) && els.length) {
       if (!this.focusEl || !els.includes(this.focusEl)) this.setFocus(els[0]!);
       else {
@@ -162,12 +169,12 @@ export class UI {
         }
       }
     }
-    const confirm = (allowKeys && (inp.keyPressed('Enter') || inp.keyPressed('Space'))) || inp.padButtonPressed(0);
+    const confirm = inp.pressed('confirm') || (allowKeys && inp.keyPressed('Space'));
     if (confirm && this.focusEl && this.focusEl.dataset.act) {
       if (this.focusEl.tagName === 'INPUT') return;
       this.fire(this.focusEl);
     }
-    const back = (allowKeys && (inp.keyPressed('Escape') || inp.keyPressed('Backspace'))) || inp.padButtonPressed(1);
+    const back = inp.pressed('cancel');
     if (back) {
       const b = this.screenEl.querySelector('[data-back]') as HTMLElement | null;
       if (b) {

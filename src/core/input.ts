@@ -52,34 +52,18 @@ export const DEFAULT_BINDINGS: Bindings = {
   right: ['KeyD'],
   up: ['KeyR'],
   down: ['KeyC'],
-  fire1: ['Mouse0'],
-  fire2: ['Mouse2'],
-  boost: ['Space'],
-  dodge: ['ShiftLeft', 'ShiftRight'],
-  ability1: ['KeyQ'],
-  ability2: ['KeyE'],
-  flare: ['KeyF'],
-  camera: ['KeyV'],
-  map: ['Tab'],
-  pause: ['Escape', 'KeyP'],
-  confirm: ['Enter'],
-  cancel: ['Escape', 'Backspace'],
-};
-
-// Standard gamepad mapping indices
-const PAD: Partial<Record<Action, number[]>> = {
-  fire1: [7],
-  fire2: [6],
-  boost: [0],
-  dodge: [1],
-  ability1: [4],
-  ability2: [5],
-  flare: [3],
-  camera: [8],
-  map: [9],
-  pause: [9],
-  confirm: [0],
-  cancel: [1],
+  fire1: ['Mouse0', 'Pad7'],
+  fire2: ['Mouse2', 'Pad6'],
+  boost: ['Space', 'Pad0'],
+  dodge: ['ShiftLeft', 'ShiftRight', 'Pad1'],
+  ability1: ['KeyQ', 'Pad4'],
+  ability2: ['KeyE', 'Pad5'],
+  flare: ['KeyF', 'Pad3'],
+  camera: ['KeyV', 'Pad8'],
+  map: ['Tab', 'Pad10'],
+  pause: ['Escape', 'KeyP', 'Pad9'],
+  confirm: ['Enter', 'Pad0'],
+  cancel: ['Escape', 'Backspace', 'Pad1'],
 };
 
 export class Input {
@@ -88,6 +72,8 @@ export class Input {
   private pressedThisFrame = new Set<string>();
   private padPrev: boolean[] = [];
   private padNow: boolean[] = [];
+  private padIndex: number | null = null;
+  private suppressedPadButtons = new Set<number>();
   mouseDX = 0;
   mouseDY = 0;
   mouseX = 0;
@@ -106,6 +92,8 @@ export class Input {
   padRY = 0;
   padConnected = false;
   lastDevice: 'kbm' | 'pad' = 'kbm';
+  /** Called on a fresh controller button press, for audio initialization. */
+  onPadPress: (() => void) | null = null;
   /** If set, the next key/button press is captured for rebinding. */
   captureNext: ((code: string) => void) | null = null;
   /** Toggle vs hold for boost. */
@@ -185,7 +173,9 @@ export class Input {
     let pad: Gamepad | null = null;
     for (const p of pads) if (p && p.connected) pad = p;
     this.padConnected = !!pad;
-    this.padPrev = this.padNow;
+    this.padPrev = pad?.index === this.padIndex ? this.padNow : [];
+    if (pad?.index !== this.padIndex) this.suppressedPadButtons.clear();
+    this.padIndex = pad?.index ?? null;
     this.padNow = [];
     if (pad) {
       const dz = (v: number) => {
@@ -205,11 +195,14 @@ export class Input {
       for (let i = 0; i < pad.buttons.length; i++) {
         const b = pad.buttons[i]!;
         this.padNow[i] = b.pressed || b.value > 0.4;
+        if (!this.padNow[i]) this.suppressedPadButtons.delete(i);
         if (this.padNow[i] && !this.padPrev[i]) {
           this.lastDevice = 'pad';
+          this.onPadPress?.();
           if (this.captureNext) {
             const cb = this.captureNext;
             this.captureNext = null;
+            this.suppressedPadButtons.add(i);
             cb('Pad' + i);
           }
         }
@@ -222,10 +215,10 @@ export class Input {
   }
 
   private padHeld(i: number): boolean {
-    return !!this.padNow[i];
+    return !!this.padNow[i] && !this.suppressedPadButtons.has(i);
   }
   private padPressed(i: number): boolean {
-    return !!this.padNow[i] && !this.padPrev[i];
+    return this.padHeld(i) && !this.padPrev[i];
   }
 
   held(a: Action): boolean {
@@ -240,7 +233,6 @@ export class Input {
         if (this.padHeld(+c.slice(3))) return true;
       } else if (this.down.has(c)) return true;
     }
-    for (const i of PAD[a] ?? []) if (this.padHeld(i)) return true;
     return false;
   }
 
@@ -250,7 +242,6 @@ export class Input {
         if (this.padPressed(+c.slice(3))) return true;
       } else if (this.pressedThisFrame.has(c)) return true;
     }
-    for (const i of PAD[a] ?? []) if (this.padPressed(i)) return true;
     return false;
   }
 

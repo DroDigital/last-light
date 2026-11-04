@@ -5,7 +5,7 @@
 import { DEFAULT_BINDINGS, type Bindings } from '../core/input';
 import type { ColorblindMode } from '../data/palettes';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface Settings {
   quality: 'low' | 'medium' | 'high' | 'ultra' | 'auto';
@@ -143,6 +143,20 @@ export const MIGRATIONS: Record<number, Migration> = {
       equippedCosmetics: d.equippedCosmetics ?? {},
       version: 3,
     };
+  },
+  3: (d) => {
+    // Earlier saves stored pad bindings only when explicitly rebound; defaults
+    // were implicit. Preserve custom buttons and add defaults where absent.
+    const settings = { ...((d.settings as Partial<Settings>) ?? {}) };
+    const bindings = { ...(settings.bindings ?? {}) };
+    for (const action of Object.keys(DEFAULT_BINDINGS) as (keyof Bindings)[]) {
+      const saved = bindings[action];
+      if (!Array.isArray(saved)) continue;
+      if (!saved.some((code) => code.startsWith('Pad'))) {
+        bindings[action] = [...saved, ...DEFAULT_BINDINGS[action].filter((code) => code.startsWith('Pad'))];
+      }
+    }
+    return { ...d, settings: { ...settings, bindings }, version: 4 };
   },
 };
 

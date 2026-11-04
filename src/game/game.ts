@@ -158,7 +158,7 @@ export class Game {
         this.audio.music.configure(SECTORS[0]!.music);
         this.audio.music.start();
       }
-      this.audio.music!.onBeat = (step) => {
+      if (this.audio.music) this.audio.music.onBeat = (step) => {
         if (step === 0) this.juice.breath = Math.max(this.juice.breath, 0.12);
       };
       const st = this.audio.soundtrack;
@@ -167,8 +167,9 @@ export class Game {
           this.juice.breath = Math.max(this.juice.breath, 0.1);
         };
         this.updateMusicCue();
-      }
+      } else st?.retryPlayback();
     };
+    this.input.onPadPress = unlock;
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     this.canvas.addEventListener('click', () => {
@@ -277,7 +278,7 @@ export class Game {
     const st = this.audio.soundtrack;
     if (!st) return;
     if (this.settings.music !== 'recorded') {
-      if (st.active) st.stop(1.5);
+      if (st.cue) st.stop(1.5);
       return;
     }
     switch (this.state) {
@@ -519,7 +520,7 @@ export class Game {
     run.pendingFight = false;
     this.setState('combat');
     this.ui.clear();
-    this.input.requestLock();
+    if (this.input.lastDevice === 'kbm') this.input.requestLock();
     w.fireTriggers('waveStart', pl.pos.x, pl.pos.y, pl.pos.z, 0);
     const m = this.audio.music;
     if (m) {
@@ -1177,13 +1178,14 @@ export class Game {
     }
     const w = this.world;
     const c = this.controls;
+    const pad = this.input.lastDevice === 'pad';
     const steps: [string, () => boolean][] = [
-      ['Move with <span class="kbd">W A S D</span> · steer with the <span class="kbd">mouse</span> (click to lock)', () => Math.abs(c.mx) + Math.abs(c.mz) > 0 && w.time > 1.5],
-      ['Fire with <span class="kbd">LMB</span>', () => w.build.primary.shots > 12],
+      [pad ? 'Move with <span class="kbd">LEFT STICK</span> · steer with <span class="kbd">RIGHT STICK</span>' : 'Move with <span class="kbd">W A S D</span> · steer with the <span class="kbd">mouse</span> (click to lock)', () => Math.abs(c.mx) + Math.abs(c.mz) > 0 && w.time > 1.5],
+      [pad ? 'Fire with <span class="kbd">RT</span>' : 'Fire with <span class="kbd">LMB</span>', () => w.build.primary.shots > 12],
       ['Light motes are your fuel. Fly close to collect them', () => w.player.lightTotal > 6],
-      ['<span class="kbd">SPACE</span> boosts · <span class="kbd">SHIFT</span> dodges through bullets', () => this.hintDone.has('dodge') || w.player.dodgeCharges < w.build.ship.dodges],
-      ['<span class="kbd">RMB</span> fires your secondary · <span class="kbd">Q</span> shockwave · <span class="kbd">E</span> stasis', () => w.build.secondary.shots > 1 || w.player.shockCd > 0],
-      ['Lumen full: press <span class="kbd">F</span> to FLARE', () => w.player.flareT > 0 || w.player.lumen < 100],
+      [pad ? '<span class="kbd">A</span> boosts · <span class="kbd">B</span> dodges through bullets' : '<span class="kbd">SPACE</span> boosts · <span class="kbd">SHIFT</span> dodges through bullets', () => this.hintDone.has('dodge') || w.player.dodgeCharges < w.build.ship.dodges],
+      [pad ? '<span class="kbd">LT</span> fires your secondary · <span class="kbd">LB</span> shockwave · <span class="kbd">RB</span> stasis' : '<span class="kbd">RMB</span> fires your secondary · <span class="kbd">Q</span> shockwave · <span class="kbd">E</span> stasis', () => w.build.secondary.shots > 1 || w.player.shockCd > 0],
+      [pad ? 'Lumen full: press <span class="kbd">Y</span> to FLARE' : 'Lumen full: press <span class="kbd">F</span> to FLARE', () => w.player.flareT > 0 || w.player.lumen < 100],
     ];
     while (this.hintStep < steps.length && steps[this.hintStep]![1]()) this.hintStep++;
     if (this.hintStep === 5 && w.player.lumen < 100) {

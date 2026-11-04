@@ -198,7 +198,7 @@ export function showDraft(g: Game): void {
           <div class="nm">${esc(cardTitle(c))}</div>
           <div class="ds">${cardDesc(c)}</div>
           <div>${cardTags(c, g)}</div>
-          ${c.kind === 'upgrade' && run.banishes > 0 ? `<button class="small banish" data-act="banish" data-arg="${i}" title="Remove from this run's pool">Banish (${run.banishes})</button>` : ''}
+          ${c.kind === 'upgrade' && run.banishes > 0 ? `<button class="small banish" data-nav data-act="banish" data-arg="${i}" title="Remove from this run's pool">Banish (${run.banishes})</button>` : ''}
         </div>`;
        })
        .join('')}</div>
@@ -521,7 +521,11 @@ export function registerActions(g: Game): void {
   ui.on('rebind', (a, el) => {
     el.textContent = 'PRESS…';
     g.input.captureNext = (code) => {
-      if (code !== 'Escape') g.settings.bindings[a as Action] = [code];
+      if (code !== 'Escape') {
+        const action = a as Action;
+        const isPad = code.startsWith('Pad');
+        g.settings.bindings[action] = [...g.settings.bindings[action].filter((binding) => binding.startsWith('Pad') !== isPad), code];
+      }
       g.applySettings();
       g.save.save();
       showSettings(g, true);

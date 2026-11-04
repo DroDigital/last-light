@@ -79,6 +79,7 @@ export class Soundtrack {
   private lastBeat = 0;
   private pendingStart = 0;
   private pendingTimer: number | null = null;
+  private playbackAttempt = 0;
 
   constructor(private a: AudioEngine) {
     const ctx = a.ctx!;
@@ -148,7 +149,7 @@ export class Soundtrack {
       if (opts.restart || next.el.ended) next.el.currentTime = 0;
       // resume where we left off unless the remainder is too short to matter
       if (next.el.duration && next.el.duration - next.el.currentTime < 12) next.el.currentTime = 0;
-      void next.el.play().catch(() => undefined);
+      this.startPlayback(next);
       const g = next.gain.gain;
       g.cancelScheduledValues(now);
       g.setValueAtTime(g.value, now);
@@ -158,6 +159,22 @@ export class Soundtrack {
       this.pendingStart = t + opts.delay;
       this.pendingTimer = window.setTimeout(start, opts.delay * 1000);
     } else start();
+  }
+
+  private startPlayback(track: Track): void {
+    const attempt = ++this.playbackAttempt;
+    this.active = true;
+    void track.el.play().catch(() => {
+      // Ignore an older rejection if a later user gesture already retried.
+      if (this.current === track && this.playbackAttempt === attempt) this.active = false;
+    });
+  }
+
+  /** Retry playback during a later user gesture if autoplay blocked the cue. */
+  retryPlayback(): void {
+    if (this.current && !this.current.failed && this.current.el.paused && this.pendingTimer === null) {
+      this.startPlayback(this.current);
+    }
   }
 
   /** Fade everything out (death screen, procedural fallback). */
