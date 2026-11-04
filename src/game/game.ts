@@ -21,6 +21,7 @@ import { Juice } from './juice';
 import { aim } from './weapons';
 import * as S from '../ui/screens';
 import { Hud } from '../ui/hud';
+import { ReplayRecorder } from './replay';
 import { installDitherTextures, setUiTint } from '../ui/dither';
 
 export type State =
@@ -74,6 +75,7 @@ const _q = new THREE.Quaternion();
 const CHASE_BACK = 12;
 const CHASE_UP = 3.2;
 /** look slightly down so the ship sits below the reticle */
+const _eul = new THREE.Euler();
 const CHASE_TILT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.1, 0, 0));
 
 export class Game {
@@ -99,6 +101,8 @@ export class Game {
   camMode: 'chase' | 'cockpit' = 'chase';
   private camPos = new THREE.Vector3(0, 5, 80);
   private boostCam = 0;
+  /** per-encounter input recording: (seed, build, controls) reproduces the fight exactly */
+  readonly recorder = new ReplayRecorder();
   showPerf = false;
   showDebug = false;
   private warp: { t: number; dur: number; then: () => void; switched: boolean; palette: string } | null = null;
@@ -157,6 +161,13 @@ export class Game {
       this.audio.music!.onBeat = (step) => {
         if (step === 0) this.juice.breath = Math.max(this.juice.breath, 0.12);
       };
+      const st = this.audio.soundtrack;
+      if (st && !st.onBeat) {
+        st.onBeat = () => {
+          this.juice.breath = Math.max(this.juice.breath, 0.1);
+        };
+        this.updateMusicCue();
+      }
     };
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
@@ -221,6 +232,7 @@ export class Game {
     this.audio.volumes = { ...s.volumes };
     this.audio.applyVolumes();
     this.audio.setMono(s.mono);
+    this.updateMusicCue();
     this.camMode = s.cockpit ? 'cockpit' : 'chase';
     const q = s.quality;
     const look = this.pipe.look;
@@ -255,8 +267,45 @@ export class Game {
     this.state = s;
     if (s !== 'combat') this.input.releaseLock();
     this.hud.setMode(s);
+    this.updateMusicCue();
     // menus print ink-on-paper over the paper-negative world (style A)
     document.body.classList.remove('print');
+  }
+
+  /** Route the recorded soundtrack from game state. Pause/warp/death keep the current cue. */
+  updateMusicCue(): void {
+    const st = this.audio.soundtrack;
+    if (!st) return;
+    if (this.settings.music !== 'recorded') {
+      if (st.active) st.stop(1.5);
+      return;
+    }
+    switch (this.state) {
+      case 'title':
+      case 'hearth':
+        st.play('menu', { fade: 2.5 });
+        st.prefetch('explore');
+        break;
+      case 'map':
+      case 'draft':
+      case 'shop':
+      case 'event':
+      case 'forge':
+      case 'rest':
+        st.play('explore', { fade: 2.5 });
+        st.prefetch('combat');
+        break;
+      case 'combat':
+        if (this.director?.kind === 'boss') st.play('boss', { fade: 1.2, delay: this.recorder.ticks < 90 ? 2.2 : 0 });
+        else st.play('combat', { fade: 1.4 });
+        break;
+      case 'victory':
+        st.play('finale', { fade: 3, restart: true });
+        break;
+      default:
+        break;
+    }
+    st.setLevel(this.state === 'death' ? 0.4 : this.state === 'pause' ? 0.55 : 1);
   }
 
   goTitle(): void {
@@ -337,7 +386,8 @@ export class Game {
     w.events.on('spawn', () => void 0);
     w.events.on('bossDeath', () => {
       this.relight = 1;
-      if (this.run) this.save.data.bossesKilled.includes(SECTORS[this.run.sector]!.boss) || this.save.data.bossesKilled.push(SECTORS[this.run.sector]!.boss);
+      const boss = this.run ? SECTORS[this.run.sector]!.boss : '';
+      if (boss && !this.save.data.bossesKilled.includes(boss)) this.save.data.bossesKilled.push(boss);
     });
     w.events.on('reaction', (r) => {
       if (this.save.discover('synergies', r.id)) this.juice.toast('REACTION DISCOVERED', '#ff9ad0');
@@ -465,6 +515,7 @@ export class Game {
     this.camPos.set(0, 3, 82);
     this.director = new Director(kind, run.sector, seed, w, run.heat);
     run.encounters++;
+    this.recorder.reset();
     run.pendingFight = false;
     this.setState('combat');
     this.ui.clear();
@@ -501,7 +552,7 @@ export class Game {
     run.sectorLight = w.player.lightTotal;
     if (dir.kind === 'endless') run.endlessWaves = dir.endlessWave;
     // codex: enemies seen
-    for (const id of w.stats.enemiesSeen) this.save.data.codex.enemies.includes(id) || this.save.data.codex.enemies.push(id);
+    for (const id of w.stats.enemiesSeen) if (!this.save.data.codex.enemies.includes(id)) this.save.data.codex.enemies.push(id);
     if (!w.player.alive) {
       this.deathT -= dt;
       if (this.deathT <= 0) this.onDeath();
@@ -1112,6 +1163,7 @@ export class Game {
       this.controls.pitch = this.pendingPitch;
       this.pendingYaw = 0;
       this.pendingPitch = 0;
+      this.recorder.capture(this.controls);
       this.updateCombat(dt);
       this.controls.dodge = this.controls.ability1 = this.controls.ability2 = this.controls.flare = false;
       this.updateHints();
@@ -1232,14 +1284,9 @@ export class Game {
     // Ink print (style A) wherever light is absent: menus print on paper, the
     // dead fade to ink, and the Hush drowns the palette.
     const menu = !run && this.state !== 'warp';
-    let ink = 0;
-    let paper = 0;
     // (no paper-white negative: the user wants style A's accents, not its paper background)
-    if (menu) {
-      ink = 0;
-      paper = 0;
-    } else if (this.state === 'death' || (w && !w.player.alive)) ink = 1;
-    else ink = clamp((hush - 0.4) / 0.4, 0, 1);
+    const paper = 0;
+    const ink = menu ? 0 : this.state === 'death' || (w && !w.player.alive) ? 1 : clamp((hush - 0.4) / 0.4, 0, 1);
     fx.ink = damp(fx.ink, ink, this.state === 'death' ? 1.4 : 3, dt);
     fx.paper = damp(fx.paper, paper, 3, dt);
     const flare = w && w.player.flareT > 0 ? 1 : 0;
@@ -1270,7 +1317,7 @@ export class Game {
         _w.set(0, 0.35, -0.6).applyQuaternion(_q).add(_v);
         cam.position.copy(_w);
         cam.quaternion.copy(_q);
-        _q.setFromEuler(new THREE.Euler(0, 0, (pl.bank + pl.roll) * 0.3));
+        _q.setFromEuler(_eul.set(0, 0, (pl.bank + pl.roll) * 0.3));
         cam.quaternion.multiply(_q);
       } else {
         // Fixed chase camera: rigidly bolted to the ship's frame (no spring, no
@@ -1286,7 +1333,7 @@ export class Game {
         const rumble = b * st.shake * (st.reducedMotion ? 0 : 1);
         if (rumble > 0.01) {
           const t = this.loop.realTime;
-          _q.setFromEuler(new THREE.Euler(Math.sin(t * 37) * 0.0025 * rumble, Math.sin(t * 29 + 1) * 0.0025 * rumble, 0));
+          _q.setFromEuler(_eul.set(Math.sin(t * 37) * 0.0025 * rumble, Math.sin(t * 29 + 1) * 0.0025 * rumble, 0));
           cam.quaternion.multiply(_q);
         }
       }

@@ -55,6 +55,8 @@ export interface WorldEvents {
     kinetic: boolean;
   };
   block: { x: number; y: number; z: number };
+  /** a heavy hull crossed an HP threshold and shed plating (stage 1/2) */
+  breakup: { e: Enemy; x: number; y: number; z: number; stage: number };
   kill: { e: Enemy; x: number; y: number; z: number; chain: number; big: number };
   explosion: {
     x: number;
@@ -100,6 +102,8 @@ export interface ExplodeOpts {
 
 const _a = new Vector3();
 const _b = new Vector3();
+const _brk = new Vector3();
+const _brk2 = new Vector3();
 const _c = new Vector3();
 
 export interface RunStats {
@@ -123,6 +127,13 @@ export class World {
   player: Player;
   enemies: Enemy[] = [];
   private pool: Enemy[] = [];
+  /** per-world id counter (a module-wide one made seeded runs diverge between sessions) */
+  private nextEnemyId = 1;
+  /** alternating primary gun (left/right), per world so seeded runs stay deterministic */
+  gunSide = 1;
+  private chainSets: Set<number>[] = Array.from({ length: 8 }, () => new Set<number>());
+  private chainDepth = 0;
+  private colorCache = new Map<string, [number, number, number]>();
   proj = new Projectiles(4096);
   eproj = new Projectiles(3072);
   motes = new Motes(2048);
@@ -240,7 +251,7 @@ export class World {
 
   spawnEnemy(def: EnemyDef | string, x: number, y: number, z: number, elite: EliteMod | null = null): Enemy {
     const d = typeof def === 'string' ? ENEMY_BY_ID[def]! : def;
-    const e = (this.pool.pop() ?? new Enemy()).reset(d);
+    const e = (this.pool.pop() ?? new Enemy()).reset(d, this.nextEnemyId++);
     e.pos.set(x, y, z);
     e.prev.copy(e.pos);
     const heatHp = 1 + (this.heat >= 1 ? 0.15 : 0) + (this.heat >= 5 ? 0.3 : 0);
@@ -377,12 +388,15 @@ export class World {
     }
   }
 
-  nearestEnemy(x: number, y: number, z: number, maxR: number, exclude?: Set<number>): Enemy | null {
+  /** exclude: a set of ids, or a single id (allocation-free for the common case) */
+  nearestEnemy(x: number, y: number, z: number, maxR: number, exclude?: Set<number> | number): Enemy | null {
     let best: Enemy | null = null;
     let bd = maxR * maxR;
+    const exId = typeof exclude === 'number' ? exclude : -1;
+    const exSet = typeof exclude === 'object' ? exclude : null;
     for (const e of this.enemies) {
       if (!e.alive || !e.revealed || e.def.role === 'inert') continue;
-      if (exclude && exclude.has(e.id)) continue;
+      if (e.id === exId || (exSet && exSet.has(e.id))) continue;
       const d = e.pos.distanceToSquared(_a.set(x, y, z));
       if (d < bd) {
         bd = d;
@@ -494,6 +508,42 @@ export class World {
     }
     if (shatter) e.flash = 1.5;
     if (e.hp <= 0) this.killEnemy(e, dmg);
+    else if (e.heavy) this.checkBreakup(e);
+  }
+
+  /** Staged destruction: heavy hulls shed plating at 66% and 33% HP. */
+  private checkBreakup(e: Enemy): void {
+    const f = e.hp / e.maxHp;
+    const stage = f < 0.33 ? 2 : f < 0.66 ? 1 : 0;
+    if (stage <= e.breakStage) return;
+    e.breakStage = stage;
+    // shed point: a seeded spot on the hull surface
+    _brk.set(this.rng.next() - 0.5, this.rng.next() - 0.5, this.rng.next() - 0.5).normalize();
+    const rr = e.radius * 0.8;
+    const x = e.pos.x + _brk.x * rr;
+    const y = e.pos.y + _brk.y * rr;
+    const z = e.pos.z + _brk.z * rr;
+    if (e.def.faction !== 'hush') {
+      const n = 3 + stage * 2;
+      for (let i = 0; i < n; i++) {
+        const sp = 10 + this.rng.next() * 16;
+        _brk2.set(_brk.x + this.rng.next() - 0.5, _brk.y + this.rng.next() - 0.5, _brk.z + this.rng.next() - 0.5).normalize();
+        this.debris.spawn(
+          x, y, z,
+          e.vel.x * 0.5 + _brk2.x * sp,
+          e.vel.y * 0.5 + _brk2.y * sp,
+          e.vel.z * 0.5 + _brk2.z * sp,
+          (0.35 + this.rng.next() * 0.5) * Math.min(2, e.scale * 0.7),
+          2 + this.rng.next() * 2,
+          e.def.faction === 'choir' ? 1 : 0.8,
+          e.tint.x, e.tint.y, e.tint.z,
+          () => this.rng.next(),
+          0,
+        );
+      }
+    }
+    e.wobble = 1;
+    this.events.emit('breakup', { e, x, y, z, stage });
   }
 
   applyStatus(e: Enemy, kind: StatusKind, power: number, baseDmg = 10): void {
@@ -781,32 +831,40 @@ export class World {
     spreadCorrode = false,
   ): void {
     let cur = from;
-    const seen = new Set<number>([from.id]);
-    for (let j = 0; j < jumps; j++) {
-      const next = this.nearestEnemy(cur.pos.x, cur.pos.y, cur.pos.z, range, seen);
-      if (!next) break;
-      seen.add(next.id);
-      this.arcs.push({
-        ax: cur.pos.x,
-        ay: cur.pos.y,
-        az: cur.pos.z,
-        bx: next.pos.x,
-        by: next.pos.y,
-        bz: next.pos.z,
-        t: 0,
-        color: 0,
-        seed: this.rng.next(),
-      });
-      _a.copy(next.pos).sub(cur.pos).normalize();
-      if (spreadCorrode) {
-        this.applyStatus(next, 'corrode', 1);
-        this.reaction('r_static', next.pos.x, next.pos.y, next.pos.z);
+    // reuse one Set per nesting depth (a chain kill can trigger another chain)
+    const seen = this.chainSets[this.chainDepth] ?? new Set<number>();
+    this.chainDepth++;
+    seen.clear();
+    seen.add(from.id);
+    try {
+      for (let j = 0; j < jumps; j++) {
+        const next = this.nearestEnemy(cur.pos.x, cur.pos.y, cur.pos.z, range, seen);
+        if (!next) break;
+        seen.add(next.id);
+        this.arcs.push({
+          ax: cur.pos.x,
+          ay: cur.pos.y,
+          az: cur.pos.z,
+          bx: next.pos.x,
+          by: next.pos.y,
+          bz: next.pos.z,
+          t: 0,
+          color: 0,
+          seed: this.rng.next(),
+        });
+        _a.copy(next.pos).sub(cur.pos).normalize();
+        if (spreadCorrode) {
+          this.applyStatus(next, 'corrode', 1);
+          this.reaction('r_static', next.pos.x, next.pos.y, next.pos.z);
+        }
+        this.damageEnemy(next, dmg, src, next.pos.x, next.pos.y, next.pos.z, -_a.x, -_a.y, -_a.z, {
+          noStatus: true,
+          noTrigger: true,
+        });
+        cur = next;
       }
-      this.damageEnemy(next, dmg, src, next.pos.x, next.pos.y, next.pos.z, -_a.x, -_a.y, -_a.z, {
-        noStatus: true,
-        noTrigger: true,
-      });
-      cur = next;
+    } finally {
+      this.chainDepth--;
     }
   }
 
@@ -1200,7 +1258,7 @@ export class World {
         this.splitProjectile(i, hx, hy, hz);
       if (P.ricochet[i]! > 0) {
         P.ricochet[i]--;
-        const t = this.nearestEnemy(hx, hy, hz, 60, new Set([e.id]));
+        const t = this.nearestEnemy(hx, hy, hz, 60, e.id);
         if (t) {
           _a.set(t.pos.x - hx, t.pos.y - hy, t.pos.z - hz)
             .normalize()
@@ -1262,8 +1320,11 @@ export class World {
 
   colorOf(src: number): [number, number, number] {
     const w = src >= 0 ? this.weaponsByIndex[src] : null;
-    if (!w) return [1, 0.7, 0.4];
-    return hexToRgb(w.color);
+    if (!w) return DEFAULT_COLOR;
+    const hex = w.color;
+    let c = this.colorCache.get(hex);
+    if (!c) this.colorCache.set(hex, (c = hexToRgb(hex)));
+    return c;
   }
 
   private updateEnemyProjectiles(dt: number): void {
@@ -1585,6 +1646,8 @@ export class World {
     return n;
   }
 }
+
+const DEFAULT_COLOR: [number, number, number] = [1, 0.7, 0.4];
 
 /** Segment-sphere intersection. Returns t in [0,1] of first contact, or -1. */
 export function segSphere(

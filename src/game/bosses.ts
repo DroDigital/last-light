@@ -12,6 +12,8 @@ const _b = new Vector3();
 const _c = new Vector3();
 const _q = new Quaternion();
 const UP = new Vector3(0, 1, 0);
+const AX_Z = new Vector3(0, 0, 1);
+const _d = new Vector3();
 
 type Pattern = 'volley' | 'ring' | 'spiral' | 'sweep' | 'charge' | 'summon' | 'mines' | 'homing' | 'pull' | 'wall' | 'beams';
 
@@ -352,7 +354,7 @@ export class BossController {
       if (!p.alive) continue;
       _a.copy(p.offset);
       if (this.id === 'foreman' && p.partIndex < 4) {
-        _a.applyAxisAngle(new Vector3(0, 0, 1), this.spin * 2);
+        _a.applyAxisAngle(AX_Z, this.spin * 2);
         _a.applyQuaternion(core.quat);
       } else if (this.id === 'glasschoir' || this.id === 'lastdark') {
         _a.applyQuaternion(_q);
@@ -522,7 +524,7 @@ export class BossController {
           // a wall of bullets with one gap, flying at the player
           _b.copy(pl.pos).sub(core.pos).normalize();
           _c.crossVectors(_b, UP).normalize();
-          const up2 = new Vector3().crossVectors(_c, _b).normalize();
+          const up2 = _d.crossVectors(_c, _b).normalize();
           const gx = w.rng.int(-3, 3);
           const gy = w.rng.int(-2, 2);
           for (let ix = -5; ix <= 5; ix++)

@@ -21,7 +21,7 @@ const server = createServer((req, res) => {
 }).listen(0);
 const port = server.address().port;
 
-const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`); });
@@ -195,6 +195,36 @@ if (scenario === 'muzzle') {
   await ll(() => { const g = window.__ll; g.input.synthetic.delete('fire1'); g.input.synthetic.add('fire2'); });
   await page.waitForTimeout(900);
   await shot('muzzle2');
+}
+if (scenario === 'music') {
+  const probe = (tag) => ll((tag) => { const g = window.__ll; const st = g.audio.soundtrack; const tr = st && st.current; return { tag, state: g.state, cue: st && st.cue, title: st && st.title, active: st && st.active, t: tr ? +tr.el.currentTime.toFixed(2) : null, paused: tr ? tr.el.paused : null, ready: tr ? tr.el.readyState : null, ctx: g.audio.ctx && g.audio.ctx.state }; }, tag).then((r) => console.log(JSON.stringify(r)));
+  await page.mouse.click(640, 360); await page.waitForTimeout(2500); await probe('title');
+  await ll(() => window.__ll.startRun({ seed: 'MUSIC' })); await page.waitForTimeout(3500); await probe('map');
+  await ll(() => window.__ll.chooseNode(window.__ll.reachable()[0].id)); await page.waitForTimeout(3000); await probe('combat');
+  await ll(() => window.__ll.openMap()); await page.waitForTimeout(3000); await probe('back-to-map');
+  await ll(() => window.__ll.startEncounter('boss', 0)); await page.waitForTimeout(1000); await probe('boss-silence'); await page.waitForTimeout(2500); await probe('boss');
+  await ll(() => { const g = window.__ll; g.settings.music = 'procedural'; g.applySettings(); }); await page.waitForTimeout(2000); await probe('procedural');
+  await ll(() => { const g = window.__ll; g.settings.music = 'recorded'; g.applySettings(); }); await page.waitForTimeout(2000); await probe('recorded-again');
+}
+if (scenario === 'breakup') {
+  await ll(() => window.__ll.startRun({ seed: 'BREAK' }));
+  await page.waitForTimeout(2500);
+  await ll(() => window.__ll.startEncounter('combat', 7));
+  await page.waitForTimeout(1500);
+  await ll(() => { const w = window.__ll.world; for (const e of w.enemies) w.killEnemy(e, 0); const p = w.player.pos; const f = w.player.forward(w.player.pos.clone());
+    const h = w.spawnEnemy('hauler', p.x + f.x * 24, p.y + f.y * 24 + 2, p.z + f.z * 24); h.spawnT = 0; h.speedMul = 0; h.fireMul = 0; h.def = { ...h.def, speed: 0, fire: undefined }; window.__h = h; });
+  await ll(() => { window.__ll.director.update = () => {}; });
+  const dmg = async (frac, name) => { await ll((fr) => { const h = window.__h; const w = window.__ll.world; w.damageEnemy(h, h.maxHp * fr, -1, h.pos.x, h.pos.y, h.pos.z, 0, 0, 1, { noTrigger: true, noStatus: true, forceCrit: false }); }, frac); await page.waitForTimeout(140); await shot(name); };
+  await page.waitForTimeout(600); await shot('b0-intact');
+  console.log(JSON.stringify(await ll(() => { const h = window.__h, w = window.__ll.world; return { h: h.pos, alive: h.alive, hp: h.hp, max: h.maxHp, p: w.player.pos, n: w.enemies.length, st: window.__ll.state }; })));
+  await dmg(0.45, 'b1-breach');
+  await page.waitForTimeout(800); await shot('b1-venting');
+  console.log(JSON.stringify(await ll(() => { const h = window.__h; return { h: h.pos, alive: h.alive, hp: h.hp, bs: h.breakStage }; })));
+  await dmg(0.35, 'b2-critical');
+  await page.waitForTimeout(800); await shot('b2-venting');
+  await ll(() => { const h = window.__h; window.__ll.world.killEnemy(h, 0); });
+  await page.waitForTimeout(120); await shot('b3-kill');
+  await page.waitForTimeout(250); await shot('b4-secondaries');
 }
 if (scenario === 'stress') {
   await ll(() => window.__ll.startRun({ seed: 'STRESS' }));

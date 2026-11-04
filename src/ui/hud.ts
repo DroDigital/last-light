@@ -21,6 +21,8 @@ export class Hud {
   private lastLight = 0;
   private miniMap = false;
   private t = 0;
+  private bracketPool: { e: import('../game/entities').Enemy; d: number }[] = [];
+  private bracketList: { e: import('../game/entities').Enemy; d: number }[] = [];
 
   constructor(private g: Game) {
     this.canvas = document.getElementById('hud2d') as HTMLCanvasElement;
@@ -245,12 +247,17 @@ export class Hud {
     c.fillStyle = 'rgba(200,255,244,0.95)';
     c.fillRect(a.x - 1.5, a.y - 1.5, 3, 3);
     // Swiss target brackets: the aim target plus the nearest few on-screen threats
-    const brackets: { e: import('../game/entities').Enemy; d: number }[] = [];
+    // pooled candidate records (this runs every frame over every enemy)
+    const brackets = this.bracketList;
+    brackets.length = 0;
     for (const e of w.enemies) {
       if (!e.alive || !e.revealed || e.def.role === 'inert' || e.def.role === 'part') continue;
-      const d = e.pos.distanceToSquared(pl.pos);
-      if (e.id === pl.aimTarget) brackets.unshift({ e, d: -1 });
-      else if (d < 110 * 110) brackets.push({ e, d });
+      const d = e.id === pl.aimTarget ? -1 : e.pos.distanceToSquared(pl.pos);
+      if (d >= 110 * 110) continue;
+      const rec = this.bracketPool[brackets.length] ?? (this.bracketPool[brackets.length] = { e, d });
+      rec.e = e;
+      rec.d = d;
+      brackets.push(rec);
     }
     brackets.sort((x, y) => x.d - y.d);
     c.font = '800 11px Archivo';

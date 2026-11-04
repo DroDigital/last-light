@@ -4,6 +4,7 @@
  * so there is no download cost and infinite variety. Voice limiting per sound
  * id keeps busy fights clean. Spatial panning by screen position.
  */
+import { Soundtrack } from './soundtrack';
 export type SfxId =
   | 'kinetic' | 'heavy' | 'energy' | 'beam' | 'arc' | 'missile' | 'mine' | 'exotic' | 'drone' | 'light' | 'rail' | 'scatter'
   | 'hit' | 'crit' | 'block' | 'kill' | 'killBig' | 'explosion' | 'pickup' | 'graze' | 'hurt' | 'shieldBreak'
@@ -34,6 +35,8 @@ export class AudioEngine {
   private mono = false;
   volumes = { master: 0.8, music: 0.6, sfx: 0.8, ui: 0.7, ambience: 0.6 };
   music: Music | null = null;
+  /** recorded soundtrack; when active the procedural score stays silent */
+  soundtrack: Soundtrack | null = null;
   private boostNode: { src: AudioBufferSourceNode; gain: GainNode; filt: BiquadFilterNode } | null = null;
   private beamNode: { osc: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null = null;
   private beamT = 0;
@@ -75,6 +78,7 @@ export class AudioEngine {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.applyVolumes();
     this.music = new Music(this);
+    this.soundtrack = new Soundtrack(this);
     this.startAmbience();
   }
 
@@ -470,6 +474,7 @@ export class AudioEngine {
         this.beamNode = null;
       }
     }
+    this.soundtrack?.tick();
     this.music?.tick();
   }
 
@@ -518,6 +523,7 @@ export class Music {
   /** beat callback for visuals */
   onBeat: ((step: number, bar: number) => void) | null = null;
   silence = 0; // seconds of silence (boss reveal)
+  private muted = false;
 
   constructor(private a: AudioEngine) {
     const ctx = a.ctx!;
@@ -583,6 +589,16 @@ export class Music {
     this.intensity += (this.targetIntensity - this.intensity) * 0.02;
     const I = this.intensity;
     const t = ctx.currentTime;
+    if (this.a.soundtrack?.active) {
+      // the recorded soundtrack has the floor: hold the stems silent, schedule nothing
+      if (!this.muted) {
+        this.muted = true;
+        for (const g of Object.values(this.stems)) g.gain.setTargetAtTime(0, t, 0.4);
+      }
+      this.nextT = t + 0.05;
+      return;
+    }
+    this.muted = false;
     const silent = this.silence > t;
     const set = (g: GainNode, v: number) => g.gain.setTargetAtTime(silent ? 0 : v, t, 0.3);
     set(this.stems.pad, 0.5 - I * 0.1);

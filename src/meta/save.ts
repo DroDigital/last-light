@@ -28,6 +28,8 @@ export interface Settings {
   bindings: Bindings;
   cockpit: boolean;
   scanlines: boolean;
+  /** recorded soundtrack or the in-engine procedural score */
+  music: 'recorded' | 'procedural';
 }
 
 export interface RunRecord {
@@ -94,6 +96,7 @@ export function defaultSettings(): Settings {
     bindings: structuredClone(DEFAULT_BINDINGS),
     cockpit: false,
     scanlines: true,
+    music: 'recorded',
   };
 }
 

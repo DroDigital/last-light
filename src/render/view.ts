@@ -24,6 +24,19 @@ const _w = new THREE.Vector3();
 const _e = new THREE.Euler();
 const _col = new THREE.Color();
 const _halo: THREE.Vector3[] = [];
+// frame scratch (the view runs every frame: no allocations in sync paths)
+const _q2 = new THREE.Quaternion();
+const _ux = new THREE.Vector3();
+const _uy = new THREE.Vector3();
+const _pa = new THREE.Vector3();
+const _pb = new THREE.Vector3();
+const _rgbCache = new Map<string, [number, number, number]>();
+const WHITE: [number, number, number] = [1, 1, 1];
+function rgb(hex: string): [number, number, number] {
+  let c = _rgbCache.get(hex);
+  if (!c) _rgbCache.set(hex, (c = hexToRgb(hex)));
+  return c;
+}
 
 class InstancedKind {
   mesh: THREE.InstancedMesh;
@@ -135,6 +148,7 @@ export class View {
   trailColor = new THREE.Vector3(1, 0.85, 0.6);
   cockpit = false;
   afterimages: { m: THREE.Matrix4; t: number }[] = [];
+  private ghostPool: { m: THREE.Matrix4; t: number }[] = [];
   /** extra visual markers (derelict beacons etc.) drawn as rings */
   markers: { x: number; y: number; z: number; r: number; lit: number }[] = [];
   shipAccent = new THREE.Vector3(1, 0.9, 0.7);
@@ -281,7 +295,7 @@ export class View {
       _q.slerpQuaternions(e.prevQuat, e.quat, a);
       if (e.def.role === 'inert' || e.def.role === 'turret' || e.def.role === 'bomber') {
         _e.set(e.spin * 0.7, e.spin, 0);
-        _q.multiply(new THREE.Quaternion().setFromEuler(_e));
+        _q.multiply(_q2.setFromEuler(_e));
       }
       let sc = e.scale;
       if (e.spawnT > 0) sc *= 1 - e.spawnT / 0.6;
@@ -328,8 +342,7 @@ export class View {
     _q.slerpQuaternions(pl.prevQuat, pl.quat, a);
     // bank + barrel roll + recoil kick
     _e.set(0, 0, pl.bank + pl.roll);
-    const bankQ = new THREE.Quaternion().setFromEuler(_e);
-    _q.multiply(bankQ);
+    _q.multiply(_q2.setFromEuler(_e));
     _v.set(0, 0, 1).applyQuaternion(_q).multiplyScalar(pl.recoil * 0.35);
     this.ship.position.copy(_p).add(_v);
     this.ship.quaternion.copy(_q);
@@ -348,13 +361,18 @@ export class View {
     // afterimages during dodge
     this.trailTimer += frameDt;
     if (pl.dodgeT > 0 && Math.floor(time * 30) !== Math.floor((time - frameDt) * 30)) {
-      this.afterimages.push({ m: new THREE.Matrix4().compose(this.ship.position, this.ship.quaternion, _s.setScalar(scale)), t: 0.35 });
+      // recycle afterimage matrices instead of allocating one per ghost
+      const g = this.ghostPool.pop() ?? { m: new THREE.Matrix4(), t: 0 };
+      g.m.compose(this.ship.position, this.ship.quaternion, _s.setScalar(scale));
+      g.t = 0.35;
+      this.afterimages.push(g);
     }
     for (let i = this.afterimages.length - 1; i >= 0; i--) {
       const g = this.afterimages[i]!;
       g.t -= frameDt;
       if (g.t <= 0) {
         this.afterimages.splice(i, 1);
+        this.ghostPool.push(g);
         continue;
       }
       if (!this.cockpit) this.ghosts.push(g.m, this.shipAccent.x, this.shipAccent.y, this.shipAccent.z, 0.3, 1 - g.t / 0.35, 2, 0);
@@ -504,19 +522,19 @@ export class View {
       _q.setFromEuler(_e);
       _s.setScalar(1.3);
       _m.compose(_p, _q, _s);
-      const c = w.weaponsByIndex[d.src] ? hexToRgb(w.weaponsByIndex[d.src]!.color) : [1, 1, 1];
+      const c = w.weaponsByIndex[d.src] ? rgb(w.weaponsByIndex[d.src]!.color) : WHITE;
       this.drones.push(_m, c[0]!, c[1]!, c[2]!, 0, 0, 0.5, 0);
     }
     for (const sys of w.build.systems) {
       if (sys.def.behavior !== 'halo') continue;
       const n = haloPositions(w, sys, w.time, _halo);
-      const c = hexToRgb(sys.color);
+      const c = rgb(sys.color);
       for (let i = 0; i < n; i++) {
         const h = _halo[i]!;
         _v.copy(h).sub(w.player.pos);
         _q.setFromUnitVectors(_w.set(0, 0, 1), _v.normalize());
         _e.set(0, 0, time * 10);
-        _q.multiply(new THREE.Quaternion().setFromEuler(_e));
+        _q.multiply(_q2.setFromEuler(_e));
         _s.setScalar(sys.params.size * (sys.def.id === 'sentinel' ? 1.8 : 1.6));
         _m.compose(h, _q, _s);
         this.halos.push(_m, c[0], c[1], c[2], 0, 0, 1, 0);
@@ -658,10 +676,10 @@ export class View {
       const k = Math.min(1, (d - R * 0.82) / (R * 0.18));
       // the arena wall materializes as a magenta vector grid (style C)
       _v.copy(pl.pos).normalize();
-      const ux = new THREE.Vector3(0, 1, 0).cross(_v);
+      const ux = _ux.set(0, 1, 0).cross(_v);
       if (ux.lengthSq() < 0.01) ux.set(1, 0, 0);
       ux.normalize();
-      const uy = new THREE.Vector3().crossVectors(_v, ux).normalize();
+      const uy = _uy.crossVectors(_v, ux).normalize();
       const pulse = 0.75 + 0.25 * Math.sin(time * 5);
       const cr = 1 * k * pulse;
       const cg = 0.17 * k * pulse;
@@ -669,8 +687,8 @@ export class View {
       const N = 8;
       const step = 9;
       const onSphere = (a: number, b: number, out: THREE.Vector3) => out.copy(_v).multiplyScalar(R).addScaledVector(ux, a).addScaledVector(uy, b).setLength(R);
-      const pa = new THREE.Vector3();
-      const pb = new THREE.Vector3();
+      const pa = _pa;
+      const pb = _pb;
       for (let i = -N; i <= N; i++) {
         for (let j = -N; j < N; j++) {
           const fade = 1 - Math.max(Math.abs(i), Math.abs(j)) / N;
