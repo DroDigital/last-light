@@ -167,6 +167,35 @@ if (scenario === 'cam') {
   await page.waitForTimeout(800);
   await shot('chase');
 }
+if (scenario === 'drift') {
+  await ll(() => window.__ll.startRun({ seed: 'DRIFT' }));
+  await page.waitForTimeout(500);
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 3); g.godMode = true; g.director.spawnCd = 1e9; });
+  await page.mouse.move(1100, 150); // cursor resting far off-centre, pointer not locked
+  const sample = () => ll(() => {
+    const g = window.__ll; const pl = g.world.player; const cam = g.view.camera;
+    const local = cam.position.clone().sub(pl.pos).applyQuaternion(pl.quat.clone().invert());
+    const f = pl.forward(cam.position.clone());
+    return { fwd: f.toArray().map((x) => +x.toFixed(4)), camLocal: local.toArray().map((x) => +x.toFixed(2)) };
+  });
+  const a = await sample();
+  await page.waitForTimeout(8000);
+  const b = await sample();
+  await ll(() => { const g = window.__ll; g.input.synthetic.add('boost'); });
+  await page.waitForTimeout(2500);
+  const c = await sample();
+  console.log(JSON.stringify({ start: a, after8s: b, boosting: c }));
+}
+if (scenario === 'muzzle') {
+  await ll(() => window.__ll.startRun({ seed: 'MUZ' }));
+  await page.waitForTimeout(500);
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 3); g.godMode = true; g.director.spawnCd = 1e9; g.world.enemies.forEach((e) => (e.alive = false)); g.input.synthetic.add('fire1'); });
+  await page.waitForTimeout(1500);
+  await shot('muzzle');
+  await ll(() => { const g = window.__ll; g.input.synthetic.delete('fire1'); g.input.synthetic.add('fire2'); });
+  await page.waitForTimeout(900);
+  await shot('muzzle2');
+}
 if (scenario === 'stress') {
   await ll(() => window.__ll.startRun({ seed: 'STRESS' }));
   await page.waitForTimeout(3000);

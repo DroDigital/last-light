@@ -60,3 +60,27 @@ describe('regressions', () => {
     expect(inner).toBe(es.length * es.length);
   });
 });
+
+describe('hardpoints', () => {
+  it('primary shots spawn at the hull guns and secondaries at the nose', async () => {
+    const { HARDPOINTS } = await import('../src/game/weapons');
+    const { Quaternion, Vector3 } = await import('three');
+    for (const hull of HULLS) {
+      const b = new Build(hull, meta());
+      const w = new World('HP' + hull.id, b);
+      w.player.pos.set(10, -5, 30);
+      w.player.quat.setFromAxisAngle(new Vector3(0, 1, 0), 0.7);
+      w.player.prev.copy(w.player.pos);
+      const c = emptyControls();
+      c.fire1 = true;
+      w.update(c, 1 / 60);
+      expect(w.proj.n).toBeGreaterThan(0);
+      const inv = new Quaternion().copy(w.player.quat).invert();
+      const hp = HARDPOINTS[hull.id]!;
+      // undo the one tick of flight to recover the spawn point, in ship space
+      const p = new Vector3(w.proj.ox[0]!, w.proj.oy[0]!, w.proj.oz[0]!).sub(w.player.pos).applyQuaternion(inv);
+      expect(Math.abs(Math.abs(p.x) - hp.primary[0] * hp.scale)).toBeLessThan(0.6);
+      expect(Math.abs(p.z - hp.primary[2] * hp.scale)).toBeLessThan(1.2);
+    }
+  });
+});

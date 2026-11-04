@@ -84,6 +84,7 @@ export class Hud {
         </div></div>
       <div class="toasts" data-r="toasts"></div>
       <div data-r="hint"></div>
+      <div data-r="engage"></div>
       <div data-r="stitle"></div>`;
     this.refs = {};
     for (const el of this.el.querySelectorAll<HTMLElement>('[data-r]')) this.refs[el.dataset.r!] = el;
@@ -193,6 +194,13 @@ export class Hud {
     if (r.toasts!.dataset.k !== key) {
       r.toasts!.dataset.k = key;
       r.toasts!.innerHTML = j.toasts.slice(-3).map((t) => `<div class="toast" style="color:${t.color}">${esc(t.text)}</div>`).join('');
+    }
+    // the mouse only steers while locked: say so plainly instead of drifting
+    const needLock = g.state === 'combat' && !g.input.locked && g.input.lastDevice === 'kbm' && pl.alive;
+    const eng = needLock ? 'Click to take control' : '';
+    if (r.engage!.dataset.k !== eng) {
+      r.engage!.dataset.k = eng;
+      r.engage!.innerHTML = eng ? `<div class="engage">${eng}</div>` : '';
     }
     const hint = g.hints ?? '';
     if (r.hint!.dataset.k !== hint) {
