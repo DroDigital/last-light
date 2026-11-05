@@ -35,6 +35,7 @@ import { updateEnemyAI } from './ai';
 import { updateWeapons, updateWingWeapons, syncDrones, type RailFx } from './weapons';
 import type { BossController } from './bosses';
 import { hexToRgb } from '../core/math';
+import { EFFECTS } from './loot';
 
 export interface WorldEvents {
   shot: {
@@ -46,6 +47,8 @@ export interface WorldEvents {
     dz: number;
     w: WeaponInstance;
     secondary: boolean;
+    /** -1 port, +1 starboard, 0 center/system. */
+    side: number;
   };
   hit: {
     x: number;
@@ -313,6 +316,10 @@ export class World {
       w.slotIndex = i;
       return w;
     });
+    // Give each hardpoint its own source so impacts retain the side's status
+    // and critical modifiers for the full lifetime of a projectile.
+    this.params.push(this.build.getSideParams('port'), this.build.getSideParams('starboard'));
+    this.weaponsByIndex.push(this.build.primary, this.build.primary);
     const tp: WeaponParams = {
       ...this.build.primary.params,
       damage: 14 * this.build.ship.globalDamage,
@@ -327,6 +334,10 @@ export class World {
     this.params.push(tp);
     this.weaponsByIndex.push(null);
     syncDrones(this);
+  }
+
+  sideSrc(side: 'port' | 'starboard'): number {
+    return this.params.length - (side === 'port' ? 3 : 2);
   }
 
   get triggerSrc(): number {
@@ -1593,7 +1604,9 @@ export class World {
   colorOf(src: number): [number, number, number] {
     const w = src >= 0 ? this.weaponsByIndex[src] : null;
     if (!w) return DEFAULT_COLOR;
-    const hex = w.color;
+    const side = src === this.sideSrc('port') ? 'port' : src === this.sideSrc('starboard') ? 'starboard' : null;
+    const effect = side ? this.build.effects[side].find((id) => id !== null) : null;
+    const hex = (effect && EFFECTS.find((entry) => entry.id === effect)?.color) || w.color;
     let c = this.colorCache.get(hex);
     if (!c) this.colorCache.set(hex, (c = hexToRgb(hex)));
     return c;

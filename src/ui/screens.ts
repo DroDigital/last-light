@@ -8,12 +8,14 @@ import { ENEMIES } from '../data/enemies';
 import { AFFIXES, RARITY } from '../data/affixes';
 import { SUBTYPES } from '../data/subtypes';
 import { DROP_INFO, DROP_TABLE, DROP_KINDS, RARITY_DROP } from '../data/drops';
-import { NODE_INFO } from '../game/run';
+import { NODE_INFO, ROOM_TIER, isThreatRoom } from '../game/run';
 import { Input, ACTION_LABELS, type Action } from '../core/input';
 import { dailySeed } from '../core/rng';
 import { PALETTES } from '../data/palettes';
 import { fmtInt } from '../core/math';
 import { MAX_LEVEL } from '../game/build';
+import { EFFECTS } from '../game/loot';
+import type { StatMod } from '../game/types';
 import { mountPreviews } from './preview';
 
 const FAMILY_ICON: Record<string, string> = { kinetic: '⁂', energy: '✧', ordnance: '✹', exotic: '◎', drone: '⟡', light: '☼' };
@@ -153,7 +155,7 @@ export function showMap(g: Game): void {
     .map((n) => {
       const info = NODE_INFO[n.type];
       const cls = n.id === run.node ? 'cur' : reach.has(n.id) ? 'reach' : n.visited ? 'done' : '';
-      return `<div class="node-label ${cls}" ${reach.has(n.id) ? 'data-nav' : ''} data-act="node" data-arg="${n.id}" data-node="${n.id}"><span class="ic">${info.icon} ${String(n.row + 1).padStart(2, '0')}</span>${info.name}</div>`;
+      return `<div class="node-label ${cls}" style="--room-color:${ROOM_TIER[n.rarity].color}" ${reach.has(n.id) ? 'data-nav' : ''} data-act="node" data-arg="${n.id}" data-node="${n.id}"><span class="ic">${info.icon} ${String(n.row + 1).padStart(2, '0')}</span><span>${info.name}</span>${isThreatRoom(n.type) ? `<small>${n.rarity}</small>` : ''}</div>`;
     })
     .join('');
   const b = w.build;
@@ -172,14 +174,60 @@ export function showMap(g: Game): void {
         <div class="stat"><span>Upgrades</span><b>${[...b.upgrades.values()].reduce((a, c) => a + c, 0)}</b></div>
         <div class="stat"><span>Synergies</span><b>${[...b.synergies].map((s) => SYNERGIES.find((x) => x.id === s)?.name).join(', ') || '—'}</b></div>
         <div class="faint" style="margin-top:8px">Seed <span class="mono">${esc(run.seed)}</span>${run.daily ? ' · DAILY' : ''} · Heat ${run.heat}</div>
+        <button class="small" data-nav data-act="inventory">Loadout · ${b.inventory.length} salvage</button>
         <button class="small" data-nav data-act="pausemenu">Menu</button>
       </div>
-      <div class="side panel col" id="nodeinfo"><h3>Choose your next jump</h3><div class="dim">Pick a highlighted node. Each jump is a warp.</div>
-        ${Object.entries(NODE_INFO).filter(([k]) => k !== 'start').map(([, v]) => `<div class="row"><span style="width:20px;text-align:center">${v.icon}</span><span class="dim">${v.name}</span></div>`).join('')}
+      <div class="side panel col" id="nodeinfo"><h3>Chart your course</h3><div class="dim">Choose a highlighted destination. Higher-tier encounters hold more salvage and stronger, denser fleets.</div>
+        <div class="map-legend">${(['common', 'rare', 'epic', 'legendary', 'mythical'] as const).map((r) => `<span style="color:${ROOM_TIER[r].color}">◆ ${r}</span>`).join('')}</div>
+        <div class="faint">Drag empty space to orbit · scroll to zoom</div>
+        <div class="row map-controls"><button class="small" data-nav data-act="maporbit" data-arg="-1" aria-label="Rotate chart left">↶</button><button class="small" data-nav data-act="maporbit" data-arg="1" aria-label="Rotate chart right">↷</button><button class="small" data-nav data-act="mapzoom" data-arg="-1" aria-label="Zoom in">＋</button><button class="small" data-nav data-act="mapzoom" data-arg="1" aria-label="Zoom out">−</button><button class="small" data-nav data-act="mapreset">Reset</button></div>
       </div>
     </div>
     <div id="nodelabels">${labels}</div>`,
   );
+}
+
+/** Describe the actual rolled values so equipment can be compared before fitting it. */
+function equipmentMods(mods: StatMod[]): string {
+  return mods.map((m) => {
+    const value = m.mul !== undefined ? `${Math.round((m.mul - 1) * 100) >= 0 ? '+' : ''}${Math.round((m.mul - 1) * 100)}%` : `${(m.add ?? 0) >= 0 ? '+' : ''}${Number((m.add ?? 0).toFixed(2))}`;
+    return `${value} ${m.s.replace(/([A-Z])/g, ' $1').toLowerCase()}`;
+  }).join(' · ');
+}
+
+export function showInventory(g: Game, refresh = false): void {
+  const w = g.world!;
+  const b = w.build;
+  const target = g.effectTarget;
+  const slots = (['port', 'starboard', 'propulsion'] as const).map((slot) => {
+    const item = b.inventory.find((it) => it.id === b.equipment[slot]);
+    return `<div class="loadout-mounted"><span class="faint">${slot}</span><strong style="color:${item?.color ?? 'var(--paper-2)'}">${item ? esc(item.name) : 'Standard issue'}</strong>${item ? `<small>${esc(equipmentMods(item.mods))}</small>${item.trait ? `<small>${esc(item.trait.name)}: ${esc(item.trait.desc)}</small>` : ''}<button class="small" data-nav data-act="unequipsalvage" data-arg="${slot}">Remove</button>` : '<small>No component fitted</small>'}</div>`;
+  }).join('');
+  const effectSlots = (['port', 'starboard'] as const).map((side) => `<div class="loadout-side"><h3>${side} hardpoint</h3><div class="loadout-effect-slots">${([0, 1] as const).map((index) => {
+    const effect = EFFECTS.find((e) => e.id === b.effects[side][index]);
+    const selected = target.side === side && target.index === index;
+    return `<button class="small ${selected ? 'primary' : ''}" data-nav data-act="effecttarget" data-arg="${side}:${index}"><span class="faint">0${index + 1}</span> ${effect ? esc(effect.name) : 'Empty effect'}</button>`;
+  }).join('')}</div></div>`).join('');
+  const items = [...b.inventory].reverse().map((item) => {
+    const equipped = b.equipment[item.slot] === item.id;
+    const unlockedEffect = EFFECTS.find((effect) => effect.id === item.effectId);
+    return `<div class="item ${equipped ? 'owned' : ''}" style="--rc:${item.color}" data-nav data-act="equipsalvage" data-arg="${esc(item.id)}"><div class="ic">${item.slot === 'propulsion' ? '➤' : '✶'}</div><div class="grow"><div class="t">${esc(item.name)}</div><div class="d"><span style="color:${item.color}">${item.rarity}</span> · ${item.slot} · ${esc(equipmentMods(item.mods))}${item.trait ? `<br><b>${esc(item.trait.name)}:</b> ${esc(item.trait.desc)}` : ''}${unlockedEffect ? `<br>Effect discovered: ${esc(unlockedEffect.name)}` : ''}</div></div><div class="price">${equipped ? 'FITTED' : 'EQUIP'}</div></div>`;
+  }).join('');
+  const effects = EFFECTS.map((effect) => {
+    const installed = b.effects[target.side][target.index] === effect.id;
+    const unlocked = b.unlockedEffects.has(effect.id);
+    return `<div class="item ${installed ? 'owned' : !unlocked || w.player.light < effect.cost ? 'disabled' : ''}" style="--rc:${effect.color}" ${installed || !unlocked ? '' : `data-nav data-act="installeffect" data-arg="${esc(effect.id)}"`}><div class="ic">✧</div><div class="grow"><div class="t">${esc(effect.name)}</div><div class="d">${unlocked ? `${esc(effect.desc)} · ${esc(equipmentMods(effect.mods))}` : 'Discover this effect on salvaged equipment.'}</div></div><div class="price">${installed ? 'FITTED' : unlocked ? `${effect.cost} LIGHT` : 'UNDISCOVERED'}</div></div>`;
+  }).join('');
+  const html = `<div class="panel loadout-panel col">
+    <div class="loadout-header"><div><div class="faint mono">THE LANTERN / FIELD HANGAR</div><h1>Loadout</h1></div><div class="lightcount">${fmtInt(w.player.light)} Light</div></div>
+    <div class="loadout-mounted-grid">${slots}</div>
+    <div class="loadout-body">
+      <section class="loadout-column"><h3>Salvaged components <span class="faint">${b.inventory.length}</span></h3><div class="dim">Equip a component to replace the one in its slot. All salvage stays in your hold.</div><div class="scroll loadout-list">${items || '<p class="dim">Clear an encounter to recover components.</p>'}</div></section>
+      <section class="loadout-column"><h3>Weapon effects</h3><div class="dim">Choose one of four sockets, then fit a discovered effect. Fitting costs Light; replacing an effect costs its listed price.</div>${effectSlots}<div class="row spread"><div class="label">Fitting: ${target.side} / 0${target.index + 1}</div>${b.effects[target.side][target.index] ? '<button class="small" data-nav data-act="removeeffect">Remove · free</button>' : ''}</div><div class="scroll loadout-list">${effects}</div></section>
+    </div><button class="primary loadout-return" data-nav data-autofocus data-act="closeinventory" data-back>${g.inventoryAfter === 'endless' ? 'Next wave' : 'Return to chart'}</button>
+  </div>`;
+  if (refresh) g.ui.refresh('inventory', html);
+  else g.ui.show('inventory', html);
 }
 
 export function showDraft(g: Game): void {
@@ -470,6 +518,9 @@ export function registerActions(g: Game): void {
   const ui = g.ui;
   let settingsReturn: () => void = () => showTitle(g);
   let codexReturn: () => void = () => showTitle(g);
+  ui.on('maporbit', (v) => { g.mapYaw = Math.max(-0.8, Math.min(0.8, g.mapYaw + Number(v) * 0.2)); });
+  ui.on('mapzoom', (v) => { g.mapZoom = Math.max(0.75, Math.min(1.45, g.mapZoom + Number(v) * 0.12)); });
+  ui.on('mapreset', () => { g.mapYaw = 0; g.mapPitch = 1.03; g.mapZoom = 1; });
   ui.on('hearth', () => g.goHearth());
   ui.on('title', () => g.goTitle());
   ui.on('quickdive', () => g.startRun());
@@ -592,6 +643,19 @@ export function registerActions(g: Game): void {
     } else g.audio.play('uiDeny');
   });
   ui.on('node', (a) => g.chooseNode(Number(a)));
+  ui.on('inventory', () => g.openInventory());
+  ui.on('closeinventory', () => g.closeInventory());
+  ui.on('equipsalvage', (a) => g.equipSalvage(a));
+  ui.on('unequipsalvage', (a) => g.unequipSalvage(a));
+  ui.on('effecttarget', (a) => {
+    const [side, index] = a.split(':');
+    if ((side === 'port' || side === 'starboard') && (index === '0' || index === '1')) {
+      g.effectTarget = { side, index: Number(index) as 0 | 1 };
+      showInventory(g, true);
+    }
+  });
+  ui.on('installeffect', (a) => g.installSalvageEffect(a));
+  ui.on('removeeffect', () => g.removeSalvageEffect());
   ui.on('pausemenu', () => {
     g.setState('pause');
     showPause(g);

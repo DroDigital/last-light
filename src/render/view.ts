@@ -599,7 +599,11 @@ export class View {
       this.telegraphs.seg(x, y, z, bx, by, bz, t.x, t.y, t.z, 1);
       // halo goes into the HDR scene: bloom + dither make it part of the painting
       const h = kind === 5 ? 1.6 : 1.1;
-      if (k > 0.002) this.streaks.push(x, y, z, bx, by, bz, 0.5 * h, 1.6 * h, 2.4 * h, sz * 1.6, sz * 0.6);
+      const src = P.src[i]!;
+      const side = src === w.sideSrc('port') ? 'port' : src === w.sideSrc('starboard') ? 'starboard' : null;
+      const hasEffect = side && w.build.effects[side].some(Boolean);
+      const col = hasEffect ? w.colorOf(src) : null;
+      if (k > 0.002) this.streaks.push(x, y, z, bx, by, bz, col ? col[0] * h * 2.4 : 0.5 * h, col ? col[1] * h * 2.4 : 1.6 * h, col ? col[2] * h * 2.4 : 2.4 * h, sz * 1.6, sz * 0.6);
       if (kind === 5) this.bullets.push(x, y, z, sz * 0.8, 0, 0, 0, 5);
     }
     const E = w.eproj;

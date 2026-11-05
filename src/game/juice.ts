@@ -8,6 +8,7 @@ import { fxRng } from '../core/rng';
 import { clamp, damp, noise1, hexToRgb } from '../core/math';
 import type { Settings } from '../meta/save';
 import { DROP_INFO } from '../data/drops';
+import { EFFECTS } from './loot';
 
 const _v = new Vector3();
 const _w = new Vector3();
@@ -111,12 +112,38 @@ export class Juice {
         lights.spawn(s.x, s.y, s.z, c[0] * 5, c[1] * 5, c[2] * 5, 7, 0.05);
         for (let i = 0; i < 3; i++)
           P().spawn(s.x, s.y, s.z, s.dx * 40 + (r() - 0.5) * 20, s.dy * 40 + (r() - 0.5) * 20, s.dz * 40 + (r() - 0.5) * 20, 0.1, c[0] * 4, c[1] * 4, c[2] * 4, 2.5, 0.5, 6);
+        // Each installed hardpoint effect has its own short-lived signature.
+        // Keep the flashes local to the muzzle so the aiming space stays clear.
+        const ids = s.side ? w.build.effects[s.side < 0 ? 'port' : 'starboard'] : [];
+        ids.forEach((id, slot) => {
+          const effect = EFFECTS.find((entry) => entry.id === id);
+          if (!effect) return;
+          const tint = hexToRgb(effect.color);
+          const n = id === 'ion' ? 7 : id === 'prism' ? 5 : 4;
+          const spread = id === 'frost' ? 28 : id === 'void' ? 14 : 22;
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + slot * 0.6;
+            const drift = id === 'void' ? -10 : id === 'ember' ? 24 : 38;
+            P().spawn(s.x, s.y, s.z,
+              s.dx * drift + Math.cos(a) * spread,
+              s.dy * drift + Math.sin(a) * spread,
+              s.dz * drift + (r() - 0.5) * spread,
+              id === 'ember' ? 0.32 : 0.22,
+              tint[0] * 4, tint[1] * 4, tint[2] * 4,
+              id === 'frost' ? 2.8 : 1.8, 0.2, 4);
+          }
+          if (id === 'prism' || id === 'radiant' || id === 'void')
+            this.view.addRing(s.x, s.y, s.z, 0.3 + slot * 0.3, id === 'void' ? 3 : 5, 0.18, tint[0], tint[1], tint[2]);
+          lights.spawn(s.x, s.y, s.z, tint[0] * 4, tint[1] * 4, tint[2] * 4, 5, 0.06);
+        });
         // energy ejecta
         if (s.w.def.family === 'kinetic' && r() < 0.5) {
           const pl = w.player;
           pl.right(_w);
           P().spawn(s.x, s.y, s.z, _w.x * 15 + (r() - 0.5) * 5, _w.y * 15 + 6, _w.z * 15, 0.5, 2, 1.4, 0.6, 1.5, 1, 2, 10);
         }
+        // Beams already use a sustained loop and beamTick feedback.
+        if (s.w.def.behavior === 'beam') return;
         const id = s.w.def.sfx;
         // rising pitch on sustained fire
         const sustain = Math.min(1, s.w.shots / 40) * 0.15;
