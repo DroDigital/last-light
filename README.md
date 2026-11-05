@@ -71,6 +71,8 @@ A second player drops in during any fight by pressing **Start** on a spare contr
 
 ## Modes
 
+- **Stellar chart and salvage:** Between encounters, drag the chart to orbit and scroll to zoom; the chart buttons also work with keyboard and gamepad navigation. Each highlighted route leads to a different destination. Combat rooms range from common to mythical: higher tiers bring stronger, denser fleets and higher-tier salvage. The final approach converges on the sector boss.
+- **Loadout:** Open Loadout from the chart to equip recovered port, starboard, and propulsion components. Each hardpoint has two effect sockets. Some salvaged weapon components unlock effects; fitting or replacing an effect costs the displayed amount of Light, while removing one is free. Component rolls and the loadout last for the current run.
 - **Run:** Act I is five sectors. Beating the Last Dark offers **Act II, the Deep**: five harder sectors, each with a live hazard and a four-phase boss. You can also go Endless or return home.
 - **Endless** (title menu): waves through all ten environments, a boss every fifth wave, a draft after every wave, and a recorded best wave.
 - **Daily Dive:** one seeded run per UTC day.

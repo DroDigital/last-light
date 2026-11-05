@@ -8,13 +8,28 @@ import type { World } from './world';
 import { Vector3 } from 'three';
 import { BossController } from './bosses';
 
+export const ROOM_RARITIES = ['common', 'rare', 'epic', 'legendary', 'mythical'] as const;
+export type RoomRarity = (typeof ROOM_RARITIES)[number];
+export const ROOM_TIER: Record<RoomRarity, { color: string; budget: number; strength: number; damage: number; tokens: number }> = {
+  common: { color: '#b8c5d1', budget: 1, strength: 1, damage: 1, tokens: 0 },
+  rare: { color: '#66cfff', budget: 1.16, strength: 1.08, damage: 1.04, tokens: 1 },
+  epic: { color: '#c58cff', budget: 1.34, strength: 1.16, damage: 1.08, tokens: 2 },
+  legendary: { color: '#ffbe69', budget: 1.55, strength: 1.25, damage: 1.13, tokens: 3 },
+  mythical: { color: '#ff769e', budget: 1.8, strength: 1.35, damage: 1.18, tokens: 4 },
+};
+
 export type NodeType = 'combat' | 'elite' | 'derelict' | 'shop' | 'event' | 'forge' | 'rest' | 'rift' | 'boss' | 'start';
+
+export function isThreatRoom(type: NodeType): boolean {
+  return type === 'combat' || type === 'elite' || type === 'derelict' || type === 'rift';
+}
 
 export interface MapNode {
   id: number;
   row: number;
   col: number;
   type: NodeType;
+  rarity: RoomRarity;
   links: number[];
   x: number;
   y: number;
@@ -63,7 +78,7 @@ export function generateMap(seed: number, sector: number, opts: { rifts: boolean
   const late: [NodeType, number][] = [['combat', 3], ['elite', 2], ['rest', rest], ['shop', 1.4], ['forge', 1], ['derelict', 1], ...rift];
   const weights: Record<number, [NodeType, number][]> = { 0: [['combat', 1]], 1: early, 2: early, 3: mid, 4: mid, 5: late, 6: late };
   for (let r = 0; r < rowsN; r++) {
-    const count = r === rowsN - 1 ? 1 : r === 0 ? 2 + rng.int(0, 1) : 2 + rng.int(0, 2);
+    const count = r === rowsN - 1 ? 1 : r === 0 ? 3 : 3 + rng.int(0, 1);
     const row: MapNode[] = [];
     for (let c = 0; c < count; c++) {
       let type: NodeType;
@@ -74,7 +89,8 @@ export function generateMap(seed: number, sector: number, opts: { rifts: boolean
       }
       const spread = count > 1 ? (c / (count - 1) - 0.5) * 2 : 0;
       const n: MapNode = {
-        id: id++, row: r, col: c, type, links: [],
+        id: id++, row: r, col: c, type,
+        rarity: r === 0 ? 'common' : ROOM_RARITIES[rng.weighted([54, 25, 13, 6, 2])]!, links: [],
         x: spread * 34 + rng.range(-4, 4), y: rng.range(-8, 8), z: -r * ROW_Z + 40,
         visited: false, seed: Math.floor(rng.next() * 1e9),
       };
@@ -95,14 +111,16 @@ export function generateMap(seed: number, sector: number, opts: { rifts: boolean
   ensure('shop', [2, 3, 4]);
   ensure('rest', [5, 6]);
   ensure('elite', [3, 4, 5]);
-  // links: each node connects to the nearest 1-2 nodes in the next row; every node gets an incoming link.
+  for (const node of nodes) if (!isThreatRoom(node.type)) node.rarity = 'common';
+  // Each node offers at least two routes until the boss; every node has an incoming link.
   for (let r = 0; r < rowsN - 1; r++) {
     const a = rowNodes[r]!;
     const b = rowNodes[r + 1]!;
     for (const n of a) {
       const sorted = [...b].sort((p, q) => Math.abs(p.x - n.x) - Math.abs(q.x - n.x));
       n.links.push(sorted[0]!.id);
-      if (sorted[1] && rng.chance(0.55)) n.links.push(sorted[1].id);
+      if (sorted[1]) n.links.push(sorted[1].id);
+      if (sorted[2] && rng.chance(0.3)) n.links.push(sorted[2].id);
     }
     for (const m of b) {
       if (!a.some((n) => n.links.includes(m.id))) {
@@ -145,6 +163,7 @@ export class Director {
   endlessWave = 0;
   private calm = 0;
   intensity = 0;
+  private density = 1;
   private straggleT = 0;
   private lastKills = 0;
   private noKillT = 0;
@@ -153,7 +172,7 @@ export class Director {
    * @param depth row of the sector map (0 = first jump). Fights get tougher row by
    * row, so the long sectors keep pace with the build.
    */
-  constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number, depth = 0) {
+  constructor(kind: EncounterKind, sectorIdx: number, seed: number, private w: World, heat: number, depth = 0, rarity: RoomRarity = 'common') {
     this.kind = kind;
     this.sectorIdx = sectorIdx;
     this.sector = SECTORS[Math.min(sectorIdx, SECTORS.length - 1)]!;
@@ -161,6 +180,9 @@ export class Director {
     const depthK = 1 + depth * BAL.perRow;
     const base = (BAL.budgetBase + sectorIdx * BAL.budgetPerSector) * depthK;
     const heatMul = 1 + (heat >= 9 ? 0.25 : 0);
+    // Tutorial and bosses retain their authored pacing.
+    const tier = ROOM_TIER[kind === 'tutorial' || kind === 'boss' ? 'common' : rarity];
+    this.density = 1 + tier.tokens * 0.12;
     this.budget = Math.round(
       {
         combat: base,
@@ -171,16 +193,16 @@ export class Director {
         boss: 0,
         endless: base * 1.2,
         ambush: base * 0.6,
-      }[kind] * heatMul,
+      }[kind] * heatMul * tier.budget,
     );
     this.elitesLeft = kind === 'elite' ? 2 + Math.floor(sectorIdx / 2) : kind === 'rift' ? 4 : 0;
     if (w.build.flags.has('hunted')) this.elitesLeft += 1;
     if (heat >= 3 && kind === 'combat') this.elitesLeft += 1;
-    w.maxTokens = BAL.tokensBase + Math.floor(sectorIdx * BAL.tokensPerSector) + (kind === 'rift' ? 2 : 0);
+    w.maxTokens = BAL.tokensBase + Math.floor(sectorIdx * BAL.tokensPerSector) + (kind === 'rift' ? 2 : 0) + tier.tokens;
     // bosses have their own HP multiplier and sector growth; row depth only scales the rank and file
-    w.sectorHpScale = (1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0)) * (kind === 'boss' ? 1 : depthK);
+    w.sectorHpScale = (1 + sectorIdx * BAL.sectorHp + (kind === 'endless' ? 0.3 : 0)) * (kind === 'boss' ? 1 : depthK) * tier.strength;
     w.sectorIdx = sectorIdx;
-    w.sectorDmgScale = (1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0)) * (1 + depth * BAL.perRow * 0.5);
+    w.sectorDmgScale = (1 + sectorIdx * BAL.enemyDamagePerSector + (kind === 'endless' ? 0.15 : 0)) * (1 + depth * BAL.perRow * 0.5) * tier.damage;
     this.dress();
     // the Horizon Eater IS the gravity well; don't stack a second one under it
     if (this.sector.hazard && kind !== 'tutorial' && !(kind === 'boss' && this.sector.hazard === 'gravity')) {
@@ -240,7 +262,7 @@ export class Director {
     const health = w.player.hull / w.player.maxHull;
     const hk = health < 0.3 ? 0.65 : health < 0.55 ? 0.85 : 1;
     this.intensity = k;
-    return (BAL.liveThreatBase + this.sectorIdx * BAL.liveThreatPerSector) * k * power * hk * (this.kind === 'tutorial' ? 0.5 : 1);
+    return (BAL.liveThreatBase + this.sectorIdx * BAL.liveThreatPerSector) * k * power * hk * (this.kind === 'tutorial' ? 0.5 : 1) * this.density;
   }
 
   liveThreat(): number {

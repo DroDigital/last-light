@@ -784,9 +784,17 @@ export class Hud {
     for (const el of document.querySelectorAll<HTMLElement>('[data-node]')) {
       const n = run.map.nodes[Number(el.dataset.node)]!;
       const p = this.project(n.x, n.y + 5, n.z);
+      // Keep the next jump readable and give two rows of route context. Beyond
+      // that, perspective crowds the labels; the 3D landmarks remain visible.
+      const nextRow = run.node < 0 ? 0 : run.map.nodes[run.node]!.row + 1;
+      const ahead = n.row - nextRow;
+      const current = n.id === run.node;
+      const visible = current || (ahead >= 0 && ahead <= 2);
+      el.classList.toggle('map-preview', ahead === 1 && !current);
+      el.classList.toggle('map-distant', ahead === 2 && !current);
       el.style.left = `${p.x}px`;
       el.style.top = `${p.y}px`;
-      el.style.display = p.behind ? 'none' : 'block';
+      el.style.display = p.behind || !visible ? 'none' : 'flex';
     }
   }
 

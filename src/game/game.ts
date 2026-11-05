@@ -15,9 +15,10 @@ import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES } from '../data/upgrades';
 import { SYNERGIES } from '../data/upgrades';
 import { Build, cardRarity, cardTitle, type DraftCard } from './build';
+import { generateLoot } from './loot';
 import { World } from './world';
 import { emptyControls, type Controls } from './player';
-import { Director, generateMap, embersFor, priceFor, type EncounterKind, type MapNode, type NodeType, type SectorMap } from './run';
+import { Director, generateMap, embersFor, priceFor, ROOM_TIER, type EncounterKind, type MapNode, type NodeType, type SectorMap } from './run';
 import type { MeshKind } from '../render/meshes';
 import { Juice } from './juice';
 import { aim } from './weapons';
@@ -27,7 +28,7 @@ import { ReplayRecorder } from './replay';
 import { installDitherTextures, setUiTint } from '../ui/dither';
 
 export type State =
-  | 'boot' | 'title' | 'hearth' | 'map' | 'combat' | 'draft' | 'shop' | 'event' | 'forge' | 'rest' | 'pause'
+  | 'boot' | 'title' | 'hearth' | 'map' | 'combat' | 'draft' | 'shop' | 'event' | 'forge' | 'rest' | 'inventory' | 'pause'
   | 'death' | 'victory' | 'warp' | 'codex' | 'settings' | 'credits';
 
 export interface ShopItem {
@@ -190,6 +191,25 @@ export class Game {
     this.input.onPadPress = unlock;
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
+    // Orbit only from empty map space: node selection and panels retain pointer control.
+    let drag: { x: number; y: number; id: number } | null = null;
+    window.addEventListener('pointerdown', (e) => {
+      if (this.state !== 'map' || e.button !== 0 || (e.target as Element).closest('button, [data-node], .side')) return;
+      drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!drag || drag.id !== e.pointerId || this.state !== 'map') return;
+      this.mapYaw = clamp(this.mapYaw - (e.clientX - drag.x) * 0.006, -0.8, 0.8);
+      this.mapPitch = clamp(this.mapPitch + (e.clientY - drag.y) * 0.004, 0.65, 1.28);
+      drag.x = e.clientX; drag.y = e.clientY;
+    });
+    window.addEventListener('pointerup', () => { drag = null; });
+    window.addEventListener('pointercancel', () => { drag = null; });
+    window.addEventListener('wheel', (e) => {
+      if (this.state !== 'map' || (e.target as Element).closest('.side')) return;
+      this.mapZoom = clamp(this.mapZoom + e.deltaY * 0.001, 0.75, 1.45);
+      e.preventDefault();
+    }, { passive: false });
     this.canvas.addEventListener('click', () => {
       if (this.state === 'combat') this.input.requestLock();
     });
@@ -311,6 +331,7 @@ export class Game {
       case 'event':
       case 'forge':
       case 'rest':
+      case 'inventory':
         st.play('explore', { fade: 2.5 });
         st.prefetch('combat');
         break;
@@ -488,6 +509,9 @@ export class Game {
   }
 
   mapFocus = -1;
+  mapYaw = 0;
+  mapPitch = 1.03;
+  mapZoom = 1;
   private mapFocusZ: number | null = null;
 
   reachable(): MapNode[] {
@@ -586,7 +610,7 @@ export class Game {
     this.camPos.set(0, 3, 82);
     // map row inside a sector; in Endless the wave number drives the same scaling
     const depth = run.endless ? run.endlessWaves : run.node >= 0 ? run.map.nodes[run.node]!.row : 0;
-    this.director = new Director(kind, run.sector, seed, w, run.heat, depth);
+    this.director = new Director(kind, run.sector, seed, w, run.heat, depth, run.endless ? 'common' : run.map.nodes[run.node]?.rarity ?? 'common');
     this.director.endlessWave = run.endlessWaves;
     run.encounters++;
     this.recorder.reset();
@@ -646,6 +670,12 @@ export class Game {
     // vacuum up remaining drops and motes; banked drops become a queue of extra drafts
     for (let i = w.drops.length - 1; i >= 0; i--) w.collectDrop(i);
     const after = run.endless ? 'endless' : dir.kind === 'boss' ? 'sector' : 'map';
+    // Every cleared encounter yields a component. Higher-risk chart routes
+    // pay better salvage, while bosses always yield legendary equipment.
+    const roomRarity = dir.kind === 'boss' ? 'legendary' : run.endless ? 'common' : (run.map.nodes[run.node]?.rarity ?? 'common');
+    const salvage = generateLoot(run.rng.fork(`salvage:${run.encounters}:${run.node}`), roomRarity);
+    w.build.addLoot(salvage);
+    this.juice.toast(`SALVAGED: ${salvage.name.toUpperCase()}`, salvage.color);
     const q: NonNullable<RunState['draftCtx']>[] = [];
     for (let i = 0; i < w.bank.prism; i++) q.push({ minRarity: 'rare', after, source: 'prism' });
     for (let i = 0; i < w.bank.cache; i++) q.push({ weaponsOnly: true, after, source: 'cache' });
@@ -695,9 +725,12 @@ export class Game {
       this.openDraft({ minRarity: 'rare', after: 'sector' });
       return;
     }
-    if (kind === 'elite') this.openDraft({ minRarity: 'rare', artifacts: true, after: 'map' });
-    else if (kind === 'rift') this.openDraft({ minRarity: 'legendary', artifacts: true, curse: true, after: 'map' });
-    else this.openDraft({ after: 'map' });
+    // Before high-tier upgrade cards are unlocked, a legendary minimum would
+    // empty the draft pool. The component still retains the room's tier.
+    const highDraft = w.build.meta.tier2 && (roomRarity === 'legendary' || roomRarity === 'mythical');
+    if (kind === 'elite') this.openDraft({ minRarity: highDraft ? 'legendary' : 'rare', artifacts: true, after: 'map' });
+    else if (kind === 'rift') this.openDraft({ minRarity: w.build.meta.tier2 ? 'legendary' : 'rare', artifacts: true, curse: true, after: 'map' });
+    else this.openDraft({ minRarity: highDraft ? 'legendary' : roomRarity !== 'common' ? 'rare' : undefined, artifacts: roomRarity !== 'common', after: 'map' });
   }
 
   openDraft(ctx: NonNullable<RunState['draftCtx']>): void {
@@ -789,9 +822,67 @@ export class Game {
       this.openDraft(next);
       return;
     }
-    if (run.draftCtx?.after === 'endless') this.nextEndlessWave();
+    if (run.draftCtx?.after === 'endless') this.openInventory('endless');
     else if (run.draftCtx?.after === 'sector') this.enterSector(run.sector + 1);
     else this.openMap();
+  }
+
+  /** The hangar is available between encounters; Endless returns to its next wave. */
+  inventoryAfter: 'map' | 'endless' = 'map';
+  effectTarget: { side: 'port' | 'starboard'; index: 0 | 1 } = { side: 'port', index: 0 };
+
+  openInventory(after: 'map' | 'endless' = 'map'): void {
+    if (!this.world || !this.run) return;
+    this.inventoryAfter = after;
+    this.setState('inventory');
+    S.showInventory(this);
+  }
+
+  closeInventory(): void {
+    if (this.inventoryAfter === 'endless') this.nextEndlessWave();
+    else this.openMap();
+  }
+
+  equipSalvage(id: string): void {
+    if (!this.world?.build.equipLoot(id)) {
+      this.audio.play('uiDeny');
+      return;
+    }
+    this.world.refreshParams();
+    S.showInventory(this, true);
+  }
+
+  unequipSalvage(slot: string): void {
+    const w = this.world;
+    if (!w || (slot !== 'port' && slot !== 'starboard' && slot !== 'propulsion') || !w.build.unequipLoot(slot)) {
+      this.audio.play('uiDeny');
+      return;
+    }
+    w.refreshParams();
+    S.showInventory(this, true);
+  }
+
+  installSalvageEffect(id: string): void {
+    const w = this.world;
+    if (!w) return;
+    const remaining = w.build.installEffect(this.effectTarget.side, this.effectTarget.index, id, w.player.light);
+    if (remaining === null) {
+      this.audio.play('uiDeny');
+      return;
+    }
+    w.player.light = remaining;
+    w.refreshParams();
+    S.showInventory(this, true);
+  }
+
+  removeSalvageEffect(): void {
+    const w = this.world;
+    if (!w || !w.build.removeEffect(this.effectTarget.side, this.effectTarget.index)) {
+      this.audio.play('uiDeny');
+      return;
+    }
+    w.refreshParams();
+    S.showInventory(this, true);
   }
 
   // ------------------------------------------------------------ shop / event / forge / rest
@@ -1523,7 +1614,12 @@ export class Game {
         const fz = (cur ? cur.z : 40) - 44;
         this.mapFocusZ = this.mapFocusZ === null ? fz : damp(this.mapFocusZ, fz, 2.5, dt);
         // steep, nearly overhead: rows spread down the screen instead of stacking up
-        cam.position.set(Math.sin(t * 0.07) * 12, 104 + Math.sin(t * 0.11) * 3, this.mapFocusZ + 62);
+        // A portrait viewport has a narrow horizontal field of view; pull back
+        // so the outer columns stay reachable without changing node positions.
+        const portraitScale = Math.min(2.2, Math.max(1, 1 / cam.aspect));
+        const radius = 121 * this.mapZoom * portraitScale;
+        const horizontal = Math.cos(this.mapPitch) * radius;
+        cam.position.set(Math.sin(this.mapYaw) * horizontal, Math.sin(this.mapPitch) * radius, this.mapFocusZ + Math.cos(this.mapYaw) * horizontal);
         cam.lookAt(0, 0, this.mapFocusZ);
       } else {
         cam.position.set(Math.sin(t * 0.05) * 20 + 30, 8 + Math.sin(t * 0.08) * 3, 60);
@@ -1548,7 +1644,8 @@ export class Game {
         const cur = n.id === this.run.node;
         const can = reach.has(n.id);
         const k = cur ? 3 : can ? 2 + Math.sin(t * 4) * 0.6 : n.visited ? 0.5 : 1;
-        const col = n.type === 'boss' ? [3, 1.6, 0.8] : n.type === 'elite' || n.type === 'rift' ? [2.6, 0.9, 0.8] : n.type === 'shop' ? [2.2, 2, 0.8] : [1.4, 1.6, 2.2];
+        const rgb = hexToRgb(ROOM_TIER[n.rarity].color);
+        const col = rgb.map((v) => v * 2.3);
         // each node is a small dithered 3D landmark; reachable ones light up and turn
         const mesh = NODE_MESH[n.type];
         const lit = cur || can ? 1 : n.visited ? 0.25 : 0.55;

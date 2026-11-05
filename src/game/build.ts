@@ -13,6 +13,7 @@ import type {
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import type { Rng } from '../core/rng';
+import { EFFECTS, type LootItem, type LootSlot, type WeaponSide } from './loot';
 
 export const MAX_LEVEL = 5;
 export const MAX_SYSTEMS = 3;
@@ -115,6 +116,11 @@ export class Build {
   ship: Record<ShipStat, number> = { ...BASE_SHIP };
   banished = new Set<string>();
   meta: BuildMeta;
+  /** Run-local components and their equipment mounts. */
+  inventory: LootItem[] = [];
+  equipment: Record<LootSlot, string | null> = { port: null, starboard: null, propulsion: null };
+  effects: Record<WeaponSide, [string | null, string | null]> = { port: [null, null], starboard: [null, null] };
+  unlockedEffects = new Set<string>();
   /** history for the run summary */
   picks: string[] = [];
 
@@ -126,6 +132,59 @@ export class Build {
     if (hull.start.system) this.systems.push(new WeaponInstance(WEAPON_BY_ID[hull.start.system]!));
     for (const f of hull.flags) this.flags.add(f);
     this.recompute();
+  }
+
+  addLoot(item: LootItem): void {
+    if (this.inventory.some((entry) => entry.id === item.id)) return;
+    this.inventory.push(item);
+    if (item.effectId && EFFECTS.some((effect) => effect.id === item.effectId)) this.unlockedEffects.add(item.effectId);
+  }
+
+  equipLoot(id: string): boolean {
+    const item = this.inventory.find((entry) => entry.id === id);
+    if (!item) return false;
+    this.equipment[item.slot] = item.id;
+    this.recompute();
+    return true;
+  }
+
+  unequipLoot(slot: LootSlot): boolean {
+    if (!this.equipment[slot]) return false;
+    this.equipment[slot] = null;
+    this.recompute();
+    return true;
+  }
+
+  /** Returns the remaining Light, or null if the purchase is invalid. */
+  installEffect(side: WeaponSide, index: number, effectId: string, light: number): number | null {
+    const effect = EFFECTS.find((entry) => entry.id === effectId);
+    if ((side !== 'port' && side !== 'starboard') || (index !== 0 && index !== 1) || !effect || !this.unlockedEffects.has(effectId) || light < effect.cost || !Number.isFinite(light)) return null;
+    if (this.effects[side][index] === effectId) return null;
+    this.effects[side][index] = effectId;
+    return light - effect.cost;
+  }
+
+  removeEffect(side: WeaponSide, index: number): boolean {
+    if ((side !== 'port' && side !== 'starboard') || (index !== 0 && index !== 1) || !this.effects[side][index]) return false;
+    this.effects[side][index] = null;
+    return true;
+  }
+
+  /** Stats for one hardpoint, used at fire time so each side keeps its own roll. */
+  getSideParams(side: WeaponSide): WeaponParams {
+    const params = { ...this.primary.params };
+    const item = this.inventory.find((entry) => entry.id === this.equipment[side]);
+    const trait = item?.trait;
+    const traitMods = trait?.behaviors && !trait.behaviors.includes(this.primary.def.behavior) ? trait.fallbackMods : trait?.mods;
+    const mods = [...(item?.mods ?? []), ...(traitMods ?? []), ...this.effects[side].flatMap((id) => EFFECTS.find((effect) => effect.id === id)?.mods ?? [])];
+    for (const mod of mods) if (WEAPON_STATS.has(mod.s) && mod.add !== undefined) params[mod.s as WeaponStat] += mod.add;
+    for (const mod of mods) if (WEAPON_STATS.has(mod.s) && mod.mul !== undefined) params[mod.s as WeaponStat] *= mod.mul;
+    params.count = Math.max(1, Math.round(params.count));
+    params.pierce = Math.round(params.pierce);
+    params.ricochet = Math.round(params.ricochet);
+    params.split = Math.round(params.split);
+    params.chain = Math.round(params.chain);
+    return params;
   }
 
   get weapons(): WeaponInstance[] {
@@ -229,6 +288,13 @@ export class Build {
       if (WEAPON_STATS.has(m.s) || m.tag) continue;
       const k = m.s as ShipStat;
       if (m.mul !== undefined) ship[k] *= m.mul;
+    }
+    const propulsion = this.inventory.find((entry) => entry.id === this.equipment.propulsion);
+    for (const mod of [...(propulsion?.mods ?? []), ...(propulsion?.trait?.mods ?? [])]) {
+      const stat = mod.s as ShipStat;
+      if (!(stat in ship)) continue;
+      if (mod.add !== undefined) ship[stat] += mod.add;
+      if (mod.mul !== undefined) ship[stat] *= mod.mul;
     }
     ship.hull = Math.max(20, Math.round(ship.hull));
     ship.shield = Math.max(0, Math.round(ship.shield));

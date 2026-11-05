@@ -353,7 +353,7 @@ h3 { font-family: var(--px); font-weight: 400; font-size: calc(12px * var(--ui-s
 .node-label.reach { color: var(--paper); }
 .node-label.reach .ic { color: var(--lantern-hot); }
 .node-label.reach .ic::before { box-shadow: inset 0 0 0 2px var(--lantern), 0 0 14px rgba(255, 207, 106, 0.45); animation: nodePulse 1.2s steps(2) infinite; }
-@keyframes nodePulse { 50% { box-shadow: inset 0 0 0 2px var(--lantern-deep), 0 0 4px rgba(255, 207, 106, 0.2); } }
+@keyframes nodePulse { 50% { box-shadow: inset 0 0 0 2px var(--room-color), 0 0 4px var(--room-color); } }
 .node-label.done { opacity: 0.38; }
 .node-label.cur .ic::before { box-shadow: inset 0 0 0 2px var(--tint); }
 .node-label.focus, .node-label:hover { transform: translate(-50%, -50%) scale(1.15); color: var(--lantern-hot); }
@@ -381,6 +381,30 @@ h3 { font-family: var(--px); font-weight: 400; font-size: calc(12px * var(--ui-s
 .item.disabled { opacity: 0.4; }
 .item.owned { --br: var(--tint); }
 .item.owned .price { color: var(--tint); }
+
+/* Field hangar: two independent scrollers keep a large hold usable. */
+.loadout-panel { width: min(1160px, 94vw); max-height: 94vh; margin: auto; padding: 24px; }
+.loadout-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.loadout-header h1 { margin: 6px 0 4px; }
+.loadout-mounted-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.loadout-mounted { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); background: rgba(255,255,255,.025); }
+.loadout-mounted > span, .loadout-mounted strong { text-transform: uppercase; }
+.loadout-mounted small { color: var(--paper-2); }
+.loadout-body { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; min-height: 0; flex: 1; }
+.loadout-column { display: flex; min-height: 0; flex-direction: column; gap: 6px; }
+.loadout-column h3 { margin: 10px 0 0; }
+.loadout-list { min-height: 100px; flex: 1; }
+.loadout-side h3 { margin: 5px 0; }
+.loadout-effect-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.loadout-effect-slots button { text-align: left; }
+.loadout-return { align-self: flex-end; }
+@media (max-width: 700px) {
+  .loadout-panel { padding: 14px; overflow-y: auto; }
+  .loadout-mounted-grid { grid-template-columns: 1fr; }
+  .loadout-body { display: flex; flex-direction: column; flex: none; }
+  .loadout-list { max-height: 28vh; flex: none; }
+  .loadout-return { align-self: stretch; }
+}
 
 .tabs { display: flex; gap: 2px; margin-bottom: 18px; flex-wrap: wrap; }
 .tabs button { font-family: var(--px); font-weight: 400; font-size: calc(12px * var(--ui-scale)); letter-spacing: 0.04em; min-height: 34px; padding: 0.5em 1em; --cut: 7px; }
@@ -500,3 +524,47 @@ button:focus-visible, [data-nav]:focus-visible, select:focus-visible, input:focu
 /* banked drafts from drops (top right, under the Light count) */
 .hud .bank { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 6px; }
 .hud .bank span { font-family: var(--px); font-size: calc(10px * var(--ui-scale)); text-transform: uppercase; color: var(--ink); background: var(--dc); padding: 2px 6px 1px; clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px); }
+
+/* Stellar chart: rarity belongs to the destination, controls stay at the edge. */
+.node-label { gap: 3px; text-shadow: 0 1px 4px #07060b, 0 0 8px #07060b; }
+.node-label small { color: var(--room-color); font: 9px var(--mono); letter-spacing: .08em; }
+.node-label.reach .ic::before { box-shadow: inset 0 0 0 2px var(--room-color), 0 0 14px var(--room-color); }
+.map-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0; font: 10px var(--mono); text-transform: uppercase; }
+.map-controls { gap: 4px; flex-wrap: wrap; }
+.map-controls button { min-width: 32px; padding: 6px 8px; text-align: center; }
+@media (max-width: 700px) {
+  .map-ui .side { width: min(40vw, 210px); padding: 10px; }
+  #nodeinfo .dim { font-size: 11px; }
+  .map-legend { font-size: 9px; gap: 3px 7px; }
+  .node-label { font-size: 9px; }
+}
+/* Projected chart labels thin out with depth; the 3D route stays visible. */
+.node-label { z-index: 1; pointer-events: none; }
+.node-label.reach { z-index: 3; pointer-events: auto; }
+.node-label.cur { z-index: 2; }
+.node-label.map-preview { gap: 1px; font-size: 9px; opacity: .8; }
+.node-label.map-preview .ic { width: 28px; height: 28px; font-size: 11px; }
+.node-label.map-preview small { font-size: 8px; }
+.node-label.map-distant { opacity: .55; }
+.node-label.map-distant > span:not(.ic), .node-label.map-distant > small { display: none; }
+.node-label.map-distant .ic { width: 23px; height: 23px; font-size: 9px; color: var(--room-color); }
+
+/* On portrait screens, reserve the chart center for selecting destinations. */
+@media (max-width: 600px) {
+  .map-ui { display: block !important; padding: 0; }
+  .map-ui .side { width: auto; padding: 8px 10px; }
+  .map-ui .side:first-child {
+    position: absolute; top: 8px; left: 8px; right: 8px;
+    display: flex; flex-direction: row; align-items: center; gap: 6px;
+  }
+  .map-ui .side:first-child h2 { font-size: 13px; margin: 0 auto 0 0; }
+  .map-ui .side:first-child .stat,
+  .map-ui .side:first-child > .dim,
+  .map-ui .side:first-child > .faint { display: none; }
+  .map-ui .side:first-child button { font-size: 9px; padding: 6px; margin: 0; }
+  #nodeinfo { position: absolute; left: 8px; right: 8px; bottom: 8px; gap: 3px; }
+  #nodeinfo h3 { font-size: 10px; margin: 0; }
+  #nodeinfo > .dim, #nodeinfo > .faint { display: none; }
+  #nodeinfo .map-legend { margin: 0; }
+  #nodeinfo .map-controls button { padding: 5px 9px; }
+}

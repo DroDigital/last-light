@@ -136,7 +136,9 @@ function fanDir(w: World, dir: Vector3, i: number, n: number, spread: number, ou
 
 
 function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 1, origin?: Vector3): void {
-  const p = wi.params;
+  const side = !secondary && !origin && wi === w.build.primary ? (w.gunSide = -w.gunSide) : 0;
+  const src = side ? w.sideSrc(side < 0 ? 'port' : 'starboard') : wi.slotIndex;
+  const p = w.params[src] ?? wi.params;
   const pl = w.player;
   const kinetic = wi.hasTag('kinetic') ? PF_KINETIC : 0;
   const isMissile = wi.def.behavior === 'missile';
@@ -145,12 +147,11 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
   let count = p.count;
   if (pl.flareT > 0 && w.build.flags.has('overdrive')) count *= 2;
   if (wi.def.id === 'photon' && wi.evolved && pl.flareT > 0) count *= 2;
-  const side = (w.gunSide = -w.gunSide);
-  // primary guns alternate; secondaries leave the nose
-  const m = origin ?? muzzle(w, secondary ? 0 : side, _m);
+  // Primary guns alternate; secondaries leave the nose.
+  const m = origin ?? muzzle(w, side, _m);
   convergeDir(w, m, _aim);
   let dmg = p.damage * dmgMul;
-  if (wi.def.family === 'light') dmg *= 1 + Math.min(pl.lightTotal, 3000) / 3000;
+  if (wi.def.family === 'light' || wi.def.id === 'photon') dmg *= 1 + Math.min(pl.lightTotal, 3000) / 3000;
   // nova7 artifact
   let novaShot = false;
   if (!secondary && w.build.flags.has('nova7') && wi.shots % 7 === 6) novaShot = true;
@@ -166,7 +167,7 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
     }
     const flags = kinetic | (isMissile ? PF_MISSILE : 0) | (isMine ? PF_MINE : 0) | echo;
     const kind = isMissile || isMine ? 5 : 0;
-    const k = w.proj.spawn(m.x, m.y, m.z, _d.x + pl.vel.x * 0.4, _d.y + pl.vel.y * 0.4, _d.z + pl.vel.z * 0.4, p.life, dmg, p.size, flags, kind, wi.slotIndex);
+    const k = w.proj.spawn(m.x, m.y, m.z, _d.x + pl.vel.x * 0.4, _d.y + pl.vel.y * 0.4, _d.z + pl.vel.z * 0.4, p.life, dmg, p.size, flags, kind, src);
     if (k < 0) break;
     w.proj.pierce[k] = p.pierce;
     w.proj.homing[k] = p.homing;
@@ -181,7 +182,7 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
     }
     if (w.build.flags.has('echoChamber') && w.rng.next() < 0.15) {
       coneDir(w, _d.normalize(), 0.06, _t).multiplyScalar(p.speed);
-      const q = w.proj.spawn(m.x, m.y, m.z, _t.x, _t.y, _t.z, p.life, dmg, p.size, flags, kind, wi.slotIndex);
+      const q = w.proj.spawn(m.x, m.y, m.z, _t.x, _t.y, _t.z, p.life, dmg, p.size, flags, kind, src);
       if (q >= 0) {
         w.proj.pierce[q] = p.pierce;
         w.proj.homing[q] = p.homing;
@@ -195,16 +196,17 @@ function fireBullets(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 
     for (const s of [-1, 1]) {
       pl.right(_r);
       _d.copy(_aim).addScaledVector(_r, s * 0.05).normalize().multiplyScalar(p.speed);
-      const k = w.proj.spawn(m.x, m.y, m.z, _d.x, _d.y, _d.z, p.life * 0.8, dmg * 0.4, p.size * 0.7, kinetic, 0, wi.slotIndex);
+      const k = w.proj.spawn(m.x, m.y, m.z, _d.x, _d.y, _d.z, p.life * 0.8, dmg * 0.4, p.size * 0.7, kinetic, 0, src);
       if (k >= 0) w.proj.pierce[k] = p.pierce;
     }
   }
 }
 
-function fireRail(w: World, wi: WeaponInstance): void {
-  const p = wi.params;
-  const side = (w.gunSide = -w.gunSide);
-  const m = muzzle(w, side, _m);
+function fireRail(w: World, wi: WeaponInstance, dmgMul = 1, origin?: Vector3): void {
+  const side = origin ? 0 : (w.gunSide = -w.gunSide);
+  const src = !origin && wi === w.build.primary ? w.sideSrc(side < 0 ? 'port' : 'starboard') : wi.slotIndex;
+  const p = w.params[src] ?? wi.params;
+  const m = origin ?? muzzle(w, side, _m);
   for (let n = 0; n < p.count; n++) {
     convergeDir(w, m, _aim);
     const dir = n === 0 ? _d.copy(_aim) : fanDir(w, _aim, n, p.count, 0.03, _d);
@@ -219,24 +221,34 @@ function fireRail(w: World, wi: WeaponInstance): void {
     const maxHits = p.pierce + 1;
     for (let i = 0; i < hits.length && i < maxHits; i++) {
       const h = hits[i]!;
-      w.damageEnemy(h.e, p.damage * (1 - i * 0.04), wi.slotIndex, m.x + dir.x * h.t, m.y + dir.y * h.t, m.z + dir.z * h.t, -dir.x, -dir.y, -dir.z, { kinetic: true });
+      w.damageEnemy(h.e, p.damage * dmgMul * (1 + Math.max(0, p.split) * 0.15) * (1 - i * 0.04), src, m.x + dir.x * h.t, m.y + dir.y * h.t, m.z + dir.z * h.t, -dir.x, -dir.y, -dir.z, { kinetic: true });
       if (h.e.invuln) {
         endT = h.t;
         break;
       }
     }
-    const c = w.colorOf(wi.slotIndex);
+    const c = w.colorOf(src);
     w.rails.push({ ax: m.x, ay: m.y, az: m.z, bx: m.x + dir.x * endT, by: m.y + dir.y * endT, bz: m.z + dir.z * endT, t: 0, width: p.size, r: c[0], g: c[1], b: c[2] });
   }
 }
 
-function fireBeam(w: World, wi: WeaponInstance, secondary: boolean, doDamage: boolean): void {
-  const p = wi.params;
+function fireBeam(w: World, wi: WeaponInstance, secondary: boolean, doDamage: boolean, dmgMul = 1, origin?: Vector3): void {
+  const primary = !origin && !secondary && wi === w.build.primary;
+  if (primary && doDamage) w.gunSide = -w.gunSide;
+  const side = primary ? w.gunSide : 0;
+  const src = primary ? w.sideSrc(side < 0 ? 'port' : 'starboard') : wi.slotIndex;
+  const p = w.params[src] ?? wi.params;
   const pl = w.player;
-  const m = muzzle(w, 0, _m);
-  const c = w.colorOf(wi.slotIndex);
-  let dmg = p.damage;
+  const m = origin ?? muzzle(w, side, _m);
+  const c = w.colorOf(src);
+  let dmg = p.damage * dmgMul * (1 + Math.max(0, p.split) * 0.15);
   if (wi.def.family === 'light') dmg *= 1 + Math.min(pl.lightTotal, 3000) / 1500;
+  if (wi.def.id === 'flarebeam' && doDamage) {
+    const cost = 6 / (Math.max(0.01, p.rate) * (pl.flareT > 0 ? 2 : 1));
+    const spent = Math.min(pl.lumen, cost);
+    pl.lumen = Math.max(0, pl.lumen - spent);
+    dmg *= 1 + 0.25 * spent / cost;
+  }
   if (wi.def.id === 'flarebeam' && wi.evolved && pl.flareT > 0) dmg *= 2;
   for (let n = 0; n < p.count; n++) {
     convergeDir(w, m, _aim);
@@ -254,20 +266,26 @@ function fireBeam(w: World, wi: WeaponInstance, secondary: boolean, doDamage: bo
       const h = hits[i]!;
       if (i >= maxHits || h.e.invuln) {
         endT = h.t;
-        if (h.e.invuln && doDamage) w.damageEnemy(h.e, dmg, wi.slotIndex, m.x + dir.x * h.t, m.y + dir.y * h.t, m.z + dir.z * h.t, -dir.x, -dir.y, -dir.z);
+        if (h.e.invuln && doDamage) w.damageEnemy(h.e, dmg, src, m.x + dir.x * h.t, m.y + dir.y * h.t, m.z + dir.z * h.t, -dir.x, -dir.y, -dir.z);
         break;
       }
-      if (doDamage) w.damageEnemy(h.e, dmg, wi.slotIndex, m.x + dir.x * h.t, m.y + dir.y * h.t, m.z + dir.z * h.t, -dir.x, -dir.y, -dir.z, { knock: 0.5 });
+      if (doDamage) w.damageEnemy(h.e, dmg, src, m.x + dir.x * h.t, m.y + dir.y * h.t, m.z + dir.z * h.t, -dir.x, -dir.y, -dir.z, { knock: 0.5 });
     }
     w.beams.push({ ax: m.x, ay: m.y, az: m.z, bx: m.x + dir.x * endT, by: m.y + dir.y * endT, bz: m.z + dir.z * endT, width: p.size * (0.8 + Math.sin(w.time * 40) * 0.15), r: c[0], g: c[1], b: c[2], enemy: false });
   }
-  if (doDamage) w.events.emit('beamTick', { secondary });
+  if (doDamage && !origin) {
+    w.events.emit('beamTick', { secondary });
+    if (primary) w.events.emit('shot', { x: m.x, y: m.y, z: m.z, dx: pl.aimDir.x, dy: pl.aimDir.y, dz: pl.aimDir.z, w: wi, secondary, side });
+  }
 }
 
-function fireArc(w: World, wi: WeaponInstance): void {
-  const p = wi.params;
+function fireArc(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 1, origin?: Vector3): void {
+  const primary = !origin && !secondary && wi === w.build.primary;
+  const side = primary ? (w.gunSide = -w.gunSide) : 0;
+  const src = primary ? w.sideSrc(side < 0 ? 'port' : 'starboard') : wi.slotIndex;
+  const p = w.params[src] ?? wi.params;
   const pl = w.player;
-  const m = muzzle(w, 0, _m);
+  const m = origin ?? muzzle(w, side, _m);
   let best: Enemy | null = null;
   let bd = p.range;
   for (const e of w.enemies) {
@@ -290,8 +308,8 @@ function fireArc(w: World, wi: WeaponInstance): void {
   }
   w.arcs.push({ ax: m.x, ay: m.y, az: m.z, bx: best.pos.x, by: best.pos.y, bz: best.pos.z, t: 0, color: 0, seed: w.rng.next() });
   _t.copy(best.pos).sub(m).normalize();
-  w.damageEnemy(best, p.damage, wi.slotIndex, best.pos.x, best.pos.y, best.pos.z, -_t.x, -_t.y, -_t.z);
-  if (best.alive || p.chain > 0) w.chainLightning(best, p.chain, p.damage * 0.8, wi.slotIndex, p.range * 0.5);
+  w.damageEnemy(best, p.damage * dmgMul, src, best.pos.x, best.pos.y, best.pos.z, -_t.x, -_t.y, -_t.z);
+  if (best.alive || p.chain > 0 || p.split > 0) w.chainLightning(best, p.chain + p.split, p.damage * dmgMul * 0.8, src, p.range * 0.5);
 }
 
 function fireWell(w: World, wi: WeaponInstance): void {
@@ -327,7 +345,7 @@ function fireWeapon(w: World, wi: WeaponInstance, secondary: boolean): void {
       fireRail(w, wi);
       break;
     case 'arc':
-      fireArc(w, wi);
+      fireArc(w, wi, secondary);
       break;
     case 'well':
       fireWell(w, wi);
@@ -342,7 +360,7 @@ function fireWeapon(w: World, wi: WeaponInstance, secondary: boolean): void {
   const pl = w.player;
   pl.forward(_f);
   if (wi.def.behavior !== 'pulse')
-    w.events.emit('shot', { x: _m.x, y: _m.y, z: _m.z, dx: pl.aimDir.x, dy: pl.aimDir.y, dz: pl.aimDir.z, w: wi, secondary });
+    w.events.emit('shot', { x: _m.x, y: _m.y, z: _m.z, dx: pl.aimDir.x, dy: pl.aimDir.y, dz: pl.aimDir.z, w: wi, secondary, side: !secondary && wi === w.build.primary ? w.gunSide : 0 });
 }
 
 export function updateWeapons(w: World, c: Controls, dt: number): void {
@@ -362,13 +380,16 @@ export function updateWeapons(w: World, c: Controls, dt: number): void {
   if (c.fire1) {
     if (pw.def.behavior === 'beam') {
       const tick = pw.cd <= 0;
-      if (tick) pw.cd += 1 / (pw.params.rate * flareRate);
       fireBeam(w, pw, false, tick);
+      for (const d of w.drones) {
+        if (d.kind === 'mirror') fireBeam(w, pw, false, tick, w.weaponsByIndex[d.src]!.params.damage, d.pos);
+      }
+      if (tick) pw.cd += 1 / (w.params[w.sideSrc(w.gunSide < 0 ? 'port' : 'starboard')]!.rate * flareRate);
       pl.firingT = 0;
       if (pw.cd < -0.1) pw.cd = 0;
     } else if (pw.cd <= 0) {
       fireWeapon(w, pw, false);
-      pw.cd += 1 / (pw.params.rate * flareRate);
+      pw.cd += 1 / (w.params[w.sideSrc(w.gunSide < 0 ? 'port' : 'starboard')]!.rate * flareRate);
       if (pw.cd < -0.05) pw.cd = 0;
       pl.recoil = Math.min(1, pl.recoil + (pw.def.recoil ?? 0.05) * 4);
       pl.firingT = 0;
@@ -380,6 +401,8 @@ export function updateWeapons(w: World, c: Controls, dt: number): void {
         if (d.kind !== 'mirror') continue;
         const mw = w.weaponsByIndex[d.src]!;
         if (pw.def.behavior === 'bullet' || pw.def.behavior === 'missile') fireBullets(w, pw, false, mw.params.damage, d.pos);
+        else if (pw.def.behavior === 'rail') fireRail(w, pw, mw.params.damage, d.pos);
+        else if (pw.def.behavior === 'arc') fireArc(w, pw, false, mw.params.damage, d.pos);
       }
     }
   } else if (pw.cd < 0) pw.cd = 0;
@@ -442,12 +465,12 @@ export function updateWingWeapons(w: World, c: Controls, dt: number): void {
     if (held) {
       if (wi.def.behavior === 'beam') {
         const tick = wi.cd <= 0;
-        if (tick) wi.cd += 1 / (wi.params.rate * flareRate);
         fireBeam(w, wi, secondary, tick);
+        if (tick) wi.cd += 1 / ((secondary ? wi.params : w.params[w.sideSrc(w.gunSide < 0 ? 'port' : 'starboard')]!).rate * flareRate);
         if (wi.cd < -0.1) wi.cd = 0;
       } else if (wi.cd <= 0) {
         fireWeapon(w, wi, secondary);
-        wi.cd = secondary ? 1 / (wi.params.rate * (flareRate > 1 ? 1.5 : 1)) : wi.cd + 1 / (wi.params.rate * flareRate);
+        wi.cd = secondary ? 1 / (wi.params.rate * (flareRate > 1 ? 1.5 : 1)) : wi.cd + 1 / (w.params[w.sideSrc(w.gunSide < 0 ? 'port' : 'starboard')]!.rate * flareRate);
         if (wi.cd < -0.05) wi.cd = 0;
         pl.recoil = Math.min(1, pl.recoil + (secondary ? 0.3 : (wi.def.recoil ?? 0.05) * 4));
       }

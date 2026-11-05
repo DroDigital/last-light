@@ -216,7 +216,7 @@ export const WEAPONS: WeaponDef[] = [
   // ---------------- LIGHT (system / secondary) ----------------
   {
     id: 'flarebeam', name: 'Flare Beam', family: 'light', slot: 'secondary', tags: ['light', 'pierce'],
-    desc: 'Pour banked Lumen into a searing beam. Scales with Light.', behavior: 'beam', sfx: 'light',
+    desc: 'A searing beam that scales with Light. Consumes 6 Lumen/s for 25% extra damage; fires normally when empty.', behavior: 'beam', sfx: 'light',
     base: { damage: 7, rate: 20, range: 150, size: 1.0, pierce: 99 },
     color: '#fff6c0', unlock: 60,
     evolve: { tag: 'flare', name: 'Sunspear', desc: 'Doubles during Flare and ignites targets.', mods: { damage: 11, size: 1.6, burn: 0.5 }, color: '#ffffff' },
