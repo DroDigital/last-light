@@ -10,7 +10,8 @@ It does not create the itch.io game page or change its visibility.
 2. In the GitHub repository's **Settings → Secrets and variables → Actions**,
    add the repository secret `BUTLER_API_KEY` with an itch.io API key that has
    access to that game. Do not commit the key or place it in a workflow input.
-3. Add the repository variable `ITCH_GAME` with the `account/game` slug. A
+3. Add the repository variable `ITCH_GAME` with the `account/game` slug or
+   the itch.io page address (for example `https://account.itch.io/game`). A
    manual run can override this value using its optional `itch_target` input;
    tag-triggered releases use `ITCH_GAME`.
 4. Enable GitHub Actions and allow the runner platforms used by the workflow.
@@ -29,6 +30,11 @@ limits each component to 65535 for Windows version metadata. The workflow
 also runs when a `vX.Y.Z` tag is pushed for a commit reachable from the default
 branch; for example `git tag v1.0.0` followed by `git push origin v1.0.0`.
 A tag release obtains its destination from `ITCH_GAME`.
+
+If an existing version tag cannot be rerun after a workflow fix, create a new
+retry tag such as `v1.0.0-retry.1` on the corrected default-branch commit. The
+workflow builds and uploads it as version `1.0.0`; increment the positive
+retry number for any further attempts. Do not move the original release tag.
 
 Pull requests run the same tests and builds using version `0.0.0`, without
 accessing itch.io or publishing. Release runs test and build before the publish
