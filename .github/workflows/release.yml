@@ -138,6 +138,8 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           VERSION: ${{ needs.prepare.outputs.version }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Permit the same ad-hoc macOS signing on pull requests and releases.
+          CSC_FOR_PULL_REQUEST: 'true'
         run: npm run "package:$PLATFORM" -- --config.extraMetadata.version="$VERSION"
       - name: Preserve distributable and executable modes
         env:
@@ -169,7 +171,8 @@ jobs:
               executable="$app/Contents/MacOS/LAST LIGHT"
               test -x "$executable"
               test -L "$app/Contents/Frameworks/Electron Framework.framework/Versions/Current"
-              lipo -verify_arch x86_64 arm64 "$executable"
+              lipo "$executable" -verify_arch x86_64 arm64
+              codesign --verify --deep --strict --verbose=2 "$app"
               ;;
           esac
           tar -czf "bundle/last-light-$VERSION-$PLATFORM.tar.gz" -C unpacked .
