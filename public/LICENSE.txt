@@ -1,0 +1,7 @@
+LAST LIGHT
+
+Copyright © 2026 Digital Dro. All rights reserved.
+
+Third-party components included with the game are licensed separately by
+their respective authors. Their license terms and notices are provided with
+the game and in the source and are not changed by this notice.

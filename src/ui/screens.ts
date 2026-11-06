@@ -403,11 +403,12 @@ export function showVictory(g: Game): void {
 export function showCredits(g: Game): void {
   g.ui.show(
     'credits',
-    `<div class="panel center col" style="width:min(640px,92vw)"><h1>Credits</h1>
+    `<div class="panel center col" style="width:min(640px,92vw);max-height:94vh;overflow:auto"><h1>Credits</h1>
+      <p>Copyright © 2026 Digital Dro. All rights reserved.</p>
       <p>LAST LIGHT — design, code, shaders, VFX and synthesized sound effects generated in-engine.</p>
-      <p><b>Music</b> by digitaldro: Last Analog Dawn, Proximity to Earth I &amp; II, Warp Drive, Void Engagements, Void Leviathan, Last Transmission. The procedural in-engine score remains available under Settings → Audio.</p>
-      <p class="dim">Rendering: three.js (MIT) as a rendering library. Fonts: Archivo, JetBrains Mono, Silkscreen (SIL Open Font License) via Fontsource.</p>
-      <p class="dim">Every model is procedural geometry and every sound effect is synthesized with the Web Audio API. See docs/CREDITS.md.</p>
+      <p><b>Music</b> by Digital Dro, created using Suno during a premium subscription: Last Analog Dawn, Proximity to Earth I &amp; II, Warp Drive, Void Engagements, Void Leviathan, Last Transmission. The procedural in-engine score remains available under Settings → Audio.</p>
+      <p class="dim">Rendering: three.js (MIT). Desktop: Electron (MIT). Fonts: Archivo, JetBrains Mono, Silkscreen (SIL Open Font License) via Fontsource.</p>
+      <p class="dim">Every model is procedural geometry and every sound effect is synthesized with the Web Audio API. See CREDITS.md and third-party license notices included with the build.</p>
       <p class="faint">Mood references: Signalis, Return of the Obra Dinn, Chris Foss, Outer Wilds. No assets copied.</p>
       <button data-nav data-autofocus data-act="title" data-back>Back</button></div>`,
   );

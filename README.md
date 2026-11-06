@@ -29,6 +29,8 @@ npm run build
 
 `dist/` is a fully static site (relative paths) that runs from any static host or a subfolder. Preview it with `npm run preview`.
 
+For desktop packages and itch.io publishing, see [the release guide](docs/release.md).
+
 Balance: `npm run balance -- 10 ok` plays 10 headless runs with a bot (`good`, `ok` or `poor`) and prints win rate, deaths by sector and damage per fight. The tuning levers live in `src/data/balance.ts`.
 
 ## Test

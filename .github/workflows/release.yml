@@ -1,0 +1,250 @@
+name: Build and release
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (for example 1.0.0)'
+        required: true
+        type: string
+      itch_target:
+        description: 'Optional itch.io target (account/game); otherwise use ITCH_GAME variable'
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+# Do not interrupt an upload already in progress.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-build-{0}', github.event.pull_request.number) || 'itch-release' }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate version and source
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) version=0.0.0 ;;
+            workflow_dispatch)
+              if [[ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]]; then
+                echo 'Run releases from the default branch.' >&2
+                exit 1
+              fi
+              version="$INPUT_VERSION"
+              ;;
+            push)
+              version="${GITHUB_REF_NAME#v}"
+              if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"; then
+                echo 'Release tags must point to a commit on the default branch.' >&2
+                exit 1
+              fi
+              ;;
+            *) echo 'Unsupported release trigger.' >&2; exit 1 ;;
+          esac
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || [[ ${#version} -gt 32 ]]; then
+            echo 'Version must be a stable X.Y.Z version without a v prefix or leading zeros.' >&2
+            exit 1
+          fi
+          IFS=. read -r major minor patch <<< "$version"
+          for part in "$major" "$minor" "$patch"; do
+            if [[ ${#part} -gt 5 ]] || (( 10#$part > 65535 )); then
+              echo 'Version components must be between 0 and 65535 for Windows.' >&2
+              exit 1
+            fi
+          done
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  browser:
+    name: Test and package browser build
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+      - name: Create browser archives
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          mkdir -p bundle
+          tar -czf "bundle/last-light-$VERSION-browser.tar.gz" -C dist .
+          (cd dist && zip -qr "$GITHUB_WORKSPACE/bundle/last-light-$VERSION-browser.zip" .)
+          unzip -tq "bundle/last-light-$VERSION-browser.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-browser
+          path: bundle/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  desktop:
+    name: Package ${{ matrix.platform }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-latest
+          - platform: win
+            runner: windows-latest
+          - platform: mac
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build desktop archive
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Permit the same ad-hoc macOS signing on pull requests and releases.
+          CSC_FOR_PULL_REQUEST: 'true'
+        run: npm run "package:$PLATFORM" -- --config.extraMetadata.version="$VERSION"
+      - name: Preserve distributable and executable modes
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(release/*.zip)
+          if [[ ${#files[@]} -ne 1 ]]; then
+            echo "Expected one desktop ZIP; found ${#files[@]}." >&2
+            exit 1
+          fi
+          mkdir -p bundle unpacked
+          cp "${files[0]}" "bundle/last-light-$VERSION-$PLATFORM.zip"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            target="$(cygpath -w "$PWD/unpacked")"
+            7z x -y "-o$target" "${files[0]}" > /dev/null
+          elif [[ "$RUNNER_OS" == macOS ]]; then
+            ditto -x -k "${files[0]}" unpacked
+          else
+            unzip -q "${files[0]}" -d unpacked
+          fi
+          case "$PLATFORM" in
+            linux) test -x unpacked/last-light ;;
+            win) test -f 'unpacked/LAST LIGHT.exe' ;;
+            mac)
+              app='unpacked/LAST LIGHT.app'
+              executable="$app/Contents/MacOS/LAST LIGHT"
+              test -x "$executable"
+              test -L "$app/Contents/Frameworks/Electron Framework.framework/Versions/Current"
+              lipo "$executable" -verify_arch x86_64 arm64
+              codesign --verify --deep --strict --verbose=2 "$app"
+              ;;
+          esac
+          tar -czf "bundle/last-light-$VERSION-$PLATFORM.tar.gz" -C unpacked .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: build-${{ matrix.platform }}
+          path: bundle/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  publish:
+    name: Publish all platforms to itch.io
+    if: github.event_name != 'pull_request'
+    needs: [prepare, browser, desktop]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      INPUT_ITCH_TARGET: ${{ inputs.itch_target }}
+      CONFIGURED_ITCH_TARGET: ${{ vars.ITCH_GAME }}
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+    steps:
+      - name: Check itch.io configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${INPUT_ITCH_TARGET:-$CONFIGURED_ITCH_TARGET}"
+          if [[ ! "$target" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$ ]]; then
+            echo 'Set the ITCH_GAME repository variable to account/game or provide itch_target.' >&2
+            exit 1
+          fi
+          if [[ -z "$BUTLER_API_KEY" ]]; then
+            echo 'Set the BUTLER_API_KEY repository secret.' >&2
+            exit 1
+          fi
+          echo "ITCH_TARGET=$target" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: build-*
+          path: bundles
+          merge-multiple: true
+      - name: Verify and unpack every platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          for platform in browser win mac linux; do
+            archive="bundles/last-light-$VERSION-$platform.tar.gz"
+            test -s "$archive"
+            test -s "bundles/last-light-$VERSION-$platform.zip"
+            mkdir -p "unpacked/$platform"
+            tar -xzf "$archive" -C "unpacked/$platform"
+            test -n "$(ls -A "unpacked/$platform")"
+          done
+          test -f unpacked/browser/index.html
+          test -x unpacked/linux/last-light
+          test -f 'unpacked/win/LAST LIGHT.exe'
+          test -x 'unpacked/mac/LAST LIGHT.app/Contents/MacOS/LAST LIGHT'
+          test -L 'unpacked/mac/LAST LIGHT.app/Contents/Frameworks/Electron Framework.framework/Versions/Current'
+      - name: Install butler
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/butler.zip" https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          mkdir -p "$RUNNER_TEMP/butler"
+          unzip -q "$RUNNER_TEMP/butler.zip" -d "$RUNNER_TEMP/butler"
+          chmod +x "$RUNNER_TEMP/butler/butler"
+          echo "$RUNNER_TEMP/butler" >> "$GITHUB_PATH"
+      - name: Upload browser, Windows, macOS, and Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          butler push unpacked/browser "$ITCH_TARGET:html5" --userversion "$VERSION"
+          butler push unpacked/win "$ITCH_TARGET:windows" --userversion "$VERSION"
+          butler push unpacked/mac "$ITCH_TARGET:osx" --userversion "$VERSION"
+          butler push unpacked/linux "$ITCH_TARGET:linux" --userversion "$VERSION"

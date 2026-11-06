@@ -1,10 +1,16 @@
 # Credits & asset log
 
+**LAST LIGHT — Copyright © 2026 Digital Dro. All rights reserved.**
+
+Third-party components are the work of their respective authors and remain
+available under their own licenses. Their full notices are provided in
+`public/third-party/` in the source and `third-party/` in the build.
+
 LAST LIGHT ships **no third-party art assets**. Every model is procedural geometry built in code (`src/render/meshes.ts`), every texture is computed in shaders, and every sound effect is synthesized at runtime with the Web Audio API (`src/audio/audio.ts`). The recorded soundtrack below was supplied by the project owner. The original procedural score is still in the engine as a fallback and a settings option.
 
 ## Music
 
-Supplied by the project owner for the sound-design phase. The tracks are by **digitaldro**, made with Suno (per the ID3 tags), and ship unmodified as 64 kbps / 48 kHz MP3 in `public/music/`.
+Music by **Digital Dro**, created using Suno during a premium subscription, as confirmed by the project owner. The tracks ship unmodified as 64 kbps / 48 kHz MP3 in `public/music/`.
 
 | Track | Cue | Length | File |
 | --- | --- | --- | --- |
@@ -16,13 +22,14 @@ Supplied by the project owner for the sound-design phase. The tracks are by **di
 | Void Leviathan | Boss fights | 3:42 | `boss-void-leviathan.mp3` |
 | Last Transmission | Victory / finale | 3:07 | `finale-last-transmission.mp3` |
 
-Licensing note: Suno's terms tie commercial rights to the subscription tier the tracks were generated on. Confirm that tier before any commercial release.
+Suno's terms apply to use of its service and generated music.
 
 ## Code libraries
 
 | Name | Author | Source | License | Use / changes |
 | --- | --- | --- | --- | --- |
 | three.js 0.187 | three.js authors | https://github.com/mrdoob/three.js | MIT | Used strictly as a WebGL2 rendering library (scene graph, materials, renderer, BufferGeometryUtils). No engine features. |
+| Electron 45 | Electron contributors | https://github.com/electron/electron | MIT | Desktop application runtime. Its distributed builds include Electron and Chromium license notices. |
 
 ## Fonts
 
@@ -34,7 +41,7 @@ Licensing note: Suno's terms tie commercial rights to the subscription tier the 
 
 ## Dev tooling (not shipped)
 
-TypeScript, Vite, Vitest, ESLint, Prettier (all MIT/Apache-2.0). Playwright (Apache-2.0) for automated playtests.
+TypeScript, Vite, Vitest, ESLint, Prettier, and electron-builder (MIT/Apache-2.0). Playwright (Apache-2.0) for automated playtests.
 
 ## Mood references (nothing copied)
 
