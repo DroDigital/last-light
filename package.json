@@ -1,7 +1,7 @@
 {
   "name": "last-light",
   "version": "0.1.0",
-  "description": "LAST LIGHT \u2014 a 3D roguelite space shooter in the Dithered Cosmos style",
+  "description": "LAST LIGHT — a 3D roguelite space shooter in the Dithered Cosmos style",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -11,7 +11,10 @@
     "format": "prettier --write src tests",
     "typecheck": "tsc --noEmit",
     "sim": "vitest run tests/buildsim.test.ts",
-    "balance": "vite-node scripts/balance.ts"
+    "balance": "vite-node scripts/balance.ts",
+    "package:linux": "npm run build && electron-builder --linux zip --x64 --publish never",
+    "package:win": "npm run build && electron-builder --win zip --x64 --publish never",
+    "package:mac": "npm run build && electron-builder --mac zip --universal --publish never"
   },
   "repository": {
     "type": "git",
@@ -33,6 +36,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/three": "^0.187.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "eslint": "^10.14.0",
     "prettier": "^3.9.10",
     "typescript": "^5.9.3",
@@ -41,5 +46,30 @@
     "vitest": "^3.2.7"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "com.drodigital.lastlight",
+    "productName": "LAST LIGHT",
+    "directories": {
+      "output": "release"
+    },
+    "artifactName": "last-light-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "mac": {
+      "category": "public.app-category.games",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "linux": {
+      "category": "Game"
+    }
+  }
 }
