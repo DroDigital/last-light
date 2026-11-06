@@ -9,7 +9,7 @@ on:
         required: true
         type: string
       itch_target:
-        description: 'Optional itch.io target (account/game); otherwise use ITCH_GAME variable'
+        description: 'Optional itch.io target (account/game or itch.io page); otherwise use ITCH_GAME'
         required: false
         type: string
   push:
@@ -52,7 +52,7 @@ jobs:
               version="$INPUT_VERSION"
               ;;
             push)
-              version="${GITHUB_REF_NAME#v}"
+              version="$(bash scripts/release-inputs.sh version-tag "$GITHUB_REF_NAME")"
               if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"; then
                 echo 'Release tags must point to a commit on the default branch.' >&2
                 exit 1
@@ -191,19 +191,19 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
-      INPUT_ITCH_TARGET: ${{ inputs.itch_target }}
-      CONFIGURED_ITCH_TARGET: ${{ vars.ITCH_GAME }}
-      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - name: Check itch.io configuration
         shell: bash
+        env:
+          INPUT_ITCH_TARGET: ${{ inputs.itch_target }}
+          CONFIGURED_ITCH_TARGET: ${{ vars.ITCH_GAME }}
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
           set -euo pipefail
-          target="${INPUT_ITCH_TARGET:-$CONFIGURED_ITCH_TARGET}"
-          if [[ ! "$target" =~ ^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$ ]]; then
-            echo 'Set the ITCH_GAME repository variable to account/game or provide itch_target.' >&2
-            exit 1
-          fi
+          target="$(bash scripts/release-inputs.sh itch-target "${INPUT_ITCH_TARGET:-$CONFIGURED_ITCH_TARGET}")"
           if [[ -z "$BUTLER_API_KEY" ]]; then
             echo 'Set the BUTLER_API_KEY repository secret.' >&2
             exit 1
@@ -242,6 +242,8 @@ jobs:
           echo "$RUNNER_TEMP/butler" >> "$GITHUB_PATH"
       - name: Upload browser, Windows, macOS, and Linux
         shell: bash
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
           set -euo pipefail
           butler push unpacked/browser "$ITCH_TARGET:html5" --userversion "$VERSION"
