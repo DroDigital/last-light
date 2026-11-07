@@ -97,7 +97,7 @@ export class BossController {
     };
     switch (this.id) {
       case 'foreman': {
-        this.core = w.spawnEnemy(coreDef('bossCore', 6.5, 2.4, '#ffb040'), start.x, start.y, start.z);
+        this.core = w.spawnEnemy(coreDef('foremanCore', 6.5, 2.4, '#ffb040'), start.x, start.y, start.z);
         this.core.dmgTaken = 0.3;
         for (let i = 0; i < 4; i++) {
           const a = (i / 4) * Math.PI * 2;

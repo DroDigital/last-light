@@ -49,6 +49,8 @@ export class Juice {
   private lastHitStop = 0;
   private unsub: (() => void)[] = [];
   private killSoundT = 0;
+  /** Throttle decorative muzzle apertures independently of fire rate. */
+  private apertureT = 0;
   cam = { yaw: 0, pitch: 0 };
   slowmo = 0;
   /** last-cause for UI toast */
@@ -110,6 +112,16 @@ export class Juice {
       ev.on('shot', (s) => {
         const c = hexToRgb(s.w.color);
         lights.spawn(s.x, s.y, s.z, c[0] * 5, c[1] * 5, c[2] * 5, 7, 0.05);
+        // A few weapons leave a short aperture at the muzzle. The projectile
+        // itself keeps its reserved player tone; this is just local feedback.
+        if (this.apertureT <= 0 && !this.settings().reducedMotion) {
+          const behavior = s.w.def.behavior;
+          if (behavior === 'rail' || behavior === 'missile' || behavior === 'well') {
+            this.apertureT = 0.22;
+            const radius = behavior === 'rail' ? 2.3 : behavior === 'missile' ? 1.4 : 3;
+            this.view.addRing(s.x, s.y, s.z, 0.35, radius, 0.22, 0.35, 0.9, 1);
+          }
+        }
         for (let i = 0; i < 3; i++)
           P().spawn(s.x, s.y, s.z, s.dx * 40 + (r() - 0.5) * 20, s.dy * 40 + (r() - 0.5) * 20, s.dz * 40 + (r() - 0.5) * 20, 0.1, c[0] * 4, c[1] * 4, c[2] * 4, 2.5, 0.5, 6);
         // Each installed hardpoint effect has its own short-lived signature.
@@ -301,6 +313,11 @@ export class Juice {
           this.addTrauma(0.4);
           this.toast('FLARE', '#fff6c0');
           const p = w.player.pos;
+          if (!this.settings().reducedMotion) {
+            // The flare leaves two brief contours behind the lightship.
+            this.view.addRing(p.x, p.y, p.z, 1, 14, 0.65, 1, 0.84, 0.45);
+            this.view.addRing(p.x, p.y, p.z, 0.5, 9, 0.9, 0.38, 0.95, 1);
+          }
           for (let i = 0; i < 160; i++) {
             _v.set(r() - 0.5, r() - 0.5, r() - 0.5).normalize().multiplyScalar(30 + r() * 60);
             P().spawn(p.x, p.y, p.z, _v.x, _v.y, _v.z, 0.9 + r() * 0.5, 4, 3.6, 2.2, 3, 0.5, 2, 0, 1);
@@ -338,6 +355,8 @@ export class Juice {
           this.addTrauma(0.35);
           this.hitStop(40);
           const p = w.player.pos;
+          if (!this.settings().reducedMotion)
+            this.view.addRing(p.x, p.y, p.z, 2, 24, 0.5, 0.28, 0.95, 0.9);
           for (let i = 0; i < 80; i++) {
             const ang = (i / 80) * Math.PI * 2;
             P().spawn(p.x, p.y, p.z, Math.cos(ang) * 90, (r() - 0.5) * 10, Math.sin(ang) * 90, 0.35, 1.4, 3, 2.8, 2.5, 1, 4);
@@ -345,6 +364,10 @@ export class Juice {
         } else {
           this.audio.play('stasis', 0, 0.9);
           this.flash = Math.max(this.flash, 0.15);
+          if (!this.settings().reducedMotion) {
+            const p = w.player.pos;
+            this.view.addRing(p.x, p.y, p.z, 2, 12, 0.8, 0.45, 0.8, 1);
+          }
         }
       }),
       ev.on('spawn', (s) => {
@@ -374,6 +397,11 @@ export class Juice {
         this.addTrauma(1);
         this.hitStop(80);
         lights.spawn(b.x, b.y, b.z, 300, 260, 200, 260, 2.5);
+        if (!this.settings().reducedMotion) {
+          // A clean outward pulse punctuates the transition into the relit sky.
+          this.view.addRing(b.x, b.y, b.z, 3, 95, 2.2, 1, 0.78, 0.38);
+          this.view.addRing(b.x, b.y, b.z, 2, 65, 1.5, 0.45, 0.95, 1);
+        }
         for (let i = 0; i < 1200; i++) {
           _v.set(r() - 0.5, r() - 0.5, r() - 0.5).normalize().multiplyScalar(20 + r() * 140);
           const k = r();
@@ -465,6 +493,7 @@ export class Juice {
     this.damageGlitch = Math.max(0, this.damageGlitch - dt * 2.5);
     this.breath = damp(this.breath, 0, 3, dt);
     this.killSoundT -= dt;
+    this.apertureT -= dt;
     this.killTagT -= dt;
     for (let i = this.secondaries.length - 1; i >= 0; i--) {
       const sc = this.secondaries[i]!;

@@ -533,14 +533,14 @@ export function resolve(b: Buf, out: Uint8ClampedArray, tint: RGB): void {
  * once its canvas leaves the DOM. With reduced motion, a single key frame
  * (the impact) is drawn instead of an animation.
  */
-export function mountPreviews(canvases: HTMLCanvasElement[], cards: DraftCard[], reducedMotion: boolean): void {
+export function mountPreviews(canvases: HTMLCanvasElement[], cards: DraftCard[], reducedMotion: boolean, phases?: number[]): void {
   const items = canvases.map((cv, i) => {
     cv.width = PV_W;
     cv.height = PV_H;
     const ctx = cv.getContext('2d')!;
     const img = ctx.createImageData(PV_W, PV_H);
     const spec = previewSpec(cards[i]!);
-    return { cv, ctx, img, spec, buf: new Buf(), phase: (i * 0.37) % PERIOD };
+    return { cv, ctx, img, spec, buf: new Buf(), phase: (phases?.[i] ?? i * 0.37) % PERIOD };
   });
   const frame = (time: number) => {
     for (const it of items) {

@@ -146,9 +146,13 @@ export class Game {
   lastRecord: RunRecord | null = null;
   deathT = 0;
   private relight = 0;
+  private sectorLightBaseline = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
+    // The prewarm frame contains deliberately bright test effects. Keep it off
+    // screen until the first real scene has rendered.
+    canvas.style.visibility = 'hidden';
     this.pipe = new Pipeline(canvas);
     this.view = new View(this.pipe);
     this.input = new Input(canvas);
@@ -442,6 +446,11 @@ export class Game {
     const go = () => this.startEncounter(boss ? 'boss' : 'endless', Math.floor(run.rng.next() * 1e9));
     if (env !== run.sector || wave === 0) {
       run.sector = env;
+      run.sectorLight = 0;
+      this.sectorLightBaseline = this.world?.player.lightTotal ?? 0;
+      this.relight = 0;
+      this.view.space.starPower = 0.25;
+      this.view.space.applyStarPower();
       const sec = SECTORS[env]!;
       if (wave === 0) go();
       else
@@ -460,6 +469,7 @@ export class Game {
     w.events.on('spawn', () => void 0);
     w.events.on('bossDeath', () => {
       this.relight = 1;
+      this.view.space.setRestoration(1, !this.settings.reducedMotion);
       const boss = this.run ? SECTORS[this.run.sector]!.boss : '';
       if (boss && !this.save.data.bossesKilled.includes(boss)) this.save.data.bossesKilled.push(boss);
     });
@@ -472,6 +482,8 @@ export class Game {
     const run = this.run!;
     run.sector = idx;
     run.sectorLight = 0;
+    this.sectorLightBaseline = this.world?.player.lightTotal ?? 0;
+    this.relight = 0;
     run.freeRerolls = this.save.unlockLevel('b_reroll');
     this.mapFocusZ = null;
     if (!first) run.map = generateMap(Math.floor(run.rng.next() * 1e9), idx, { rifts: this.save.unlockLevel('p_curses') > 0, heat: run.heat });
@@ -648,7 +660,7 @@ export class Game {
     if (dir.kind === 'derelict') {
       this.view.markers = dir.beacons.map((b) => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z, r: 12, lit: b.lit ? 1 : b.progress }));
     }
-    run.sectorLight = w.player.lightTotal;
+    run.sectorLight = Math.max(0, w.player.lightTotal - this.sectorLightBaseline);
     if (dir.kind === 'endless') run.endlessWaves = dir.endlessWave;
     // codex: enemies seen
     for (const id of w.stats.enemiesSeen) if (!this.save.data.codex.enemies.includes(id)) this.save.data.codex.enemies.push(id);
@@ -701,16 +713,14 @@ export class Game {
         this.juice.toast(`NEW BEST · WAVE ${run.endlessWaves}`, '#ffd890');
       }
       if (kind === 'boss') {
-        this.view.space.starPower = 1;
-        this.view.space.applyStarPower();
+        this.view.space.setRestoration(1, !this.settings.reducedMotion);
       }
       this.save.save();
       this.openDraft({ minRarity: kind === 'boss' ? 'rare' : undefined, after: 'endless' });
       return;
     }
     if (kind === 'boss') {
-      this.view.space.starPower = 1;
-      this.view.space.applyStarPower();
+      this.view.space.setRestoration(1, !this.settings.reducedMotion);
       this.juice.toast('THE STAR IS RELIT', '#fff6c0');
       if (run.sector === 0) this.challenge('first_boss');
       // Act I ends at the Last Dark (unless you pressed on); Act II at the Endless Night
@@ -1491,6 +1501,7 @@ export class Game {
     this.juice.frame(frameDt, this.state === 'combat' ? w : null);
     this.view.particles.now += frameDt;
     this.view.cockpit = this.camMode === 'cockpit';
+    this.view.reducedMotion = this.settings.reducedMotion;
     this.updateCamera(w, alpha, frameDt);
     // ambient visuals for non-combat scenes
     if (!w) this.drawScene(frameDt);
@@ -1513,6 +1524,7 @@ export class Game {
     this.pipe.update(frameDt, this.loop.realTime);
     this.view.space.update(this.loop.realTime, this.view.camera.position);
     this.pipe.render(this.view.world, this.view.overlay, this.view.tele, this.view.camera, this.loop.realTime);
+    if (this.canvas.style.visibility) this.canvas.style.visibility = '';
     this.hud.frame(frameDt, w);
     this.autoQuality(frameDt);
     this.input.endFrame();
@@ -1535,8 +1547,12 @@ export class Game {
     const w = this.world;
     let hush = 0;
     if (run) {
+      const liveSectorLight = Math.max(run.sectorLight, (w?.player.lightTotal ?? this.sectorLightBaseline) - this.sectorLightBaseline);
+      if (this.view.space.starPower < 1) {
+        this.view.space.setRestoration(0.25 + clamp(liveSectorLight / 1200, 0, 0.5));
+      }
       const base = [0.12, 0.22, 0.32, 0.42, 0.62][run.sector] ?? 0.3;
-      const relightK = clamp(run.sectorLight / 600, 0, 0.5) + (this.relight > 0 ? 1 : 0);
+      const relightK = clamp(liveSectorLight / 600, 0, 0.5) + (this.relight > 0 ? 1 : 0);
       hush = base * (1 - Math.min(1, relightK));
       if (w?.build.flags.has('hushedEyes')) hush += 0.2;
       if (w?.boss) hush = Math.max(hush, w.boss.hush * (w.boss.dead ? 0 : 1));

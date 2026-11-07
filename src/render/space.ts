@@ -27,6 +27,13 @@ export class Space {
   /** 0..1, how relit the star is (boss kill brings it to 1). */
   starPower = 0.5;
   private featureAxis = new THREE.Vector3(0, 0.2, -1);
+  /** One batched set of distant architectural contours; no per-landmark draw calls. */
+  private landmarkGeo = new THREE.BufferGeometry();
+  private landmarkMat: THREE.ShaderMaterial;
+  private visualPower = 0.5;
+  private lastUpdateTime: number | null = null;
+  private waveStart: number | null = null;
+
 
   constructor(private lights: LightRig, strokeCount = 1400) {
     this.strokeCount = strokeCount;
@@ -74,6 +81,35 @@ export class Space {
     this.star.frustumCulled = false;
     this.star.renderOrder = -4;
     this.group.add(this.star);
+
+    this.landmarkMat = new THREE.ShaderMaterial({
+      uniforms: { uRestore: { value: 0.5 }, uWave: { value: -2 } },
+      vertexShader: /* glsl */ `
+        attribute vec3 aColor;
+        attribute float aDistance;
+        varying vec3 vColor;
+        varying float vDistance;
+        void main() {
+          vColor = aColor;
+          vDistance = aDistance;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float uRestore;
+        uniform float uWave;
+        varying vec3 vColor;
+        varying float vDistance;
+        void main() {
+          float wave = 1.0 - smoothstep(0.0, 0.10, abs(vDistance - uWave));
+          gl_FragColor = vec4(vColor * (0.45 + 0.55 * uRestore + wave * 0.9), 0.0);
+        }`,
+      depthTest: false,
+    });
+    hdrAdditive(this.landmarkMat);
+    const landmark = new THREE.LineSegments(this.landmarkGeo, this.landmarkMat);
+    landmark.frustumCulled = false;
+    landmark.renderOrder = -4;
+    this.group.add(landmark);
   }
 
   setStrokeCount(n: number): void {
@@ -187,6 +223,7 @@ export class Space {
     this.star.position.copy(this.starDir).multiplyScalar(sd);
     this.star.scale.setScalar(sd * 0.32);
     this.starMat.uniforms.uColor!.value.copy(hexToLinearVec(pal.star));
+    this.buildLandmark(pal, rng);
     this.lights.uniforms.uStarDir.value.copy(this.starDir);
     this.lights.uniforms.uAmbient.value.copy(hexToLinearVec(pal.ambient, 1.2));
     this.applyStarPower();
@@ -274,16 +311,144 @@ export class Space {
     }
   }
 
+  /**
+   * A sector-scale illustration made of sparse broken contours, drawn in one
+   * batch on the sky shell. It uses the same seeded art RNG as the nebula.
+   */
+  private buildLandmark(pal: PaletteDef, rng: Rng): void {
+    const axis = this.starDir;
+    const u = new THREE.Vector3().crossVectors(axis, new THREE.Vector3(0, 1, 0)).normalize();
+    const v = new THREE.Vector3().crossVectors(u, axis).normalize();
+    const center = axis.clone().multiplyScalar(620);
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const distances: number[] = [];
+    const tint = hexToLinearVec(pal.nebula[0]);
+    const add = (x1: number, y1: number, x2: number, y2: number, intensity: number) => {
+      const a = center.clone().addScaledVector(u, x1).addScaledVector(v, y1);
+      const b = center.clone().addScaledVector(u, x2).addScaledVector(v, y2);
+      positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      for (let k = 0; k < 2; k++) colors.push(tint.x * intensity, tint.y * intensity, tint.z * intensity);
+      distances.push(Math.min(1, Math.hypot(x1, y1) / 520), Math.min(1, Math.hypot(x2, y2) / 520));
+    };
+    const arc = (rx: number, ry: number, start: number, end: number, segments: number, brightness: number, broken = 0) => {
+      for (let i = 0; i < segments; i++) {
+        if (broken && rng.next() < broken) continue;
+        const a = start + (end - start) * i / segments;
+        const b = start + (end - start) * (i + 1) / segments;
+        add(Math.cos(a) * rx, Math.sin(a) * ry, Math.cos(b) * rx, Math.sin(b) * ry, brightness);
+      }
+    };
+    // These large, low-contrast forms are landmarks, never a combat overlay.
+    switch (pal.feature ?? pal.id) {
+      case 'forge':
+        arc(265, 220, 0.2, Math.PI * 1.85, 90, 0.40, 0.12);
+        arc(280, 235, 0.3, Math.PI * 1.7, 80, 0.22, 0.22);
+        for (let i = -2; i <= 2; i++) add(i * 102, -310, i * 102 + 35, -115 + Math.abs(i) * 17, 0.18);
+        break;
+      case 'blackhole':
+        arc(92, 92, 0, Math.PI * 2, 88, 0.65);
+        arc(320, 65, 0.12, Math.PI * 0.92, 75, 0.32, 0.08);
+        arc(340, 82, Math.PI * 1.08, Math.PI * 1.92, 75, 0.26, 0.10);
+        break;
+      case 'jets':
+        for (let i = -2; i <= 2; i++) {
+          add(i * 12, 70, i * 48, 440, 0.20);
+          add(i * 12, -70, i * 48, -440, 0.20);
+        }
+        arc(90, 45, 0, Math.PI * 2, 55, 0.35, 0.08);
+        break;
+      case 'fieldlines':
+        for (let i = 0; i < 4; i++) {
+          arc(150 + i * 58, 240 + i * 42, -1.3, 1.3, 55, 0.21, 0.10);
+          arc(150 + i * 58, 240 + i * 42, 1.84, 4.44, 55, 0.21, 0.10);
+        }
+        break;
+      case 'rift':
+        for (let i = 0; i < 18; i++) {
+          const x = rng.range(-480, 480), y = rng.range(-300, 300);
+          add(x, y, x + rng.range(30, 110), y + rng.range(12, 50), 0.20 + rng.next() * 0.25);
+        }
+        break;
+      case 'ember':
+        arc(310, 210, 0.3, Math.PI * 1.85, 90, 0.26, 0.20);
+        for (let i = -2; i <= 2; i++) add(i * 86, -235, i * 86 + 35, -360, 0.20);
+        break;
+      case 'ice':
+        for (let i = 0; i < 9; i++) {
+          const a = i * Math.PI * 2 / 9;
+          add(Math.cos(a) * 135, Math.sin(a) * 100, Math.cos(a + 0.06) * 340, Math.sin(a + 0.06) * 240, 0.20);
+        }
+        break;
+      case 'pulsar':
+        arc(280, 92, 0, Math.PI * 2, 90, 0.28, 0.10);
+        arc(180, 300, 0, Math.PI * 2, 90, 0.20, 0.16);
+        break;
+      case 'hush':
+        arc(280, 210, 0.25, Math.PI * 1.85, 85, 0.14, 0.43);
+        break;
+      case 'binary':
+        // Two interlocking orbital arcs suggest the paired stars.
+        arc(330, 105, 0.2, Math.PI * 1.8, 80, 0.23, 0.14);
+        arc(190, 245, 1.1, Math.PI * 2.1, 80, 0.18, 0.16);
+        break;
+      case 'hearth':
+        // A broken lantern halo frames the home star without filling the menu.
+        arc(255, 205, 0.35, Math.PI * 0.85, 40, 0.20, 0.10);
+        arc(255, 205, Math.PI * 1.15, Math.PI * 1.65, 40, 0.20, 0.10);
+        add(-265, -130, -265, -195, 0.16);
+        add(265, -130, 265, -195, 0.16);
+        break;
+      case 'cradle':
+        arc(300, 170, 0.15, Math.PI * 1.65, 100, 0.23, 0.22);
+        arc(370, 205, Math.PI * 0.9, Math.PI * 2.15, 90, 0.17, 0.18);
+        break;
+      default:
+        arc(250, 190, 0.3, Math.PI * 1.8, 84, 0.22, 0.22);
+        arc(310, 225, 1.1, Math.PI * 2.1, 80, 0.16, 0.25);
+        break;
+    }
+    // Sector changes replace the buffer; release the old GPU allocation first.
+    this.landmarkGeo.dispose();
+    this.landmarkGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    this.landmarkGeo.setAttribute('aColor', new THREE.Float32BufferAttribute(colors, 3));
+    this.landmarkGeo.setAttribute('aDistance', new THREE.Float32BufferAttribute(distances, 1));
+  }
+
+  /** Change the target gradually; crossing full restoration starts a sky wave. */
+  setRestoration(power: number, animate = true): void {
+    const next = THREE.MathUtils.clamp(power, 0, 1);
+    if (next >= 1 && this.starPower < 1 && animate) this.waveStart = this.lastUpdateTime;
+    this.starPower = next;
+  }
+
   applyStarPower(): void {
-    const p = this.starPower;
+    this.waveStart = null;
+    this.landmarkMat.uniforms.uWave!.value = -2;
+    this.visualPower = this.starPower;
+    this.writeStarPower();
+  }
+
+  private writeStarPower(): void {
+    const p = this.visualPower;
     this.starMat.uniforms.uPower!.value = 0.35 + p * 0.9;
     const c = this.starMat.uniforms.uColor!.value as THREE.Vector3;
     this.lights.uniforms.uStarColor.value.copy(c).multiplyScalar(0.5 + p * 1.2);
+    this.landmarkMat.uniforms.uRestore!.value = p;
   }
 
   update(time: number, camPos: THREE.Vector3): void {
     // Backdrop is effectively at infinity: follow the camera.
     this.group.position.copy(camPos);
+    const dt = this.lastUpdateTime === null ? 0 : Math.max(0, time - this.lastUpdateTime);
+    this.lastUpdateTime = time;
+    this.visualPower += (this.starPower - this.visualPower) * (1 - Math.exp(-dt * 0.8));
+    this.writeStarPower();
+    if (this.waveStart !== null) {
+      const progress = (time - this.waveStart) / 3.5;
+      this.landmarkMat.uniforms.uWave!.value = progress <= 1.2 ? progress : -2;
+      if (progress > 1.2) this.waveStart = null;
+    }
     this.starMat.uniforms.uTime!.value = time;
   }
 }

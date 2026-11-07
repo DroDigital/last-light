@@ -17,6 +17,7 @@ import { MAX_LEVEL } from '../game/build';
 import { EFFECTS } from '../game/loot';
 import type { StatMod } from '../game/types';
 import { mountPreviews } from './preview';
+import { currentWeaponPreview, draftComparison } from './draft-comparison';
 
 const FAMILY_ICON: Record<string, string> = { kinetic: '⁂', energy: '✧', ordnance: '✹', exotic: '◎', drone: '⟡', light: '☼' };
 const VISUAL_ICON: Record<string, string> = { projectile: '➶', ship: '⛭', trail: '≋', aura: '◌', explosion: '✺', drone: '⟡', hud: '◈' };
@@ -59,8 +60,13 @@ export function showTitle(g: Game): void {
   g.ui.show(
     'title',
     `<div class="numeral">${String(d.bossesKilled.length).padStart(2, '0')}</div>
-    <div class="title-screen">
+    <div class="title-screen ${g.settings.reducedMotion ? 'motion-reduced' : ''}">
+      <div class="title-kicker"><span class="title-kicker-mark" aria-hidden="true">✶</span> THE HEARTH <span class="title-kicker-divider">/</span> YOUR LAST BEACON</div>
       <div class="logo"><span class="lg-base">Last Light</span><span class="lg-lit" aria-hidden="true">Last Light</span><small>The universe is going dark · ${d.bossesKilled.length}/${Object.keys(BOSSES).length} stars relit</small></div>
+      <div class="title-progress" aria-label="${d.bossesKilled.length} of ${Object.keys(BOSSES).length} stars relit">
+        <div class="title-progress-lights" aria-hidden="true">${Object.keys(BOSSES).map((_, i) => `<i class="${i < d.bossesKilled.length ? 'lit' : ''}" style="--light-index:${i}"></i>`).join('')}</div>
+        <span>${d.bossesKilled.length ? 'THE LIGHT RETURNS' : 'ONE SPARK REMAINS'}</span>
+      </div>
       <div class="menu">
         <button class="primary" data-nav data-autofocus data-act="hearth"><span class="ix">01</span>The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
         <button data-nav data-act="quickdive"><span class="ix">02</span>Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
@@ -155,7 +161,7 @@ export function showMap(g: Game): void {
     .map((n) => {
       const info = NODE_INFO[n.type];
       const cls = n.id === run.node ? 'cur' : reach.has(n.id) ? 'reach' : n.visited ? 'done' : '';
-      return `<div class="node-label ${cls}" style="--room-color:${ROOM_TIER[n.rarity].color}" ${reach.has(n.id) ? 'data-nav' : ''} data-act="node" data-arg="${n.id}" data-node="${n.id}"><span class="ic">${info.icon} ${String(n.row + 1).padStart(2, '0')}</span><span>${info.name}</span>${isThreatRoom(n.type) ? `<small>${n.rarity}</small>` : ''}</div>`;
+      return `<div class="node-label ${cls}" style="--room-color:${ROOM_TIER[n.rarity].color}" ${reach.has(n.id) ? 'data-nav' : ''} data-act="node" data-arg="${n.id}" data-node="${n.id}" aria-label="${esc(info.name)} · ${esc(info.desc)}" title="${esc(info.name)} — ${esc(info.desc)}"><span class="ic">${info.icon} ${String(n.row + 1).padStart(2, '0')}</span><span>${info.name}</span>${isThreatRoom(n.type) ? `<small>${n.rarity}</small>` : ''}</div>`;
     })
     .join('');
   const b = w.build;
@@ -178,6 +184,8 @@ export function showMap(g: Game): void {
         <button class="small" data-nav data-act="pausemenu">Menu</button>
       </div>
       <div class="side panel col" id="nodeinfo"><h3>Chart your course</h3><div class="dim">Choose a highlighted destination. Higher-tier encounters hold more salvage and stronger, denser fleets.</div>
+        <div id="node-detail" class="node-detail"><span class="node-detail-label">NEXT DESTINATION</span><strong data-node-name>Choose a route</strong><span data-node-description>Highlight a destination to inspect it.</span><span data-node-rarity></span></div>
+        <div class="route-legend"><span class="route-current">◆ Current</span><span class="route-reachable">◇ Reachable</span><span class="route-visited">· Visited</span></div>
         <div class="map-legend">${(['common', 'rare', 'epic', 'legendary', 'mythical'] as const).map((r) => `<span style="color:${ROOM_TIER[r].color}">◆ ${r}</span>`).join('')}</div>
         <div class="faint">Drag empty space to orbit · scroll to zoom</div>
         <div class="row map-controls"><button class="small" data-nav data-act="maporbit" data-arg="-1" aria-label="Rotate chart left">↶</button><button class="small" data-nav data-act="maporbit" data-arg="1" aria-label="Rotate chart right">↷</button><button class="small" data-nav data-act="mapzoom" data-arg="-1" aria-label="Zoom in">＋</button><button class="small" data-nav data-act="mapzoom" data-arg="1" aria-label="Zoom out">−</button><button class="small" data-nav data-act="mapreset">Reset</button></div>
@@ -234,6 +242,8 @@ export function showDraft(g: Game): void {
   const run = g.run!;
   const w = g.world!;
   const cards = run.draft ?? [];
+  const previewCards: DraftCard[] = [];
+  const previewPhases: number[] = [];
   const rerollCost = run.freeRerolls > 0 ? 'FREE' : `${20 + run.rerolls * 15} Light`;
   const src = run.draftCtx?.source;
   const title = src ? DROP_INFO[src].name : run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
@@ -244,13 +254,18 @@ export function showDraft(g: Game): void {
      <div class="cards">${cards
        .map((c, i) => {
          const r = cardRarity(c);
+         const comparison = draftComparison(c, w.build);
+         const currentPreview = currentWeaponPreview(c, w.build);
+         if (currentPreview) { previewCards.push(currentPreview); previewPhases.push(i * 0.37); }
+         previewCards.push(c); previewPhases.push(i * 0.37);
          return `<div class="card r-${r}" style="--rc:var(--c-${r})" data-nav ${i === 0 ? 'data-autofocus' : ''} data-act="pick" data-arg="${i}">
           <div class="glow"></div>${c.combo >= 2 ? '<div class="combo"></div>' : ''}
           <div class="idx">${String(i + 1).padStart(2, '0')}</div>
           <div class="rar">${c.kind === 'evolve' ? 'Evolution' : c.kind === 'weapon' ? 'New weapon' : c.kind === 'level' ? 'Weapon level' : r}</div>
-          <div class="pv"><canvas aria-hidden="true"></canvas><span class="pv-ic">${cardIcon(c)}</span></div>
+          <div class="pv ${currentPreview ? 'pv-paired' : ''}">${currentPreview ? '<div class="pv-side"><span>CURRENT</span><canvas aria-hidden="true"></canvas></div>' : ''}<div class="pv-side"><span>${currentPreview ? 'PROPOSED' : 'PREVIEW'}</span><canvas aria-hidden="true"></canvas></div><span class="pv-ic">${cardIcon(c)}</span></div>
           <div class="nm">${esc(cardTitle(c))}</div>
           <div class="ds">${cardDesc(c)}</div>
+          <div class="card-comparison" aria-label="${esc(comparison.label)}: ${esc(comparison.before)} changes to ${esc(comparison.after)}"><span class="compare-label">${esc(comparison.label)}</span><div><span>${esc(comparison.before)}</span><b aria-hidden="true">→</b><strong>${esc(comparison.after)}</strong></div></div>
           <div>${cardTags(c, g)}</div>
           ${c.kind === 'upgrade' && run.banishes > 0 ? `<button class="small banish" data-nav data-act="banish" data-arg="${i}" title="Remove from this run's pool">Banish (${run.banishes})</button>` : ''}
         </div>`;
@@ -260,7 +275,7 @@ export function showDraft(g: Game): void {
      <div class="faint" style="margin-top:12px">Keys <span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> pick</div>`,
     'draft',
   );
-  mountPreviews([...g.ui.root.querySelectorAll<HTMLCanvasElement>('.card .pv canvas')], cards, g.settings.reducedMotion);
+  mountPreviews([...g.ui.root.querySelectorAll<HTMLCanvasElement>('.card .pv canvas')], previewCards, g.settings.reducedMotion, previewPhases);
 }
 
 export function showShop(g: Game, refresh = false): void {

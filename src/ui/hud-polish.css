@@ -1,0 +1,23 @@
+/* Quiet instrument plates keep readouts legible over a bright star or nebula. */
+.hud .tl, .hud .tr {
+  padding: 8px 10px;
+  background: linear-gradient(90deg, rgba(7, 6, 11, .84), rgba(7, 6, 11, .56) 72%, transparent);
+  text-shadow: 0 1px 3px #07060b;
+}
+.hud .tr { background: linear-gradient(270deg, rgba(7, 6, 11, .84), rgba(7, 6, 11, .56) 72%, transparent); }
+.hud .bl, .hud .br, .hud .bossbar {
+  background-color: rgba(7, 6, 11, .42);
+  text-shadow: 0 1px 3px #07060b;
+}
+.hud .readout, .hud .weapons { font-size: max(11px, var(--s1)); }
+.hud .ab .n { font-size: max(10px, calc(9px * var(--ui-scale))); }
+.hud .ab .k { font-size: 11px; letter-spacing: 0; white-space: nowrap; }
+.hud.critical .bl { --br: var(--signal); }
+.hud.critical .bar.hull { color: var(--signal); }
+@media (max-width: 700px) {
+  .hud .tl, .hud .tr { padding: 5px 7px; }
+  .hud .bl, .hud .br { padding: 10px 11px; }
+  .hud .abilities { gap: 1px; }
+  .hud .ab { width: min(58px, 9vw); }
+  .hud .weapons { line-height: 1.4; }
+}
