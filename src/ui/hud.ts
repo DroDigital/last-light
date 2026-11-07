@@ -3,6 +3,7 @@ import { AFFIX_BY_ID, RARITY, rankLabel } from '../data/affixes';
 import { DROP_INFO } from '../data/drops';
 import { subtypeName } from '../data/subtypes';
 import { HAZARD_INFO } from '../game/hazards';
+import { NODE_INFO, ROOM_TIER, isThreatRoom } from '../game/run';
 import type { Game, State } from '../game/game';
 import { World } from '../game/world';
 import { PALETTES } from '../data/palettes';
@@ -10,6 +11,8 @@ import { fmtInt, clamp } from '../core/math';
 import { esc } from './ui';
 import type { SfxId } from '../audio/audio';
 import { SECTORS } from '../data/world';
+import { hudBindingLabel, visibleMapLabels, type MapLabelPosition } from './hud-layout';
+import './hud-polish.css';
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
@@ -91,10 +94,10 @@ export class Hud {
       </div>
       <div class="br"><div class="label"><span>Boost</span><b></b></div><div class="bar" style="color:#9fd8ff;height:5px"><i data-r="boost"></i></div>
         <div class="abilities">
-          <div class="ab" data-r="abdodge"><span class="k">⇧</span><div class="cd" data-r="cddodge"></div><span class="n" data-r="ndodge">DODGE</span></div>
-          <div class="ab" data-r="abq"><span class="k">Q</span><div class="cd" data-r="cdq"></div><span class="n">SHOCK</span></div>
-          <div class="ab" data-r="abe"><span class="k">E</span><div class="cd" data-r="cde"></div><span class="n">STASIS</span></div>
-          <div class="ab" data-r="abs"><span class="k">R</span><div class="cd" data-r="cds"></div><span class="n">2ND</span></div>
+          <div class="ab" data-r="abdodge"><span class="k" data-r="kdodge">⇧</span><div class="cd" data-r="cddodge"></div><span class="n" data-r="ndodge">DODGE</span></div>
+          <div class="ab" data-r="abq"><span class="k" data-r="kq">Q</span><div class="cd" data-r="cdq"></div><span class="n">SHOCK</span></div>
+          <div class="ab" data-r="abe"><span class="k" data-r="ke">E</span><div class="cd" data-r="cde"></div><span class="n">STASIS</span></div>
+          <div class="ab" data-r="abs"><span class="k" data-r="ks">RMB</span><div class="cd" data-r="cds"></div><span class="n">2ND</span></div>
         </div></div>
       <div class="toasts" data-r="toasts"></div>
       <div data-r="hint"></div>
@@ -160,7 +163,7 @@ export class Hud {
     const lum = pl.flareT > 0 ? (pl.flareT / w.build.ship.flareDur) * 100 : pl.lumen;
     r.lumenl!.style.width = `${lum}%`;
     r.lumen!.className = `lumen ${pl.lumen >= 100 ? 'full' : ''} ${pl.flareT > 0 ? 'flare' : ''}`;
-    r.lument!.textContent = pl.flareT > 0 ? `FLARE ${pl.flareT.toFixed(1)}s` : pl.lumen >= 100 ? 'READY · F' : `${Math.floor(pl.lumen)}%`;
+    r.lument!.textContent = pl.flareT > 0 ? `FLARE ${pl.flareT.toFixed(1)}s` : pl.lumen >= 100 ? `READY · ${hudBindingLabel(g.input.bindings, 'flare', g.input.lastDevice)}` : `${Math.floor(pl.lumen)}%`;
     const light = Math.floor(pl.light);
     if (light !== this.lastLight) {
       r.light!.textContent = fmtInt(light);
@@ -186,6 +189,10 @@ export class Hud {
     const s = w.build.ship;
     r.cddodge!.style.height = pl.dodgeCharges >= s.dodges ? '0%' : `${(1 - pl.dodgeRecharge / s.dodgeCd) * 100}%`;
     r.ndodge!.textContent = `DODGE ×${pl.dodgeCharges}`;
+    r.kdodge!.textContent = hudBindingLabel(g.input.bindings, 'dodge', g.input.lastDevice);
+    r.kq!.textContent = hudBindingLabel(g.input.bindings, 'ability1', g.input.lastDevice);
+    r.ke!.textContent = hudBindingLabel(g.input.bindings, 'ability2', g.input.lastDevice);
+    r.ks!.textContent = hudBindingLabel(g.input.bindings, 'fire2', g.input.lastDevice);
     r.abdodge!.classList.toggle('ready', pl.dodgeCharges > 0);
     const qcd = 9 * s.abilityCd;
     const ecd = 14 * s.abilityCd;
@@ -193,11 +200,15 @@ export class Hud {
     r.abq!.classList.toggle('ready', pl.shockCd <= 0);
     r.cde!.style.height = `${Math.max(0, pl.stasisCd / ecd) * 100}%`;
     r.abe!.classList.toggle('ready', pl.stasisCd <= 0);
+    r.abq!.title = pl.shockCd > 0 ? `Shockwave: ${pl.shockCd.toFixed(1)}s` : 'Shockwave ready';
+    r.abe!.title = pl.stasisCd > 0 ? `Stasis: ${pl.stasisCd.toFixed(1)}s` : 'Stasis ready';
     const sw = w.build.secondary;
     const scd = 1 / Math.max(0.01, sw.params.rate);
     r.cds!.style.height = `${Math.max(0, sw.cd / scd) * 100}%`;
+    r.abs!.classList.toggle('ready', sw.cd <= 0);
+    this.el.classList.toggle('critical', hf < 0.3);
     if (this.t % 0.25 < 0.02 || !r.weapons!.innerHTML) {
-      r.weapons!.innerHTML = w.build.weapons.map((x, i) => `${i === 0 ? 'LMB' : i === 1 ? 'RMB' : 'SYS'} <b>${esc(x.name)}</b> ${'▮'.repeat(x.level)}${x.evolved ? ' ❂' : ''}`).join('<br>');
+      r.weapons!.innerHTML = w.build.weapons.map((x, i) => `${i === 0 ? esc(hudBindingLabel(g.input.bindings, 'fire1', g.input.lastDevice)) : i === 1 ? esc(hudBindingLabel(g.input.bindings, 'fire2', g.input.lastDevice)) : 'SYS'} <b>${esc(x.name)}</b> ${'▮'.repeat(x.level)}${x.evolved ? ' ❂' : ''}`).join('<br>');
       const run = g.run;
       if (run) {
         r.sector!.textContent = run.endless ? 'SECTOR ∞ — BEYOND' : `SECTOR ${String(run.sector + 1).padStart(2, '0')} — ${SECTORS[run.sector]!.name.replace(/^[IVX]+ · /, '')}`;
@@ -382,7 +393,13 @@ export class Hud {
       }
       c.stroke();
       c.fillStyle = aimed ? '#ff4f00' : 'rgba(235,232,225,0.85)';
-      c.fillText(`TGT-${String(e.id % 100).padStart(2, '0')}${aimed ? ' · ' + Math.round(dist) + 'M' : ''}`, p.x + m + 5, p.y - m + 9);
+      if (aimed) {
+        const label = `${e.def.name.toUpperCase()} · ${Math.round(dist)}M`;
+        c.lineWidth = 3;
+        c.strokeStyle = 'rgba(5,4,9,.9)';
+        c.strokeText(label, p.x + m + 5, p.y - m + 9);
+        c.fillText(label, p.x + m + 5, p.y - m + 9);
+      }
     }
     // kill confirmations: DESTROYED / 042 with a signal rule
     for (const k of g.juice.killTags) {
@@ -781,20 +798,38 @@ export class Hud {
   private positionNodeLabels(): void {
     const run = this.g.run;
     if (!run) return;
-    for (const el of document.querySelectorAll<HTMLElement>('[data-node]')) {
-      const n = run.map.nodes[Number(el.dataset.node)]!;
+    const nextRow = run.node < 0 ? 0 : run.map.nodes[run.node]!.row + 1;
+    const entries: { el: HTMLElement; label: MapLabelPosition; behind: boolean }[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>('.node-label[data-node]')) {
+      const n = run.map.nodes[Number(el.dataset.node)];
+      if (!n) continue;
       const p = this.project(n.x, n.y + 5, n.z);
-      // Keep the next jump readable and give two rows of route context. Beyond
-      // that, perspective crowds the labels; the 3D landmarks remain visible.
-      const nextRow = run.node < 0 ? 0 : run.map.nodes[run.node]!.row + 1;
       const ahead = n.row - nextRow;
       const current = n.id === run.node;
-      const visible = current || (ahead >= 0 && ahead <= 2);
+      const eligible = current || (ahead >= 0 && ahead <= 2);
       el.classList.toggle('map-preview', ahead === 1 && !current);
       el.classList.toggle('map-distant', ahead === 2 && !current);
       el.style.left = `${p.x}px`;
       el.style.top = `${p.y}px`;
-      el.style.display = p.behind || !visible ? 'none' : 'flex';
+      const priority = el.classList.contains('reach') ? 'reachable' : current ? 'current' : ahead === 1 ? 'preview' : 'distant';
+      entries.push({ el, label: { id: n.id, x: p.x, y: p.y, priority }, behind: p.behind || !eligible });
+    }
+    const visible = visibleMapLabels(entries.filter((entry) => !entry.behind).map((entry) => entry.label));
+    for (const entry of entries) entry.el.style.display = !entry.behind && visible.has(entry.label.id) ? 'flex' : 'none';
+    const detail = document.getElementById('node-detail');
+    const focused = document.querySelector<HTMLElement>('.node-label.reach.focus');
+    const node = focused ? run.map.nodes[Number(focused.dataset.node)] : undefined;
+    if (detail && detail.dataset.selectedNode !== String(node?.id ?? '')) {
+      detail.dataset.selectedNode = String(node?.id ?? '');
+      const name = detail.querySelector<HTMLElement>('[data-node-name]');
+      const description = detail.querySelector<HTMLElement>('[data-node-description]');
+      const rarity = detail.querySelector<HTMLElement>('[data-node-rarity]');
+      if (name) name.textContent = node ? NODE_INFO[node.type].name : 'Choose a route';
+      if (description) description.textContent = node ? NODE_INFO[node.type].desc : 'Highlight a destination to inspect it.';
+      if (rarity) {
+        rarity.textContent = node && isThreatRoom(node.type) ? `${node.rarity.toUpperCase()} ENCOUNTER` : '';
+        rarity.style.color = node ? ROOM_TIER[node.rarity].color : '';
+      }
     }
   }
 

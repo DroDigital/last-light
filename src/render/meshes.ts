@@ -136,6 +136,7 @@ export type MeshKind =
   | 'plate'
   | 'segment'
   | 'bossCore'
+  | 'foremanCore'
   | 'drone'
   | 'halo'
   // world props (beacons, map nodes, hearth lanterns, wells)
@@ -197,6 +198,8 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
     case 'hushDart': {
       b.add(new THREE.ConeGeometry(0.5, 2.6, 4), DARK, 0, tr(0, 0, 0, -Math.PI / 2));
       b.mirrorX(() => new THREE.ConeGeometry(0.15, 1.4, 3), DARK, 0, 0.6, 0, 0.6, -Math.PI / 2.4, 0, 0.6);
+      // Broken, unequal fins make Hush silhouettes feel torn rather than manufactured.
+      b.add(new THREE.ConeGeometry(0.16, 1.1, 3), DARK, 0, tr(0, 0.48, 0.4, -1.0, 0.2, 0.3));
       b.add(new THREE.OctahedronGeometry(0.22, 0), '#ffffff', 1, tr(0, 0.1, -0.6));
       break;
     }
@@ -219,6 +222,9 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
     case 'salvBox': {
       b.add(new THREE.BoxGeometry(1.2, 0.8, 1.4), HULL2, 0);
       b.mirrorX(() => new THREE.BoxGeometry(0.4, 0.3, 1.0), HULL, 0, 0.8, 0, 0.1);
+      // A single offset tool arm gives the machines an industrial profile.
+      b.add(new THREE.BoxGeometry(0.14, 0.18, 1.0), HULL2, 0, tr(0.68, 0.3, -0.5, 0, -0.2, -0.18));
+      b.add(new THREE.BoxGeometry(0.27, 0.24, 0.2), HULL, 0, tr(0.77, 0.3, -1.0));
       b.add(new THREE.BoxGeometry(0.5, 0.2, 0.1), '#ffffff', 1, tr(0, 0.15, -0.72));
       b.mirrorX(() => new THREE.CylinderGeometry(0.15, 0.15, 0.3, 6), '#ffffff', 0.8, 0.8, 0, 0.65, Math.PI / 2);
       break;
@@ -254,6 +260,7 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
     case 'choirShard': {
       b.add(new THREE.OctahedronGeometry(0.7, 0), '#3a3048', 0.15, tr(0, 0, 0, 0, 0, 0, 0.6, 0.6, 1.8));
       b.add(new THREE.OctahedronGeometry(0.3, 0), '#ffffff', 1, tr(0, 0, 0, 0, 0, 0, 0.8, 0.8, 1.5));
+      b.mirrorX(() => new THREE.OctahedronGeometry(0.24, 0), '#3a3048', 0.2, 0.47, 0, 0.25, 0, 0, 0.8, 0.45, 1.4, 0.6);
       break;
     }
     case 'choirPrism': {
@@ -311,6 +318,20 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
         const a = (i / 8) * Math.PI * 2;
         b.add(new THREE.BoxGeometry(0.4, 0.4, 2.0), HULL, 0, tr(Math.cos(a) * 2.6, Math.sin(a) * 2.6, 0.5, 0, 0, a));
       }
+      break;
+    }
+    case 'foremanCore': {
+      // A mining engine with four armored jaws around its furnace. Its broad,
+      // asymmetric gantry reads differently from the Magnetar's round shell.
+      b.add(new THREE.CylinderGeometry(1.8, 2.15, 1.8, 8), HULL2, 0, tr(0, 0, 0, Math.PI / 2));
+      b.add(new THREE.CylinderGeometry(1.1, 1.1, 0.12, 8), '#ffffff', 0.85, tr(0, 0, -0.96, Math.PI / 2));
+      b.add(new THREE.IcosahedronGeometry(0.65, 0), '#ffffff', 1, tr(0, 0, -1.2));
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        b.add(new THREE.BoxGeometry(0.65, 1.7, 1.6), HULL, 0, tr(Math.cos(a) * 2.0, Math.sin(a) * 2.0, -0.1, 0, 0, a - Math.PI / 2));
+        b.add(new THREE.BoxGeometry(0.15, 1.0, 0.12), '#ffffff', 0.55, tr(Math.cos(a) * 2.35, Math.sin(a) * 2.35, -0.94, 0, 0, a - Math.PI / 2));
+      }
+      b.add(new THREE.BoxGeometry(1.1, 0.3, 1.0), HULL2, 0, tr(0.6, 2.25, 0.1));
       break;
     }
     case 'drone': {

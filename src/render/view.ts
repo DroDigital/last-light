@@ -5,6 +5,7 @@ import { Particles, Streaks, Bullets, Telegraphs } from './fx';
 import { Space } from './space';
 import { buildEnemyMesh, buildPlayerShip, type MeshKind } from './meshes';
 import { makeHullMaterial } from './materials';
+import { engineTrailBrightness, engineTrailWidth, lanternGlow } from './combat-look';
 import { haloPositions } from '../game/weapons';
 import { hexToRgb } from '../core/math';
 import { fxRng } from '../core/rng';
@@ -14,7 +15,7 @@ import { DROP_INFO, type DropKind } from '../data/drops';
 
 const KINDS: MeshKind[] = [
   'hushSpike', 'hushDart', 'hushBlob', 'hushEye', 'salvBox', 'salvRam', 'salvGun', 'salvHauler', 'salvTurret',
-  'choirShard', 'choirPrism', 'choirHalo', 'choirSeraph', 'asteroid', 'plate', 'segment', 'bossCore',
+  'choirShard', 'choirPrism', 'choirHalo', 'choirSeraph', 'asteroid', 'plate', 'segment', 'bossCore', 'foremanCore',
   'crucible', 'singularity', 'regent', 'shellPlate', 'mask',
 ];
 
@@ -44,6 +45,7 @@ const _pa = new THREE.Vector3();
 const _pb = new THREE.Vector3();
 const _rgbCache = new Map<string, [number, number, number]>();
 const WHITE: [number, number, number] = [1, 1, 1];
+const WEAPON_SIDES = ['port', 'starboard'] as const;
 function rgb(hex: string): [number, number, number] {
   let c = _rgbCache.get(hex);
   if (!c) _rgbCache.set(hex, (c = hexToRgb(hex)));
@@ -151,6 +153,7 @@ export class View {
   private sparks: VecSpark[] = [];
   /** reserved player tone (LDR) for crisp bolt cores */
   private playerTone = new THREE.Vector3(0.75, 0.96, 1);
+  private projectileColors = new Map<number, [number, number, number]>();
   private shipMat: THREE.ShaderMaterial;
   private shipHull = '';
   hullMat: THREE.ShaderMaterial;
@@ -161,6 +164,7 @@ export class View {
   private trailTimer = 0;
   trailColor = new THREE.Vector3(1, 0.85, 0.6);
   cockpit = false;
+  reducedMotion = false;
   afterimages: { m: THREE.Matrix4; t: number }[] = [];
   private ghostPool: { m: THREE.Matrix4; t: number }[] = [];
   /** extra visual markers (derelict beacons etc.) drawn as rings */
@@ -183,7 +187,7 @@ export class View {
       this.kinds.set(k, ik);
       this.world.add(ik.mesh);
       // living things get vector edges; dead rock stays a pure silhouette
-      if (k !== 'asteroid') ik.withEdges(this, k === 'segment' || k === 'bossCore' ? { haloGain: 0.9, coreGain: 0.5 } : { haloGain: 1.1, coreGain: 0.5 });
+      if (k !== 'asteroid') ik.withEdges(this, k === 'segment' || k === 'bossCore' || k === 'foremanCore' ? { haloGain: 0.9, coreGain: 0.5 } : { haloGain: 1.1, coreGain: 0.5 });
     }
     this.debris = new InstancedKind(buildEnemyMesh('debris', 7), this.hullMat, 900);
     this.world.add(this.debris.mesh);
@@ -379,10 +383,19 @@ export class View {
         _e.set(e.spin * 0.7, e.spin, 0);
         _q.multiply(_q2.setFromEuler(_e));
       }
+      const boss = w.boss;
+      const isBossCore = !!boss && e === boss.core;
+      // Only the visual shell turns and opens as the fight progresses: aim,
+      // damage and the simulation's collision sphere remain unchanged.
+      if (isBossCore && boss.id !== 'leviathan') {
+        _e.set(0, 0, Math.sin(time * 0.55) * 0.08 + boss.phase * 0.13);
+        _q.multiply(_q2.setFromEuler(_e));
+      }
       let sc = e.scale;
       if (e.spawnT > 0) sc *= 1 - e.spawnT / 0.6;
       const wob = e.wobble * Math.sin(time * 40) * 0.12;
-      _s.set(sc * (1 + wob), sc * (1 - wob), sc * (1 + wob));
+      const opening = isBossCore ? Math.min(0.12, boss.phase * 0.04) : 0;
+      _s.set(sc * (1 + wob + opening), sc * (1 - wob - opening * 0.35), sc * (1 + wob));
       _m.compose(_p, _q, _s);
       let r = e.tint.x;
       let g = e.tint.y;
@@ -407,6 +420,13 @@ export class View {
       if (e.invuln) boost += 0.3;
       const dissolve = e.alive ? 0 : 1 - e.dying / 0.4;
       ik.push(_m, r, g, b, e.flash, dissolve, boost, e.cloak);
+      if (isBossCore && e.alive && boss.phase > 0 && boss.dying <= 0 && boss.id !== 'leviathan') {
+        // A few slow, dim orbital contours open around the core as phases
+        // progress. They are decoration, distinct from red attack telegraphs.
+        const ringScale = e.radius * 0.28;
+        this.queueProp('wellDisc', _p.x, _p.y, _p.z, ringScale, time * 0.22, r * 0.36, g * 0.36, b * 0.36, 0, 0.4);
+        if (boss.phase >= 2) this.queueProp('wellDisc', _p.x, _p.y, _p.z, ringScale * 0.78, -time * 0.3, r * 0.25, g * 0.25, b * 0.25, 0, 1.1);
+      }
       // elite aura ring + shield links
       // rarity rings: one for Magic, two for Rare, three turning rings for a Unique
       if (e.alive && e.rarity > 0) {
@@ -470,12 +490,14 @@ export class View {
     }
     const fx = this.shipMat.uniforms.uFx!.value as THREE.Vector4;
     const heatGlow = w.build.flags.has('emberHull') ? pl.heat : 0;
+    const restoredGlow = lanternGlow(pl.lightTotal, pl.maxHull > 0 ? pl.hull / pl.maxHull : 0);
     const rateGlow = Math.min(1, (w.build.primary.params.rate / Math.max(1, w.build.primary.def.base.rate)) - 1) * 0.6;
-    fx.set(pl.hurtT > 0.2 ? 1 : 0, 0, (pl.flareT > 0 ? 0.6 : 0) + heatGlow + Math.max(0, rateGlow) * (pl.firingT < 0.2 ? 1 : 0.3), pl.iframeT > 0 && pl.dodgeT <= 0 ? 0.3 : 0);
+    fx.set(pl.hurtT > 0.2 ? 1 : 0, 0, (pl.flareT > 0 ? 0.6 : 0) + restoredGlow + heatGlow + Math.max(0, rateGlow) * (pl.firingT < 0.2 ? 1 : 0.3), pl.iframeT > 0 && pl.dodgeT <= 0 ? 0.3 : 0);
 
     // afterimages during dodge
     this.trailTimer += frameDt;
-    if (pl.dodgeT > 0 && Math.floor(time * 30) !== Math.floor((time - frameDt) * 30)) {
+    const ghostRate = pl.dodgeT > 0 ? 30 : !this.reducedMotion && pl.flareT > 0 && pl.vel.lengthSq() > 25 ? 4 : 0;
+    if (!this.cockpit && ghostRate > 0 && Math.floor(time * ghostRate) !== Math.floor((time - frameDt) * ghostRate)) {
       // recycle afterimage matrices instead of allocating one per ghost
       const g = this.ghostPool.pop() ?? { m: new THREE.Matrix4(), t: 0 };
       g.m.compose(this.ship.position, this.ship.quaternion, _s.setScalar(scale));
@@ -517,9 +539,8 @@ export class View {
         this.trailCount = Math.min(48, this.trailCount + 1);
       }
       if (pl.vel.lengthSq() < 4 && this.trailCount > 2) this.trailCount -= 1;
-      const len = Math.min(this.trailCount, Math.round(20 * w.build.ship.speed * (pl.boosting ? 1.5 : 1)));
+      const len = Math.min(this.trailCount, Math.round(15 * w.build.ship.speed * (pl.boosting ? 1.25 : 1)));
       const tc = this.trailColor;
-      const boost = pl.boosting ? 2.2 : 1;
       for (let e = 0; e < 2; e++) {
         let px = e === 0 ? ex + right.x * 0.55 * scale : ex - right.x * 0.55 * scale;
         let py = e === 0 ? ey + right.y * 0.55 * scale : ey - right.y * 0.55 * scale;
@@ -530,11 +551,23 @@ export class View {
           const qy = this.trail[idx + 1]!;
           const qz = this.trail[idx + 2]!;
           const f = 1 - k / len;
-          const inten = f * f * 2.2 * (0.3 + pl.thrust) * boost;
-          this.streaks.push(px, py, pz, qx, qy, qz, tc.x * inten, tc.y * inten, tc.z * inten, 0.32 * f * scale + 0.05, 0.32 * (f - 1 / len) * scale + 0.05);
+          const inten = engineTrailBrightness(f, pl.thrust, pl.boosting);
+          this.streaks.push(px, py, pz, qx, qy, qz, tc.x * inten, tc.y * inten, tc.z * inten, engineTrailWidth(f, scale), engineTrailWidth(f - 1 / len, scale));
           px = qx;
           py = qy;
           pz = qz;
+        }
+      }
+      // Fitted hardpoints are small physical light bars, tinted by their fitted
+      // effects. They travel with the hull and remain quieter than shot cores.
+      if (!this.cockpit) {
+        for (const side of WEAPON_SIDES) {
+          if (!w.build.equipment[side] && !w.build.effects[side].some(Boolean)) continue;
+          const sign = side === 'port' ? -1 : 1;
+          const color = w.colorOf(w.sideSrc(side));
+          _v.set(sign * 1.15 * scale, 0.14 * scale, 0.25 * scale).applyQuaternion(_q).add(this.ship.position);
+          _w.set(sign * 1.15 * scale, 0.14 * scale, 0.85 * scale).applyQuaternion(_q).add(this.ship.position);
+          this.streaks.push(_v.x, _v.y, _v.z, _w.x, _w.y, _w.z, color[0] * 0.75, color[1] * 0.75, color[2] * 0.75, 0.07 * scale);
         }
       }
       // shield halo: visible ring sized by max shield, brightness by current
@@ -561,6 +594,10 @@ export class View {
 
   private syncProjectiles(w: World, a: number): void {
     const P = w.proj;
+    // Effects can change between encounters; cache once per source per frame,
+    // rather than resolving a loadout effect for every live projectile.
+    const projectileColors = this.projectileColors;
+    projectileColors.clear();
     const inv = 1 - a;
     // The ship renders interpolated between ticks; shots are born at the current
     // tick's muzzle. Shift brand-new shots by the same interpolation delta so
@@ -596,14 +633,23 @@ export class View {
       const by = y - vy * k;
       const bz = z - vz * k;
       const t = this.playerTone;
-      this.telegraphs.seg(x, y, z, bx, by, bz, t.x, t.y, t.z, 1);
-      // halo goes into the HDR scene: bloom + dither make it part of the painting
-      const h = kind === 5 ? 1.6 : 1.1;
+      // Missiles have a short detached exhaust dash behind their solid nose;
+      // ordinary shots remain continuous needles. Both use the reserved tone.
+      if (kind === 5) {
+        this.telegraphs.seg(x + (bx - x) * 0.35, y + (by - y) * 0.35, z + (bz - z) * 0.35, bx, by, bz, t.x, t.y, t.z, 0.8);
+      } else {
+        this.telegraphs.seg(x, y, z, bx, by, bz, t.x, t.y, t.z, 1);
+      }
+      // Weapon tint is confined to the dithered halo; the readable core stays
+      // in the player's reserved color, including colorblind palettes.
+      const h = kind === 5 ? 1.45 : 1.0;
       const src = P.src[i]!;
-      const side = src === w.sideSrc('port') ? 'port' : src === w.sideSrc('starboard') ? 'starboard' : null;
-      const hasEffect = side && w.build.effects[side].some(Boolean);
-      const col = hasEffect ? w.colorOf(src) : null;
-      if (k > 0.002) this.streaks.push(x, y, z, bx, by, bz, col ? col[0] * h * 2.4 : 0.5 * h, col ? col[1] * h * 2.4 : 1.6 * h, col ? col[2] * h * 2.4 : 2.4 * h, sz * 1.6, sz * 0.6);
+      let col = projectileColors.get(src);
+      if (!col) {
+        col = w.colorOf(src);
+        projectileColors.set(src, col);
+      }
+      if (k > 0.002) this.streaks.push(x, y, z, bx, by, bz, col[0] * h, col[1] * h, col[2] * h, sz * 1.3, sz * 0.45);
       if (kind === 5) this.bullets.push(x, y, z, sz * 0.8, 0, 0, 0, 5);
     }
     const E = w.eproj;
@@ -813,8 +859,16 @@ export class View {
     const pl = w.player;
     if (pl.stasisT > 0) {
       const r = 34 * w.build.ship.stasis;
-      T.ring(pl.pos.x, pl.pos.y, pl.pos.z, r, 0, 1, 0, 0.3, 0.6, 1, 0.4, 64);
-      T.ring(pl.pos.x, pl.pos.y, pl.pos.z, r, 1, 0, 0, 0.3, 0.6, 1, 0.25, 64);
+      T.ring(pl.pos.x, pl.pos.y, pl.pos.z, r, 0, 1, 0, 0.3, 0.6, 1, 0.35, 64);
+      T.ring(pl.pos.x, pl.pos.y, pl.pos.z, r, 1, 0, 0, 0.3, 0.6, 1, 0.2, 64);
+      // Clock-like ticks make this field visually distinct from shockwaves.
+      for (let i = 0; i < 12; i++) {
+        const angle = i * Math.PI / 6;
+        const c = Math.cos(angle);
+        const s = Math.sin(angle);
+        T.seg(pl.pos.x + c * r * 0.91, pl.pos.y, pl.pos.z + s * r * 0.91,
+          pl.pos.x + c * r * 0.97, pl.pos.y, pl.pos.z + s * r * 0.97, 0.3, 0.6, 1, 0.38);
+      }
     }
     // arena boundary warning
     const d = pl.pos.length();
