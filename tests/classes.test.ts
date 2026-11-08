@@ -31,7 +31,12 @@ describe('pilot classes', () => {
       expect(WEAPON_BY_ID[c.hull.start.primary]!.slot).toBe('primary');
       expect(WEAPON_BY_ID[c.hull.start.secondary]!.slot).toBe('secondary');
       // a real model and gun positions for the ship
-      expect(buildPlayerShip(c.hull.id).getAttribute('position').count).toBeGreaterThan(buildPlayerShip('lantern').getAttribute('position').count);
+      const geo = buildPlayerShip(c.hull.id);
+      expect(geo.getAttribute('position').count).toBeGreaterThan(buildPlayerShip('lantern').getAttribute('position').count * 0.8);
+      // the player livery: a smoked-glass canopy (faint emissive) and hot lit parts (nozzles, lights)
+      const emit = Array.from(geo.getAttribute('aEmit').array as Float32Array);
+      expect(emit.some((e) => e > 0.1 && e < 0.2), 'glass canopy').toBe(true);
+      expect(emit.some((e) => e >= 1), 'lit nozzle').toBe(true);
       expect(HARDPOINTS[c.hull.id]).toBeDefined();
     }
     expect(HULLS[0]!.id).toBe('lantern');

@@ -77,7 +77,7 @@ export class UI {
     const key = this.focusEl ? `${this.focusEl.dataset.act}|${this.focusEl.dataset.arg ?? ''}` : '';
     const scroll = (this.screenEl.querySelector('.scroll') as HTMLElement | null)?.scrollTop ?? 0;
     this.current = name;
-    this.screenEl.innerHTML = `<div class="screen ${cls}" data-screen="${name}" style="animation:none">${html}</div>`;
+    this.screenEl.innerHTML = `<div class="screen refreshed ${cls}" data-screen="${name}">${html}</div>`;
     const sc = this.screenEl.querySelector('.scroll') as HTMLElement | null;
     if (sc) sc.scrollTop = scroll;
     this.focusEl = null;
