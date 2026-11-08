@@ -46,7 +46,7 @@ export interface ClassDef {
   branches: SkillBranch[];
 }
 
-export const MAX_CLASS_LEVEL = 15;
+export const MAX_CLASS_LEVEL = 12;
 /** cost of each tier, by tier number */
 export const TIER_COST = [0, 1, 1, 2, 3];
 
@@ -76,25 +76,25 @@ export const CLASSES: ClassDef[] = [
       {
         id: 'bulwark', name: 'Bulwark', desc: 'Survive anything.',
         nodes: [
-          n('vg_plating', 1, 'Reinforced Plating', '+25 max hull.', { mods: [{ s: 'hull', add: 25 }] }),
-          n('vg_reactive', 2, 'Reactive Armor', '+2 armor and +15% max shield.', { mods: [{ s: 'armor', add: 2 }, { s: 'shield', mul: 1.15 }] }),
-          n('vg_barrier', 3, 'Hardlight Barrier', 'Taking hull damage restores 15 shield (4 s cooldown).', { triggers: [{ on: 'hurt', do: 'shield', p: 15, cd: 4 }] }),
+          n('vg_plating', 1, 'Reinforced Plating', '+20 max hull.', { mods: [{ s: 'hull', add: 20 }] }),
+          n('vg_reactive', 2, 'Reactive Armor', '+1 armor and +15% max shield.', { mods: [{ s: 'armor', add: 1 }, { s: 'shield', mul: 1.15 }] }),
+          n('vg_barrier', 3, 'Hardlight Barrier', 'Taking hull damage restores 10 shield (5 s cooldown).', { triggers: [{ on: 'hurt', do: 'shield', p: 10, cd: 5 }] }),
           n('vg_laststand', 4, 'Unbreakable', 'Keystone. A killing blow leaves you at 1 hull with 2 s of invulnerability instead. Recharges after 60 s.', { flags: ['vgLastStand'] }),
         ],
       },
       {
         id: 'siege', name: 'Siege', desc: 'Bigger shells, bigger craters.',
         nodes: [
-          n('vg_shells', 1, 'Heavy Shells', '+20% damage with area weapons.', { mods: [{ s: 'damage', mul: 1.2, tag: 'area' }] }),
+          n('vg_shells', 1, 'Heavy Shells', '+15% damage with area weapons.', { mods: [{ s: 'damage', mul: 1.15, tag: 'area' }] }),
           n('vg_payload', 2, 'Wide Payload', '+25% explosion radius.', { mods: [{ s: 'explode', mul: 1.25 }] }),
-          n('vg_barrage', 3, 'Barrage', 'Firing your secondary also launches 3 seeking missiles.', { triggers: [{ on: 'secondary', do: 'missiles', p: 3 }] }),
+          n('vg_barrage', 3, 'Barrage', 'Firing your secondary also launches 2 seeking missiles.', { triggers: [{ on: 'secondary', do: 'missiles', p: 2 }] }),
           n('vg_quake', 4, 'Earthshaker', 'Keystone. Kills have a 30% chance to detonate; Shockwave is 40% larger.', { mods: [{ s: 'shockwave', mul: 1.4 }], triggers: [{ on: 'kill', do: 'nova', p: 0.6, chance: 0.3 }] }),
         ],
       },
       {
         id: 'command', name: 'Command', desc: 'Hit back harder the more you are hit.',
         nodes: [
-          n('vg_rally', 1, 'Rally', '+12% fire rate.', { mods: [{ s: 'globalRate', mul: 1.12 }] }),
+          n('vg_rally', 1, 'Rally', '+8% fire rate.', { mods: [{ s: 'globalRate', mul: 1.08 }] }),
           n('vg_retaliate', 2, 'Retaliation', 'Taking hull damage releases a nova (2 s cooldown).', { triggers: [{ on: 'hurt', do: 'nova', p: 1.5, cd: 2 }] }),
           n('vg_cooldown', 3, 'Field Doctrine', 'Abilities recharge 20% faster; a broken shield releases a nova (6 s cooldown).', { mods: [{ s: 'abilityCd', mul: 0.8 }], triggers: [{ on: 'shieldBreak', do: 'nova', p: 2, cd: 6 }] }),
           n('vg_ironwill', 4, 'Iron Will', 'Keystone. Deal up to +50% damage and take up to 30% less damage as your hull drops.', { flags: ['vgIronWill'] }),
@@ -118,8 +118,8 @@ export const CLASSES: ClassDef[] = [
       {
         id: 'precision', name: 'Precision', desc: 'Every shot a critical one.',
         nodes: [
-          n('st_optics', 1, 'Keen Optics', '+6% critical chance.', { mods: [{ s: 'crit', add: 0.06 }] }),
-          n('st_weakpoint', 2, 'Weak Points', '+50% critical damage.', { mods: [{ s: 'critMul', add: 0.5 }] }),
+          n('st_optics', 1, 'Keen Optics', '+5% critical chance.', { mods: [{ s: 'crit', add: 0.05 }] }),
+          n('st_weakpoint', 2, 'Weak Points', '+40% critical damage.', { mods: [{ s: 'critMul', add: 0.4 }] }),
           n('st_marked', 3, 'Marked Prey', 'Crits have a 30% chance to arc lightning to 2 nearby enemies.', { triggers: [{ on: 'crit', do: 'chain', p: 2, chance: 0.3 }] }),
           n('st_deadeye', 4, 'Deadeye', 'Keystone. Your locked-on target takes +30% damage from you; the lock holds longer.', { flags: ['stDeadeye'] }),
         ],
@@ -161,25 +161,25 @@ export const CLASSES: ClassDef[] = [
       {
         id: 'storm', name: 'Storm', desc: 'Lightning that never stops jumping.',
         nodes: [
-          n('cd_capacitor', 1, 'Capacitors', '+20% damage with shock weapons.', { mods: [{ s: 'damage', mul: 1.2, tag: 'shock' }] }),
+          n('cd_capacitor', 1, 'Capacitors', '+15% damage with shock weapons.', { mods: [{ s: 'damage', mul: 1.15, tag: 'shock' }] }),
           n('cd_fork', 2, 'Forked Lightning', '+1 chain jump and +0.15 shock.', { mods: [{ s: 'chain', add: 1 }, { s: 'shock', add: 0.15 }] }),
-          n('cd_static', 3, 'Static Field', 'Crits arc lightning to 3 nearby enemies.', { triggers: [{ on: 'crit', do: 'chain', p: 3, chance: 0.5 }] }),
+          n('cd_static', 3, 'Static Field', 'Crits have a 35% chance to arc lightning to 3 nearby enemies.', { triggers: [{ on: 'crit', do: 'chain', p: 3, chance: 0.35 }] }),
           n('cd_stormcall', 4, 'Stormcaller', 'Keystone. Shock chains reach twice as far; kills arc to 2 more enemies.', { flags: ['stormfront'], triggers: [{ on: 'kill', do: 'chain', p: 2 }] }),
         ],
       },
       {
         id: 'swarm', name: 'Swarm', desc: 'A wing that grows with you.',
         nodes: [
-          n('cd_uplink', 1, 'Drone Uplink', '+25% drone damage.', { mods: [{ s: 'damage', mul: 1.25, tag: 'drone' }] }),
+          n('cd_uplink', 1, 'Drone Uplink', '+20% drone damage.', { mods: [{ s: 'damage', mul: 1.2, tag: 'drone' }] }),
           n('cd_wing', 2, 'Second Wing', '+1 drone.', { mods: [{ s: 'count', add: 1, tag: 'drone' }] }),
-          n('cd_repair', 3, 'Repair Protocol', 'Kills have a 30% chance to restore 6 shield; +2 hull regen per 10 s.', { mods: [{ s: 'regen', add: 0.2 }], triggers: [{ on: 'kill', do: 'shield', p: 6, chance: 0.3 }] }),
+          n('cd_repair', 3, 'Repair Protocol', 'Kills have a 30% chance to restore 6 shield; +1 hull regen per 10 s.', { mods: [{ s: 'regen', add: 0.1 }], triggers: [{ on: 'kill', do: 'shield', p: 6, chance: 0.3 }] }),
           n('cd_hive', 4, 'Hive Mind', 'Keystone. Drones fire 50% faster and gain another drone.', { mods: [{ s: 'rate', mul: 1.5, tag: 'drone' }, { s: 'count', add: 1, tag: 'drone' }] }),
         ],
       },
       {
         id: 'void', name: 'Void', desc: 'Bend space, then break it.',
         nodes: [
-          n('cd_lens', 1, 'Event Lens', '+25% damage with exotic weapons.', { mods: [{ s: 'damage', mul: 1.25, tag: 'exotic' }] }),
+          n('cd_lens', 1, 'Event Lens', '+15% damage with exotic weapons.', { mods: [{ s: 'damage', mul: 1.15, tag: 'exotic' }] }),
           n('cd_deepwell', 2, 'Deep Well', 'Gravity effects last 30% longer and reach 20% farther.', { mods: [{ s: 'life', mul: 1.3, tag: 'void' }, { s: 'range', mul: 1.2, tag: 'void' }] }),
           n('cd_horizon', 3, 'Event Horizon', 'Void pulls are stronger and wells last longer.', { flags: ['eventhorizon'] }),
           n('cd_collapse', 4, 'Collapse', 'Keystone. Kills have a 25% chance to open a small singularity that drags enemies in.', { triggers: [{ on: 'kill', do: 'pull', p: 1, chance: 0.25, cd: 1 }] }),

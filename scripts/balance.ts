@@ -4,7 +4,7 @@
  * how much hull each encounter costs.
  *
  *   npx vite-node scripts/balance.ts [runs=12] [skill=good|ok|poor] [hull=lantern]
- *   CLASS_SKILLS=max plays a class ship (aegis, kestrel, loom) with a level-15 skill tree.
+ *   CLASS_SKILLS=max plays a class ship (aegis, kestrel, loom) with a max-level skill tree.
  */
 import { Vector3, Quaternion } from 'three';
 import { World } from '../src/game/world';
@@ -21,7 +21,7 @@ import { enemyClass } from '../src/data/drops';
 const runs = Number(process.argv[2] ?? 12);
 const skill = (process.argv[3] ?? 'ok') as 'good' | 'ok' | 'poor';
 const hullId = process.argv[4] ?? 'lantern';
-/** CLASS_SKILLS=max plays a class ship at level 15, its 15 points spent tier by tier across the branches. */
+/** CLASS_SKILLS=max plays a class ship at max level, its points spent tier by tier across the branches. */
 const CLASS_SKILLS = process.env.CLASS_SKILLS ?? 'none';
 function maxTree(classId: string): string[] {
   const learned: string[] = [];

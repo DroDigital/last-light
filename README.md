@@ -82,7 +82,7 @@ Every dive starts on the class screen (Quick Dive skips it and flies your last p
 | Striker: interceptor | Kestrel | Coilshot · Cluster Pod | +1 dodge and faster recharge; each dodge primes +30% damage for 1.5 s |
 | Conduit: technomancer | Loom | Arc Caster · Gravity Well · Interceptor Wing | Status effects 25% stronger; abilities recharge 15% faster |
 
-Each class has its own skill tree: three branches of four nodes, and the last node of each branch is a keystone. Class XP from every finished dive (kills, sectors, bosses, wins, Endless waves) earns one skill point per level, up to level 15. That is not enough for the whole tree, so you have to choose. Select a learned node again to refund it (from the top of a branch down), or use **Reset tree**. The Lantern and any hulls bought in the Hearth fly from the same screen, without a tree. Data and rules are in `src/data/classes.ts`.
+Each class has its own skill tree: three branches of four nodes, and the last node of each branch is a keystone. Class XP from every finished dive (kills, sectors, bosses, wins, Endless waves) earns one skill point per level, up to level 12. That buys 12 of a tree's 21 points, so you have to choose. Select a learned node again to refund it (from the top of a branch down), or use **Reset tree**. The Lantern and any hulls bought in the Hearth fly from the same screen, without a tree. Data and rules are in `src/data/classes.ts`.
 
 ## Modes
 

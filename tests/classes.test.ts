@@ -89,9 +89,9 @@ describe('pilot classes', () => {
     const plain = new Build(aegis, meta());
     const skilled = new Build(aegis, meta());
     skilled.setSkills(skillLoadout('vanguard', ['vg_plating', 'vg_reactive', 'vg_shells']));
-    expect(skilled.ship.hull).toBe(plain.ship.hull + 25);
-    expect(skilled.ship.armor).toBe(plain.ship.armor + 2);
-    expect(skilled.primary.params.damage).toBeCloseTo(plain.primary.params.damage * 1.2, 5); // flak is an area weapon
+    expect(skilled.ship.hull).toBe(plain.ship.hull + 20);
+    expect(skilled.ship.armor).toBe(plain.ship.armor + 1);
+    expect(skilled.primary.params.damage).toBeCloseTo(plain.primary.params.damage * 1.15, 5); // flak is an area weapon
     // learned nodes of another class are ignored
     expect(skillLoadout('vanguard', ['st_optics']).mods).toHaveLength(0);
     // Conduit's passive is always on
