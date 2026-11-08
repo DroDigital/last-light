@@ -103,6 +103,24 @@ canvas#hud2d { position: fixed; inset: 0; pointer-events: none; }
 #ui .screen { position: absolute; inset: 0; pointer-events: auto; display: flex; animation: screenIn 0.32s steps(5) both; }
 #ui .screen.passthrough { pointer-events: none; }
 #ui .screen.passthrough > * { pointer-events: auto; }
+/* menu entries cascade in one after another, panels slide up behind them */
+#ui .screen .menu > button, #ui .screen .menu > .btn { animation: itemIn 0.42s steps(7) both; }
+#ui .screen .menu > :nth-child(1) { animation-delay: 0.04s; }
+#ui .screen .menu > :nth-child(2) { animation-delay: 0.08s; }
+#ui .screen .menu > :nth-child(3) { animation-delay: 0.12s; }
+#ui .screen .menu > :nth-child(4) { animation-delay: 0.16s; }
+#ui .screen .menu > :nth-child(5) { animation-delay: 0.2s; }
+#ui .screen .menu > :nth-child(6) { animation-delay: 0.24s; }
+#ui .screen .menu > :nth-child(7) { animation-delay: 0.28s; }
+#ui .screen .menu > :nth-child(n + 8) { animation-delay: 0.32s; }
+#ui .screen .panel { animation: panelIn 0.5s steps(8) both; }
+@keyframes itemIn { from { opacity: 0; transform: translateX(-22px); clip-path: inset(0 100% 0 0); } to { opacity: 1; transform: none; clip-path: inset(0 0 0 0); } }
+@keyframes panelIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+/* focused entries: a lantern caret and a light sweep across the plate */
+.menu button .ix { transition: transform 0.16s steps(3), color 0.1s; }
+.menu button:hover .ix, .menu button.focus .ix { transform: translate(5px, -50%); text-shadow: 0 0 8px var(--lantern); }
+button.focus::after, button:hover::after { animation: sweep 1.6s steps(16) infinite; }
+@keyframes sweep { 0% { -webkit-mask-position: -480px 0; mask-position: -480px 0; } 100% { -webkit-mask-position: 0 0; mask-position: 0 0; } }
 /* screens arrive like a scan being drawn */
 @keyframes screenIn { from { opacity: 0; clip-path: inset(0 0 100% 0); } to { opacity: 1; clip-path: inset(0 0 0 0); } }
 
@@ -250,14 +268,16 @@ h3 { font-family: var(--px); font-weight: 400; font-size: calc(12px * var(--ui-s
 @keyframes bump { 50% { transform: translateY(-3px); color: var(--lantern-hot); } }
 .abilities { display: flex; gap: 4px; justify-content: flex-end; margin-top: 10px; }
 .ab {
-  width: 58px; height: 54px; position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 7px;
+  width: 62px; height: 56px; position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 7px;
   --br: transparent; --bl: 8px; background: var(--brackets);
 }
 .ab::before { content: ''; position: absolute; inset: 3px; z-index: -2; --cut: 8px; clip-path: var(--chamfer); background: var(--plate); box-shadow: inset 0 0 0 1px var(--line); }
 .ab .cd { position: absolute; left: 3px; right: 3px; bottom: 3px; z-index: -1; background: var(--ink); -webkit-mask: var(--m-75) left bottom / 12px 12px; mask: var(--m-75) left bottom / 12px 12px; transition: height 0.1s steps(3); }
 .ab .k { position: absolute; top: 9px; left: 0; right: 0; text-align: center; font-family: var(--px); font-size: calc(16px * var(--ui-scale)); color: var(--paper); }
-.ab .n { font-family: var(--px); font-size: calc(9px * var(--ui-scale)); color: var(--paper-3); letter-spacing: 0.06em; }
-.ab.ready { --br: var(--lantern); }
+.ab .k.long { top: 12px; font-size: calc(10px * var(--ui-scale)); letter-spacing: 0.02em; }
+.ab .n { font-family: var(--px); font-size: calc(9px * var(--ui-scale)); color: var(--paper-3); letter-spacing: 0.06em; white-space: nowrap; }
+.ab.ready { --br: var(--lantern); animation: abReady 0.5s steps(4) 1; }
+@keyframes abReady { 0% { filter: brightness(2.2); } 100% { filter: none; } }
 .ab.ready .k { color: var(--lantern-hot); }
 .ab.ready .n { color: var(--paper-2); }
 .weapons { font-family: var(--mono); font-size: var(--s1); color: var(--paper-3); line-height: 1.75; margin-top: 10px; }
@@ -515,6 +535,7 @@ button:focus-visible, [data-nav]:focus-visible, select:focus-visible, input:focu
 }
 
 @media (prefers-reduced-motion: reduce) {
+  #ui .screen .menu > *, #ui .screen .panel, button::after,
   #ui .screen, .card, .toast, .hint, .sector-title, .dialogue, .cue, .glitch,
   .lumen.full, .lumen .liquid::after, .lightcount.bump { animation: none; }
   button, .card, .item, .node-label, .bar > i, .bar > b, .lumen .liquid { transition-duration: 0.01ms; }

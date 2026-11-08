@@ -5,6 +5,7 @@ import type { LightRig } from './pipeline';
 import { hexToLinearVec } from './pipeline';
 import type { PaletteDef } from '../data/palettes';
 import { hdrAdditive } from './fx';
+import { Vista } from './vista';
 
 /**
  * Backdrop: painterly brushed-stroke nebula (instanced billboards following a
@@ -13,6 +14,8 @@ import { hdrAdditive } from './fx';
  */
 export class Space {
   readonly group = new THREE.Group();
+  /** colossal far-field geometry and the gas giant (sense of scale) */
+  readonly vista: Vista;
   private nebula: THREE.Mesh;
   private nebulaGeo: THREE.InstancedBufferGeometry;
   /** Local dust strokes inside the arena: parallax + lit by explosions. */
@@ -36,6 +39,7 @@ export class Space {
 
 
   constructor(private lights: LightRig, strokeCount = 1400) {
+    this.vista = new Vista(lights);
     this.strokeCount = strokeCount;
     const base = new THREE.PlaneGeometry(1, 1);
     this.nebulaGeo = new THREE.InstancedBufferGeometry();
@@ -117,7 +121,7 @@ export class Space {
   }
 
   /** Rebuild the backdrop for a sector. Visual only; seeded for consistency. */
-  build(pal: PaletteDef, seed: number, opts: { density?: number; starDist?: number } = {}): void {
+  build(pal: PaletteDef, seed: number, opts: { density?: number; starDist?: number; planet?: boolean } = {}): void {
     const rng = new Rng(seed);
     const n = Math.floor(this.strokeCount * (opts.density ?? 1));
     const stroke = new Float32Array(n * 4);
@@ -167,16 +171,16 @@ export class Space {
     this.nebulaGeo.instanceCount = n;
 
     // Local dust in world space
-    const dn = Math.floor(n * 0.35);
+    const dn = Math.floor(n * 0.6);
     const ds = new Float32Array(dn * 4);
     const dd = new Float32Array(dn * 4);
     const dc = new Float32Array(dn * 4);
     for (let i = 0; i < dn; i++) {
-      tmp.set(rng.range(-1, 1), rng.range(-0.5, 0.5), rng.range(-1, 1)).multiplyScalar(rng.range(40, 330));
+      tmp.set(rng.range(-1, 1), rng.range(-0.5, 0.5), rng.range(-1, 1)).multiplyScalar(rng.range(40, 900));
       ds[i * 4] = tmp.x;
       ds[i * 4 + 1] = tmp.y;
       ds[i * 4 + 2] = tmp.z;
-      ds[i * 4 + 3] = rng.range(6, 26);
+      ds[i * 4 + 3] = rng.range(8, 40);
       const fx = Math.sin(tmp.z * 0.02) + rng.range(-0.3, 0.3);
       const fy = rng.range(-0.2, 0.2);
       const fz = Math.cos(tmp.x * 0.02);
@@ -226,6 +230,7 @@ export class Space {
     this.buildLandmark(pal, rng);
     this.lights.uniforms.uStarDir.value.copy(this.starDir);
     this.lights.uniforms.uAmbient.value.copy(hexToLinearVec(pal.ambient, 1.2));
+    this.vista.build(pal, seed, this.starDir, { planet: opts.planet });
     this.applyStarPower();
   }
 
@@ -440,6 +445,7 @@ export class Space {
   update(time: number, camPos: THREE.Vector3): void {
     // Backdrop is effectively at infinity: follow the camera.
     this.group.position.copy(camPos);
+    this.vista.update(camPos);
     const dt = this.lastUpdateTime === null ? 0 : Math.max(0, time - this.lastUpdateTime);
     this.lastUpdateTime = time;
     this.visualPower += (this.starPower - this.visualPower) * (1 - Math.exp(-dt * 0.8));

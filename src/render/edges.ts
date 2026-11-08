@@ -68,8 +68,8 @@ export class EdgeBatch {
   private own: EdgeSource | null = null;
   count = 0;
 
-  constructor(base: THREE.BufferGeometry, src: EdgeSource | number, opts: { haloGain?: number; coreGain?: number } = {}) {
-    const edges = edgeGeometry(base);
+  constructor(base: THREE.BufferGeometry, src: EdgeSource | number, opts: { haloGain?: number; coreGain?: number; angle?: number } = {}) {
+    const edges = edgeGeometry(base, opts.angle ?? 28);
     this.geo = new THREE.InstancedBufferGeometry();
     this.geo.setAttribute('position', edges.getAttribute('position'));
     let s: EdgeSource;

@@ -43,6 +43,11 @@ export class Juice {
   damageGlitch = 0;
   breath = 0;
   numbers: DamageNumber[] = [];
+  /** reticle hit marker (0..1, decays) and kill confirm (red X) */
+  hitMark = 0;
+  killMark = 0;
+  /** incoming-damage arcs: where each recent hit came from (world space) */
+  damageDirs: { x: number; y: number; z: number; t: number; hull: boolean }[] = [];
   /** Swiss kill confirmations: "DESTROYED / 042" with a signal-orange rule */
   killTags: { x: number; y: number; z: number; n: number; t: number; label: string }[] = [];
   private killTagT = 0;
@@ -122,6 +127,12 @@ export class Juice {
             this.view.addRing(s.x, s.y, s.z, 0.35, radius, 0.22, 0.35, 0.9, 1);
           }
         }
+        // muzzle star: a short crisp cross of light at the barrel
+        if (!this.settings().reducedMotion) {
+          const k = s.secondary ? 1.4 : 1;
+          this.view.addSpark(s.x, s.y, s.z, s.dx * 90 * k, s.dy * 90 * k, s.dz * 90 * k, 0.06, 0.035, c[0] * 1.2, c[1] * 1.2, c[2] * 1.2, 30);
+          P().spawn(s.x, s.y, s.z, s.dx * 25, s.dy * 25, s.dz * 25, 0.045, c[0] * 9 + 3, c[1] * 9 + 3, c[2] * 9 + 3, 5 * k, 1.5, 8);
+        }
         for (let i = 0; i < 3; i++)
           P().spawn(s.x, s.y, s.z, s.dx * 40 + (r() - 0.5) * 20, s.dy * 40 + (r() - 0.5) * 20, s.dz * 40 + (r() - 0.5) * 20, 0.1, c[0] * 4, c[1] * 4, c[2] * 4, 2.5, 0.5, 6);
         // Each installed hardpoint effect has its own short-lived signature.
@@ -178,6 +189,8 @@ export class Juice {
           this.numbers.push({ x: h.x, y: h.y, z: h.z, v: Math.round(h.dmg), crit: h.crit, t: 0, vx: (r() - 0.5) * 40, vy: -60 - r() * 30 });
           if (this.numbers.length > 80) this.numbers.shift();
         }
+        this.hitMark = Math.max(this.hitMark, h.crit ? 1 : 0.7);
+        if (h.crit) this.view.shells.add(h.x, h.y, h.z, 0.3, 2.2, 0.16, 2, 1.6, 1.5, 1.2, 0.9);
         this.sfx(h.crit ? 'crit' : 'hit', h.x, h.y, h.z, 0.5);
         // crisp vector sparks along the impact normal
         const vs = h.crit ? 4 : 2;
@@ -214,6 +227,7 @@ export class Juice {
           return;
         }
         const big = k.big;
+        this.killMark = 1;
         const tint = e.tint;
         this.explosionFx(k.x, k.y, k.z, e.radius * e.scale * 1.2, tint.x, tint.y, tint.z, e.def.faction, big);
         // vector double shock ring: hot yellow outer, cyan inner (style C)
@@ -283,6 +297,15 @@ export class Juice {
       }),
       ev.on('hurt', (h) => {
         this.addTrauma(h.hull ? 0.5 : 0.28);
+        if (h.sx !== undefined && h.sy !== undefined && h.sz !== undefined) {
+          this.damageDirs.push({ x: h.sx, y: h.sy, z: h.sz, t: 1, hull: h.hull });
+          if (this.damageDirs.length > 6) this.damageDirs.shift();
+        }
+        // shield took it: the bubble lights up around the ship
+        if (!h.hull) {
+          const pp = w.player.pos;
+          this.view.shells.add(pp.x, pp.y, pp.z, 2.6, 3.1, 0.38, 1, 0.35, 0.95, 1.4, 1.2, pp);
+        }
         this.damageGlitch = Math.min(1, this.damageGlitch + (h.hull ? 0.9 : 0.45));
         this.flash = Math.max(this.flash, h.hull ? 0.12 : 0.05);
         this.audio.play('hurt', 0, h.hull ? 1 : 0.6);
@@ -294,6 +317,10 @@ export class Juice {
       }),
       ev.on('shieldBreak', () => {
         this.audio.play('shieldBreak', 0, 1);
+        {
+          const pp = w.player.pos;
+          this.view.shells.add(pp.x, pp.y, pp.z, 2.8, 9, 0.55, 1, 0.4, 1, 1.5, 1.6);
+        }
         this.toast('SHIELD DOWN', '#80e0ff');
         const p = w.player.pos;
         for (let i = 0; i < 40; i++) {
@@ -434,6 +461,14 @@ export class Juice {
     const budget = clamp(P.budgetScale, 0.3, 1);
     // flash
     P.spawn(x, y, z, 0, 0, 0, 0.07, 30, 28, 24, s * 10, s * 14, 0);
+    // volumetric fireball: a boiling white-hot core that cools to embers,
+    // with a slower, larger second bloom on big kills
+    const sh = this.view.shells;
+    const tint = faction === 'choir' ? [1.2, 0.8, 1.3] : faction === 'hush' ? [0.7, 0.5, 1.4] : [1, 0.85, 0.7];
+    sh.add(x, y, z, s * 0.35, s * (1.6 + big * 0.5), 0.42 + big * 0.12, 0, tint[0]!, tint[1]!, tint[2]!, 1);
+    if (big > 0.6) sh.add(x, y, z, s * 0.6, s * (2.6 + big * 0.6), 0.75 + big * 0.15, 0, tint[0]!, tint[1]!, tint[2]!, 0.55);
+    // a thin energy shock sphere that outruns the fire
+    if (big > 0.3) sh.add(x, y, z, s * 0.5, s * (4.2 + big * 1.4), 0.35, 2, 0.9 + tr * 0.4, 0.9 + tg * 0.4, 1 + tb * 0.4, 0.6);
     if (faction === 'none' && big > 0.4) this.view.addRing(x, y, z, s * 0.5, s * 3.2, 0.4, Math.min(1, tr), Math.min(1, tg), Math.min(1, tb));
     // dynamic light that lights the nebula and hulls nearby
     this.pipe.lights.spawn(x, y, z, 40 + tr * 40, 25 + tg * 30, 10 + tb * 25, 18 + s * 9, 0.35 + big * 0.15);
@@ -494,6 +529,13 @@ export class Juice {
     this.breath = damp(this.breath, 0, 3, dt);
     this.killSoundT -= dt;
     this.apertureT -= dt;
+    this.hitMark = Math.max(0, this.hitMark - dt * 6);
+    this.killMark = Math.max(0, this.killMark - dt * 2.5);
+    for (let i = this.damageDirs.length - 1; i >= 0; i--) {
+      const d = this.damageDirs[i]!;
+      d.t -= dt * 0.9;
+      if (d.t <= 0) this.damageDirs.splice(i, 1);
+    }
     this.killTagT -= dt;
     for (let i = this.secondaries.length - 1; i >= 0; i--) {
       const sc = this.secondaries[i]!;

@@ -4,6 +4,8 @@ import {
   BULLET_VERT,
   PARTICLE_FRAG,
   PARTICLE_VERT,
+  SHELL_FRAG,
+  SHELL_VERT,
   STREAK_FRAG,
   STREAK_VERT,
   TELE_FRAG,
@@ -449,5 +451,94 @@ export class Telegraphs {
     c.clearUpdateRanges();
     c.addUpdateRange(0, Math.max(1, this.n) * 4);
     c.needsUpdate = true;
+  }
+}
+
+interface Shell {
+  x: number;
+  y: number;
+  z: number;
+  r0: number;
+  r1: number;
+  t: number;
+  dur: number;
+  mode: number;
+  seed: number;
+  inten: number;
+  r: number;
+  g: number;
+  b: number;
+  follow?: { x: number; y: number; z: number };
+}
+
+/** Expanding volumetric spheres: fireballs, shield bubbles, energy bursts. */
+export class Shells {
+  readonly mesh: THREE.Mesh;
+  private list: Shell[] = [];
+  private sphere: Float32Array;
+  private shell: Float32Array;
+  private tint: Float32Array;
+  private geo: THREE.InstancedBufferGeometry;
+  private attrs: THREE.InstancedBufferAttribute[];
+  constructor(readonly capacity = 96) {
+    const base = new THREE.IcosahedronGeometry(1, 3);
+    this.geo = new THREE.InstancedBufferGeometry();
+    this.geo.index = base.index;
+    this.geo.setAttribute('position', base.getAttribute('position'));
+    this.sphere = new Float32Array(capacity * 4);
+    this.shell = new Float32Array(capacity * 4);
+    this.tint = new Float32Array(capacity * 3);
+    const mk = (arr: Float32Array, n: number) => {
+      const at = new THREE.InstancedBufferAttribute(arr, n);
+      at.setUsage(THREE.DynamicDrawUsage);
+      return at;
+    };
+    this.attrs = [mk(this.sphere, 4), mk(this.shell, 4), mk(this.tint, 3)];
+    this.geo.setAttribute('aSphere', this.attrs[0]!);
+    this.geo.setAttribute('aShell', this.attrs[1]!);
+    this.geo.setAttribute('aTint', this.attrs[2]!);
+    const mat = new THREE.ShaderMaterial({ vertexShader: SHELL_VERT, fragmentShader: SHELL_FRAG, side: THREE.FrontSide });
+    hdrAdditive(mat);
+    this.mesh = new THREE.Mesh(this.geo, mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 4;
+  }
+
+  /** mode 0 fireball, 1 shield bubble, 2 energy burst. `follow` keeps it on a moving point. */
+  add(x: number, y: number, z: number, r0: number, r1: number, dur: number, mode: number, r: number, g: number, b: number, inten = 1, follow?: { x: number; y: number; z: number }): void {
+    if (this.list.length >= this.capacity) this.list.shift();
+    this.list.push({ x, y, z, r0, r1, t: 0, dur, mode, seed: Math.random(), inten, r, g, b, follow });
+  }
+
+  clear(): void {
+    this.list.length = 0;
+  }
+
+  update(dt: number): void {
+    let n = 0;
+    for (let i = this.list.length - 1; i >= 0; i--) {
+      const s = this.list[i]!;
+      s.t += dt;
+      if (s.t >= s.dur) {
+        this.list.splice(i, 1);
+        continue;
+      }
+      const k = s.t / s.dur;
+      const e = 1 - Math.pow(1 - k, 2.4);
+      const c = s.follow ?? s;
+      this.sphere.set([c.x, c.y, c.z, s.r0 + (s.r1 - s.r0) * e], n * 4);
+      this.shell.set([k, s.mode, s.seed, s.inten], n * 4);
+      this.tint.set([s.r, s.g, s.b], n * 3);
+      n++;
+    }
+    this.geo.instanceCount = n;
+    const sizes = [4, 4, 3];
+    for (let k = 0; k < this.attrs.length; k++) {
+      const at = this.attrs[k]!;
+      at.clearUpdateRanges();
+      at.addUpdateRange(0, Math.max(1, n) * sizes[k]!);
+      at.needsUpdate = true;
+    }
+    this.mesh.visible = n > 0;
   }
 }
