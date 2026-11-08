@@ -268,4 +268,6 @@ export interface HullDef {
   flags: string[];
   cost: number;
   accent: string;
+  /** set on the three class ships (src/data/classes.ts): always owned, with a skill tree */
+  classId?: string;
 }

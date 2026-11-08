@@ -1,4 +1,5 @@
 import type { HullDef } from '../game/types';
+import { CLASS_HULLS } from './classes';
 
 export interface SectorDef {
   id: string;
@@ -97,7 +98,8 @@ export const BOSSES: Record<string, BossDef> = {
   lastdark: { id: 'lastdark', name: 'THE LAST DARK', title: 'The Hush Made Whole', hp: 7800, desc: 'The dark that eats light. It drinks the color from the world as it fights.', phases: ['The Swallowing', 'Colorless', 'Relight the Last Star'] },
 };
 
-export const HULLS: HullDef[] = [
+/** Hearth hulls: bought with Embers, no skill tree. */
+export const HEARTH_HULLS: HullDef[] = [
   { id: 'lantern', name: 'The Lantern', desc: 'The last lightship. Balanced and bright.', passive: 'Kindle: Light motes also fill 15% more Lumen.', stats: {}, start: { primary: 'pulse', secondary: 'swarm' }, flags: ['kindle'], cost: 0, accent: '#fff0c0' },
   { id: 'moth', name: 'Moth', desc: 'Tiny, fast, fragile. Lives on grazes.', passive: 'Wingbeat: graze radius doubled; grazes give double Lumen.', stats: { hull: -35, speed: 1.25, grazeRadius: 2, dodges: 1 }, start: { primary: 'needler', secondary: 'timeshard' }, flags: ['moth'], cost: 120, accent: '#c0ffe0' },
   { id: 'bastion', name: 'Bastion', desc: 'Heavy, slow, unshakable.', passive: 'Rampart: shields regenerate twice as fast; Shockwave is huge.', stats: { hull: 50, shield: 30, speed: 0.82, shieldRegen: 2, shockwave: 1.6 }, start: { primary: 'autocannon', secondary: 'torpedo' }, flags: ['bastion'], cost: 160, accent: '#ffd0a0' },
@@ -105,6 +107,9 @@ export const HULLS: HullDef[] = [
   { id: 'ember', name: 'Ember', desc: 'Runs hot. Gets stronger the hotter it runs.', passive: 'Furnace: sustained fire builds heat for up to +60% damage; overheating vents a nova.', stats: { hull: 10 }, start: { primary: 'scattergun', secondary: 'hellfire' }, flags: ['emberHull'], cost: 220, accent: '#ff9050' },
   { id: 'wraith', name: 'Wraith', desc: 'A ghost that lives between dodges.', passive: 'Phantom: 3 dodge charges; dodging through bullets grants a guaranteed crit.', stats: { hull: -20, dodges: 2, iframes: 1.4 }, start: { primary: 'gauss', secondary: 'voidspike' }, flags: ['wraith'], cost: 260, accent: '#d0d0ff' },
 ];
+
+/** Every flyable hull: Hearth hulls first (HULLS[0] is the Lantern), then the three class ships. */
+export const HULLS: HullDef[] = [...HEARTH_HULLS, ...CLASS_HULLS];
 
 export const HULL_BY_ID: Record<string, HullDef> = Object.fromEntries(HULLS.map((h) => [h.id, h]));
 

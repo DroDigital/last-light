@@ -1,7 +1,10 @@
 import type { Game } from '../game/game';
 import { cardRarity, cardTitle, type DraftCard } from '../game/build';
 import { esc } from './ui';
-import { HULLS, HEARTH_UNLOCKS, DIALOGUE, CHALLENGES, LORE, HEAT_LEVELS, SECTORS, BOSSES } from '../data/world';
+import { HULLS, HEARTH_HULLS, HEARTH_UNLOCKS, DIALOGUE, CHALLENGES, LORE, HEAT_LEVELS, SECTORS, BOSSES } from '../data/world';
+import { registerClassActions } from './classes';
+import { CLASS_BY_ID } from '../data/classes';
+export { showClasses } from './classes';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
 import { ENEMIES } from '../data/enemies';
@@ -53,6 +56,15 @@ function cardTags(c: DraftCard, g: Game): string {
   return tags.map((t) => `<span class="tag ${(g.world!.build.tags[t] ?? 0) > 0 ? 'hit' : ''}">${t}</span>`).join('');
 }
 
+/** "Vanguard XP +340 · Level 3" on the run summary, when the dive was flown by a class. */
+function classXpStat(g: Game): string {
+  const x = g.lastClassXp;
+  const cls = x ? CLASS_BY_ID[x.classId] : undefined;
+  if (!x || !cls) return '';
+  const up = x.levelAfter > x.levelBefore ? ` · <span style="color:${cls.hull.accent}">LEVEL ${x.levelAfter}</span>` : '';
+  return `<div class="stat"><span>${esc(cls.name)} XP</span><b class="light">+${fmtInt(x.xp)}${up}</b></div>`;
+}
+
 export function showTitle(g: Game): void {
   const d = g.save.data;
   const daily = dailySeed();
@@ -68,13 +80,14 @@ export function showTitle(g: Game): void {
         <span>${d.bossesKilled.length ? 'THE LIGHT RETURNS' : 'ONE SPARK REMAINS'}</span>
       </div>
       <div class="menu">
-        <button class="primary" data-nav data-autofocus data-act="hearth"><span class="ix">01</span>The Hearth<span class="sub">Prepare and dive · ${fmtInt(d.embers)} Embers</span></button>
+        <button class="primary" data-nav data-autofocus data-act="classes"><span class="ix">01</span>Dive<span class="sub">Choose your class · ${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
         <button data-nav data-act="quickdive"><span class="ix">02</span>Quick Dive<span class="sub">${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? 'The Lantern')} · Heat ${g.selectedHeat}</span></button>
-        <button data-nav data-act="daily"><span class="ix">03</span>Daily Dive<span class="sub">${daily}${best ? ` · best ${fmtInt(best)}` : ''}</span></button>
-        <button data-nav data-act="endlessrun"><span class="ix">04</span>Endless<span class="sub">Waves through all ten sectors${d.endlessBest ? ` · best wave ${d.endlessBest}` : ''}</span></button>
-        <button data-nav data-act="codex"><span class="ix">05</span>Codex</button>
-        <button data-nav data-act="settings"><span class="ix">06</span>Settings</button>
-        <button data-nav data-act="credits"><span class="ix">07</span>Credits</button>
+        <button data-nav data-act="hearth"><span class="ix">03</span>The Hearth<span class="sub">Unlocks and hulls · ${fmtInt(d.embers)} Embers</span></button>
+        <button data-nav data-act="classes" data-arg="daily"><span class="ix">04</span>Daily Dive<span class="sub">${daily}${best ? ` · best ${fmtInt(best)}` : ''}</span></button>
+        <button data-nav data-act="classes" data-arg="endless"><span class="ix">05</span>Endless<span class="sub">Waves through all ten sectors${d.endlessBest ? ` · best wave ${d.endlessBest}` : ''}</span></button>
+        <button data-nav data-act="codex"><span class="ix">06</span>Codex</button>
+        <button data-nav data-act="settings"><span class="ix">07</span>Settings</button>
+        <button data-nav data-act="credits"><span class="ix">08</span>Credits</button>
       </div>
       <div class="footer"><span>Runs ${d.runs} · Wins ${d.wins} · Stars relit ${d.bossesKilled.length}</span><span>F1 look panel · F3 perf · click the game to lock the mouse</span></div>
     </div>`,
@@ -99,7 +112,7 @@ export function showHearth(g: Game, refresh = false): void {
         <div class="price">${done ? 'OWNED' : `${cost} ✶`}</div></div>`;
     }).join('');
   } else if (tab === 'hulls') {
-    body = HULLS.map((h) => {
+    body = HEARTH_HULLS.map((h) => {
       const own = d.hulls.includes(h.id);
       const sel = g.selectedHull === h.id;
       return `<div class="item ${sel ? 'owned' : ''} ${!own && d.embers < h.cost ? 'disabled' : ''}" data-nav data-act="hull" data-arg="${h.id}" style="--rc:${h.accent}">
@@ -136,11 +149,11 @@ export function showHearth(g: Game, refresh = false): void {
     <div class="col" style="width:min(420px,32vw)">
       <h1>The Hearth</h1>
       <div class="light display" style="font-size:var(--s4)">${fmtInt(d.embers)} Embers</div>
-      <div class="dim">Hearth level ${d.hearthLevel} · ${d.hulls.length}/${HULLS.length} hulls · ${d.weapons.length}/${WEAPONS.length} weapons</div>
+      <div class="dim">Hearth level ${d.hearthLevel} · ${HEARTH_HULLS.filter((h) => d.hulls.includes(h.id)).length}/${HEARTH_HULLS.length} hulls · ${d.weapons.length}/${WEAPONS.length} weapons</div>
       <div style="margin-top:2vh">${shown.map((l, i) => `<div class="dialogue" style="animation-delay:${i * 0.25}s"><div class="who">${l.who}</div>${esc(l.text)}</div>`).join('')}</div>
       <div class="col" style="margin-top:auto">
-        <button class="primary" data-nav data-autofocus data-act="dive">Dive · ${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? '')} · Heat ${g.selectedHeat}</button>
-        <button data-nav data-act="daily">Daily Dive</button>
+        <button class="primary" data-nav data-autofocus data-act="classes">Dive · ${esc(HULLS.find((h) => h.id === g.selectedHull)?.name ?? '')} · Heat ${g.selectedHeat}</button>
+        <button data-nav data-act="classes" data-arg="daily">Daily Dive</button>
         <button data-nav data-act="title" data-back data-sfx="back">Back</button>
       </div>
     </div>
@@ -389,7 +402,7 @@ export function showDeath(g: Game): void {
           <div class="stat"><span>Best chain</span><b>${w.stats.maxChain}</b></div>
           <div class="stat"><span>Stars relit</span><b>${w.stats.bossKills}</b></div>
           <div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div>
-          <div class="stat"><span>Embers earned</span><b class="light">+${r.embers}</b></div>
+          <div class="stat"><span>Embers earned</span><b class="light">+${r.embers}</b></div>${classXpStat(g)}
           <div class="faint">Seed <span class="mono">${esc(r.seed)}</span></div>
         </div>
         <button class="primary" data-nav data-autofocus data-act="again">Dive again <span class="kbd">R</span></button>
@@ -409,7 +422,7 @@ export function showVictory(g: Game): void {
     `<div class="col center" style="align-items:center;text-align:center;max-width:720px">
       <div class="logo" style="font-size:var(--s6)">${finalAct ? 'THE FIRST LIGHT BURNS' : 'THE LAST STAR BURNS'}</div>
       <p class="plate-line" style="font-size:var(--s3)">${finalAct ? 'The Night is unmade. Past the edge, the oldest light in the universe is yours to carry home.' : 'For now, the dark retreats. But past the Last Dark, something older is still hiding: the Deep.'}</p>
-      <div class="panel" style="width:420px"><div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div><div class="stat"><span>Embers</span><b class="light">+${r.embers}</b></div><div class="stat"><span>Time</span><b>${Math.floor(r.timeSec / 60)}m ${r.timeSec % 60}s</b></div></div>
+      <div class="panel" style="width:420px"><div class="stat"><span>Score</span><b>${fmtInt(r.score)}</b></div><div class="stat"><span>Embers</span><b class="light">+${r.embers}</b></div>${classXpStat(g)}<div class="stat"><span>Time</span><b>${Math.floor(r.timeSec / 60)}m ${r.timeSec % 60}s</b></div></div>
       <div class="row" style="margin-top:16px">${finalAct ? '' : '<button class="primary" data-nav data-autofocus data-act="deep">Into the Deep · Act II</button>'}<button ${finalAct ? 'class="primary" data-autofocus' : ''} data-nav data-act="endless">Go beyond · Endless</button><button data-nav data-act="hearth">Return home</button></div>
     </div>`,
   );
@@ -532,6 +545,7 @@ export function showSettings(g: Game, refresh = false): void {
 /** Wire every data-act action to the game. */
 export function registerActions(g: Game): void {
   const ui = g.ui;
+  registerClassActions(g);
   let settingsReturn: () => void = () => showTitle(g);
   let codexReturn: () => void = () => showTitle(g);
   ui.on('maporbit', (v) => { g.mapYaw = Math.max(-0.8, Math.min(0.8, g.mapYaw + Number(v) * 0.2)); });

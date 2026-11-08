@@ -8,9 +8,10 @@ import { Pipeline, DEFAULT_LOOK } from '../render/pipeline';
 import { View } from '../render/view';
 import { AudioEngine } from '../audio/audio';
 import { UI } from '../ui/ui';
-import { SaveSystem, type RunRecord } from '../meta/save';
+import { SaveSystem, type ClassProgress, type RunRecord } from '../meta/save';
 import { PALETTES, paletteById } from '../data/palettes';
-import { SECTORS, ACT2_START, HULLS, HULL_BY_ID, EVENTS, CHALLENGES, LORE, HEARTH_UNLOCKS, type EventDef, type EventEffect } from '../data/world';
+import { CLASS_BY_HULL, SKILL_BY_ID, canLearn, canUnlearn, classLevel, skillLoadout, skillPoints, xpForRun } from '../data/classes';
+import { SECTORS, ACT2_START, HULLS, HEARTH_HULLS, HULL_BY_ID, EVENTS, CHALLENGES, LORE, HEARTH_UNLOCKS, type EventDef, type EventEffect } from '../data/world';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES } from '../data/upgrades';
 import { SYNERGIES } from '../data/upgrades';
@@ -29,7 +30,7 @@ import { installDitherTextures, setUiTint } from '../ui/dither';
 
 export type State =
   | 'boot' | 'title' | 'hearth' | 'map' | 'combat' | 'draft' | 'shop' | 'event' | 'forge' | 'rest' | 'inventory' | 'pause'
-  | 'death' | 'victory' | 'warp' | 'codex' | 'settings' | 'credits';
+  | 'death' | 'victory' | 'warp' | 'codex' | 'settings' | 'credits' | 'classes';
 
 export interface ShopItem {
   kind: 'weapon' | 'upgrade' | 'repair' | 'fullrepair' | 'level';
@@ -72,7 +73,7 @@ export interface RunState {
   /** an event choice queued a fight; the player may not leave the event */
   pendingFight: boolean;
   /** rewards already paid by an earlier finishRun (victory before endless) */
-  paid?: { embers: number; record: RunRecord };
+  paid?: { embers: number; record: RunRecord; classXp?: number };
 }
 
 /** star-chart landmark for each map node type */
@@ -142,6 +143,11 @@ export class Game {
   codexTab = 'enemies';
   hearthTab = 'unlocks';
   selectedHull = 'lantern';
+  /** class screen: which class card is open, and what the Launch button starts */
+  classView = 'vanguard';
+  classLaunch: { daily?: boolean; endless?: boolean } = {};
+  /** class XP gained by the last finished dive (for the run summary) */
+  lastClassXp: { classId: string; xp: number; levelBefore: number; levelAfter: number } | null = null;
   selectedHeat = 0;
   selectedPrimary = '';
   lastRecord: RunRecord | null = null;
@@ -172,7 +178,7 @@ export class Game {
     await this.save.load();
     this.hud = new Hud(this);
     this.applySettings();
-    this.selectedHull = this.save.data.hulls.includes(this.selectedHull) ? this.selectedHull : 'lantern';
+    this.selectedHull = this.ownsHull(this.save.data.selectedHull) ? this.save.data.selectedHull : 'lantern';
     S.registerActions(this);
     // first user gesture unlocks audio
     const unlock = () => {
@@ -327,6 +333,7 @@ export class Game {
     switch (this.state) {
       case 'title':
       case 'hearth':
+      case 'classes':
         st.play('menu', { fade: 2.5 });
         st.prefetch('explore');
         break;
@@ -406,6 +413,7 @@ export class Game {
     };
     const primary = opts.primary ?? (this.save.unlockLevel('l_pick') > 0 && this.selectedPrimary ? this.selectedPrimary : undefined);
     const build = new Build(hull, { ...this.meta(), heat }, primary);
+    if (hull.classId) build.setSkills(skillLoadout(hull.classId, this.classProgress(hull.classId).learned));
     this.world = new World(seed, build);
     this.world.heat = heat;
     this.world.player.light = 40 * this.save.unlockLevel('b_start');
@@ -1151,6 +1159,81 @@ export class Game {
     d.history = d.history.slice(0, 30);
     d.hearthLevel = Object.values(d.unlocks).reduce((a, b) => a + b, 0) + d.wins * 2;
     this.lastRecord = rec;
+    this.awardClassXp(run.hull, xpForRun({ sector: run.sector + 1, kills: w.stats.kills, bosses: w.stats.bossKills, won, endlessWaves: run.endlessWaves }) - (paid?.classXp ?? 0));
+    run.paid.classXp = (paid?.classXp ?? 0) + Math.max(0, this.lastClassXp?.xp ?? 0);
+    this.save.save();
+  }
+
+  // ------------------------------------------------------------ classes
+
+  /** Class ships are always flyable; Hearth hulls must be bought. */
+  ownsHull(id: string): boolean {
+    const h = HULL_BY_ID[id];
+    return !!h && (!!h.classId || this.save.data.hulls.includes(id));
+  }
+
+  /** This save's progress for a class (created on first use). */
+  classProgress(classId: string): ClassProgress {
+    const all = this.save.data.classes;
+    const p = (all[classId] ??= { xp: 0, learned: [] });
+    if (!Array.isArray(p.learned)) p.learned = [];
+    if (!Number.isFinite(p.xp)) p.xp = 0;
+    return p;
+  }
+
+  private awardClassXp(hullId: string, xp: number): void {
+    const cls = CLASS_BY_HULL[hullId];
+    this.lastClassXp = null;
+    if (!cls || xp <= 0) return;
+    const p = this.classProgress(cls.id);
+    const before = classLevel(p.xp).level;
+    p.xp += xp;
+    const after = classLevel(p.xp).level;
+    this.lastClassXp = { classId: cls.id, xp, levelBefore: before, levelAfter: after };
+    if (after > before) this.juice.toast(`${cls.name.toUpperCase()} LEVEL ${after} · +${skillPoints(after) - skillPoints(before)} SKILL POINT${after - before > 1 ? 'S' : ''}`, cls.hull.accent);
+  }
+
+  /** Open the class screen; Launch then starts the requested mode. */
+  openClasses(launch: { daily?: boolean; endless?: boolean } = {}): void {
+    this.classLaunch = launch;
+    const cls = CLASS_BY_HULL[this.selectedHull];
+    if (cls) this.classView = cls.id;
+    this.setState('classes');
+    S.showClasses(this);
+  }
+
+  selectHull(id: string): void {
+    if (!this.ownsHull(id)) return void this.audio.play('uiDeny');
+    this.selectedHull = id;
+    this.save.data.selectedHull = id;
+    const cls = CLASS_BY_HULL[id];
+    if (cls) this.classView = cls.id;
+    this.save.save();
+  }
+
+  /** Learn (or, if already learned and nothing depends on it, refund) a skill node. */
+  toggleSkill(nodeId: string): void {
+    const hit = SKILL_BY_ID[nodeId];
+    if (!hit) return;
+    const p = this.classProgress(hit.cls.id);
+    if (p.learned.includes(nodeId)) {
+      if (!canUnlearn(p.learned, nodeId)) return void this.audio.play('uiDeny');
+      p.learned = p.learned.filter((id) => id !== nodeId);
+      this.audio.play('uiBack');
+    } else {
+      const ok = canLearn(hit.cls.id, p.learned, nodeId, skillPoints(classLevel(p.xp).level));
+      if (ok !== 'ok') return void this.audio.play('uiDeny');
+      p.learned.push(nodeId);
+      this.audio.play('uiBuy');
+    }
+    this.save.save();
+  }
+
+  resetSkills(classId: string): void {
+    const p = this.classProgress(classId);
+    if (!p.learned.length) return;
+    p.learned = [];
+    this.audio.play('uiBack');
     this.save.save();
   }
 
@@ -1222,15 +1305,15 @@ export class Game {
     const h = HULL_BY_ID[id];
     if (!h) return;
     if (d.hulls.includes(id)) {
-      this.selectedHull = id;
+      this.selectHull(id);
       this.audio.play('uiSelect');
     } else {
       if (d.embers < h.cost) return void this.audio.play('uiDeny');
       d.embers -= h.cost;
       d.hulls.push(id);
-      this.selectedHull = id;
+      this.selectHull(id);
       this.audio.play('uiBuy');
-      if (d.hulls.length >= HULLS.length) this.challenge('allhulls');
+      if (HEARTH_HULLS.every((x) => d.hulls.includes(x.id))) this.challenge('allhulls');
       this.save.save();
     }
     S.showHearth(this, true);
@@ -1369,8 +1452,12 @@ export class Game {
       this.pendingPitch = 0;
     }
     this.gatherWingmen(frameDt);
-    aim.strength = inp.lastDevice === 'pad' ? Math.min(1, s.aimAssist + 0.35) : s.aimAssist;
+    // a controller gets a stronger pull and a wider cone; wingmen always fly with one
+    const padStrength = s.aimAssist > 0 ? Math.min(1, s.aimAssist + 0.35) : 0;
+    aim.strength = inp.lastDevice === 'pad' ? padStrength : s.aimAssist;
     aim.cone = inp.lastDevice === 'pad' ? 0.17 : 0.1;
+    aim.padStrength = padStrength;
+    aim.padCone = 0.17;
   }
 
   /**

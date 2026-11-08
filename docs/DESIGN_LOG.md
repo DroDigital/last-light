@@ -186,6 +186,18 @@ The style brief evolved into a fusion of three explored directions. Each owns on
   - **Replays:** these record P1's controls only, so co-op fights are not replayable.
 - **Balance after the expansion** (headless bots, random picks, no meta): the "good" bot clears Act I about a third of the time and reaches the Deep. The "poor" bot dies in sectors 2–3. The god-mode autopilot full run reaches victory with boss fights of 50–190 s.
 
+- **Pilot classes:** every dive now starts on a class screen (title → Dive, Daily Dive, Endless, and the Hearth's Dive). Quick Dive skips it and flies the last pick.
+  - **Three classes, all free:** Vanguard (the Aegis gunship: Flak Cannon + Siege Mortar, armored, shields regenerate faster while firing), Striker (the Kestrel interceptor: Coilshot + Cluster Pod, fast, an extra dodge, and each dodge primes +30% damage for 1.5 s) and Conduit (the Loom ring-ship: Arc Caster + Gravity Well + Interceptor Wing, +25% status power, faster abilities). Each has its own procedural model, hardpoints and accent.
+  - **Skill trees:** each class has three branches of four tiers (costs 1/1/2/3), and tier 4 is a keystone. Nodes reuse the build vocabulary (stat mods, triggers, flags), so they stack with drafts like upgrades. Four keystone mechanics needed new code: Unbreakable (`vgLastStand`), Iron Will (`vgIronWill`), Deadeye (`stDeadeye`, bonus damage to the lock-on target and a stickier lock), and the Striker passive (`stSlipstream`).
+  - **Progression:** class XP comes from every finished dive (kills, sectors, bosses, wins, Endless waves). There is one skill point per level up to level 15, which buys 15 of a tree's 21 points, so a build is a choice. Refunds are free outside a run, top-down per branch. `src/data/classes.ts` holds the data and rules.
+  - **Hearth hulls:** the Lantern and the five bought hulls still fly from the class screen, with no tree. Saves migrate v4→v5 (`classes`, `selectedHull`). Returning pilots keep the Lantern selected; new saves start on the Vanguard.
+- **Aim assist / lock-on audit:** the earlier implementation had five defects, now fixed and covered by `tests/aimassist.test.ts`.
+  - **Mouse range:** a distance penalty was mixed into the cone threshold, so with a mouse nothing beyond ~96 units could be locked, even dead centre (the assist range is 240). Gating (cone + range) and ranking (angular error, mild distance preference) are now separate.
+  - **Hitscan lead:** the assist led targets by the primary's projectile speed even for hitscan weapons (Railgun, beams, Arc), so it aimed hitscan shots in front of moving targets. Hitscan primaries now aim at the target itself.
+  - **Convergence:** the guns always converged 90 units out, so wing-gun shots at close locked targets passed beside them. They now converge at the locked target's distance, and the reticle follows.
+  - **Co-op and the off switch:** wingmen used Player 1's device settings (a weak mouse assist for a controller), and a slider at 0 still gave controllers 35% assist. Wingmen now always get controller assist, and 0 means off.
+  - **Flicker and parts:** the lock had no hysteresis and could flicker between neighbours. It now holds within a wider cone unless a clearly better target appears. Locked boss parts now show their bracket.
+
 ## Changes from the brief (and why)
 
 - **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.
