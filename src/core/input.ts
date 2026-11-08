@@ -66,7 +66,7 @@ export const DEFAULT_BINDINGS: Bindings = {
   cancel: ['Escape', 'Backspace', 'Pad1'],
 };
 
-/** One gamepad's state (Player 2 in local co-op). */
+/** One gamepad's state (a wingman's controller in local co-op). */
 export class PadState {
   lx = 0;
   ly = 0;
@@ -74,6 +74,8 @@ export class PadState {
   ry = 0;
   now: boolean[] = [];
   prev: boolean[] = [];
+  /** until the first read, buttons already held (the Start that joined) don't count as presses */
+  private fresh = true;
   read(pad: Gamepad): void {
     const dz = (v: number) => (Math.abs(v) < 0.15 ? 0 : Math.sign(v) * ((Math.abs(v) - 0.15) / 0.85));
     this.lx = dz(pad.axes[0] ?? 0);
@@ -84,8 +86,10 @@ export class PadState {
     const rk = rm < 0.2 ? 0 : (rm - 0.2) / 0.8 / rm;
     this.rx = rx * rk;
     this.ry = ry * rk;
-    this.prev = this.now;
-    this.now = pad.buttons.map((b) => b.pressed || b.value > 0.4);
+    const next = pad.buttons.map((b) => b.pressed || b.value > 0.4);
+    this.prev = this.fresh ? next : this.now;
+    this.fresh = false;
+    this.now = next;
   }
   held(i: number): boolean {
     return !!this.now[i];
@@ -95,12 +99,19 @@ export class PadState {
   }
 }
 
+/** A co-op seat's controller. */
+export interface CoopPad {
+  index: number;
+  pad: PadState;
+  /** the controller disconnected */
+  lost: boolean;
+}
+
 export class Input {
-  /** local co-op: the gamepad Player 2 flies with, and a fresh join request */
-  p2Index: number | null = null;
-  readonly p2 = new PadState();
+  /** local co-op: controllers by seat (coopPads[0] = Player 2 … [2] = Player 4) */
+  readonly coopPads: (CoopPad | null)[] = [null, null, null];
+  /** a spare controller pressed Start this frame (its gamepad index) */
   joinRequest: number | null = null;
-  p2Lost = false;
   private startPrev = new Map<number, boolean>();
   bindings: Bindings = structuredClone(DEFAULT_BINDINGS);
   private down = new Set<string>();
@@ -207,7 +218,7 @@ export class Input {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let pad: Gamepad | null = null;
     // Player 1 never reads Player 2's controller
-    for (const p of pads) if (p && p.connected && p.index !== this.p2Index) pad = p;
+    for (const p of pads) if (p && p.connected && this.seatOfPad(p.index) === null) pad = p;
     this.padConnected = !!pad;
     this.padPrev = pad?.index === this.padIndex ? this.padNow : [];
     if (pad?.index !== this.padIndex) this.suppressedPadButtons.clear();
@@ -248,24 +259,24 @@ export class Input {
     } else {
       this.padLX = this.padLY = this.padRX = this.padRY = 0;
     }
-    this.pollP2(pads);
+    this.pollCoop(pads);
   }
 
-  /** Track Player 2's pad; any other pad pressing Start asks to join. */
-  private pollP2(pads: (Gamepad | null)[]): void {
+  /** Track each wingman's pad; any spare pad pressing Start asks to join. */
+  private pollCoop(pads: (Gamepad | null)[]): void {
     this.joinRequest = null;
-    if (this.p2Index !== null) {
-      const p = pads[this.p2Index];
-      if (!p || !p.connected) this.p2Lost = true;
-      else this.p2.read(p);
-      return;
+    for (const seat of this.coopPads) {
+      if (!seat) continue;
+      const p = pads[seat.index];
+      if (!p || !p.connected) seat.lost = true;
+      else seat.pad.read(p);
     }
     for (const p of pads) {
       if (!p || !p.connected) continue;
-      const start = !!(p.buttons[9]?.pressed);
+      const start = !!p.buttons[9]?.pressed;
       const was = this.startPrev.get(p.index) ?? false;
       this.startPrev.set(p.index, start);
-      if (!start || was) continue;
+      if (!start || was || this.seatOfPad(p.index) !== null || this.freeSeat() === null) continue;
       // a pad Player 1 is actively flying with pauses instead of joining
       const p1sPad = p.index === this.padIndex && this.lastDevice === 'pad';
       if (p1sPad) continue;
@@ -274,14 +285,46 @@ export class Input {
     }
   }
 
-  assignP2(index: number | null): void {
-    this.p2Index = index;
-    this.p2Lost = false;
-    this.p2.now = [];
-    this.p2.prev = [];
+  /** Seat (1..3) a gamepad is assigned to, or null. */
+  seatOfPad(index: number): number | null {
+    const i = this.coopPads.findIndex((s) => s?.index === index);
+    return i < 0 ? null : i + 1;
   }
 
-  /** Button index of an action's pad binding (for Player 2, who shares P1's pad layout). */
+  /** First free co-op seat (1..3), or null when four pilots are flying. */
+  freeSeat(): number | null {
+    const i = this.coopPads.indexOf(null);
+    return i < 0 ? null : i + 1;
+  }
+
+  /** A seat's controller state (seat 1..3). */
+  seat(seat: number): CoopPad | null {
+    return this.coopPads[seat - 1] ?? null;
+  }
+
+  /** Give a seat (1..3) a gamepad, or free it with null. */
+  assignSeat(seat: number, index: number | null): void {
+    if (seat < 1 || seat > this.coopPads.length) return;
+    this.coopPads[seat - 1] = index === null ? null : { index, pad: new PadState(), lost: false };
+  }
+
+  /** A free seat exists and a controller that isn't P1's or seated could take it. */
+  canJoin(): boolean {
+    if (this.freeSeat() === null || typeof navigator === 'undefined' || !navigator.getGamepads) return false;
+    let spare = 0;
+    for (const p of navigator.getGamepads()) if (p && p.connected && this.seatOfPad(p.index) === null) spare++;
+    if (this.lastDevice === 'pad' && this.padIndex !== null) spare--;
+    return spare > 0;
+  }
+
+  /** Seats with a controller assigned. */
+  get coopSeats(): number[] {
+    const out: number[] = [];
+    this.coopPads.forEach((s, i) => s && out.push(i + 1));
+    return out;
+  }
+
+  /** Button index of an action's pad binding (wingmen share P1's pad layout). */
   padButton(a: Action): number {
     const code = this.bindings[a].find((c) => c.startsWith('Pad'));
     return code ? Number(code.slice(3)) : -1;

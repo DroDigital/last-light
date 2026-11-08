@@ -8,6 +8,7 @@ import { makeHullMaterial } from './materials';
 import { engineTrailBrightness, engineTrailWidth, lanternGlow } from './combat-look';
 import { haloPositions } from '../game/weapons';
 import { hexToRgb } from '../core/math';
+import { MAX_PILOTS, PILOT_TINT } from '../game/player';
 import { fxRng } from '../core/rng';
 import { EdgeBatch } from './edges';
 import { RARITY_RGB } from '../data/affixes';
@@ -145,7 +146,7 @@ export class View {
   private drones: InstancedKind;
   private halos: InstancedKind;
   private ghosts: InstancedKind;
-  /** Player 2's ship (local co-op) */
+  /** the wingmen's ships (local co-op, P2..P4) */
   private wing: InstancedKind;
   ship: THREE.Mesh;
   private shipEdges: EdgeBatch;
@@ -206,7 +207,7 @@ export class View {
     this.ghosts = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 3, emissive: 4 }), 12);
     this.world.add(this.ghosts.mesh);
     this.ghosts.withEdges(this, { haloGain: 0.8, coreGain: 0.45 });
-    this.wing = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 1.8, emissive: 2.2 }), 2);
+    this.wing = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 1.8, emissive: 2.2 }), MAX_PILOTS);
     this.wing.mesh.frustumCulled = false;
     this.world.add(this.wing.mesh);
     this.wing.withEdges(this, { haloGain: 0.7, coreGain: 0.7 });
@@ -442,28 +443,30 @@ export class View {
     }
   }
 
-  /** Local co-op: Player 2's ship, its engine, and the revive ring around a downed pilot. */
+  /** Local co-op: each wingman's ship in its pilot colour, its engine, and the revive ring around any downed pilot. */
   private syncWing(w: World, a: number, time: number): void {
-    const p2 = w.player2;
-    if (!p2) return;
-    _p.lerpVectors(p2.prev, p2.pos, a);
-    _q.slerpQuaternions(p2.prevQuat, p2.quat, a);
-    _e.set(0, 0, p2.bank + p2.roll);
-    _q.multiply(_q2.setFromEuler(_e));
+    if (!w.wingmen.length) return;
     const scale = w.build.hull.id === 'moth' ? 0.8 : w.build.hull.id === 'bastion' ? 1.2 : 1;
-    _m.compose(_p, _q, _s.setScalar(scale));
-    const down = !p2.alive;
-    if (!down || Math.floor(time * 6) % 2 === 0) {
-      this.wing.push(_m, 0.5, 1, 0.75, p2.hurtT > 0.2 ? 1 : 0, down ? 0.45 : 0, p2.flareT > 0 ? 1 : 0.3, 0);
+    for (const p2 of w.wingmen) {
+      _p.lerpVectors(p2.prev, p2.pos, a);
+      _q.slerpQuaternions(p2.prevQuat, p2.quat, a);
+      _e.set(0, 0, p2.bank + p2.roll);
+      _q.multiply(_q2.setFromEuler(_e));
+      _m.compose(_p, _q, _s.setScalar(scale));
+      const down = !p2.alive;
+      const [r, g, b] = PILOT_TINT[p2.slot] ?? PILOT_TINT[1]!;
+      if (!down || Math.floor(time * 6) % 2 === 0) {
+        this.wing.push(_m, r, g, b, p2.hurtT > 0.2 ? 1 : 0, down ? 0.45 : 0, p2.flareT > 0 ? 1 : 0.3, 0);
+      }
+      if (!down && p2.thrust > 0.05 && fxRng.next() < 0.8) {
+        _v.set(0, 0, 1.6).applyQuaternion(_q).add(_p);
+        this.particles.spawn(_v.x, _v.y, _v.z, 0, 0, 0, 0.35, r * 1.8, g * 2.2, b * 2.1, 2.5 + p2.thrust * 2, 0.5, 2);
+      }
     }
-    if (!down && p2.thrust > 0.05 && fxRng.next() < 0.8) {
-      _v.set(0, 0, 1.6).applyQuaternion(_q).add(_p);
-      this.particles.spawn(_v.x, _v.y, _v.z, 0, 0, 0, 0.35, 0.9, 2.2, 1.6, 2.5 + p2.thrust * 2, 0.5, 2);
-    }
-    // a downed pilot: the revive radius, and progress as the partner hovers close
-    const downed = !w.p1.alive ? w.p1 : down ? p2 : null;
-    if (downed) {
-      const k = w.reviveT / World.REVIVE_TIME;
+    // downed pilots: the revive radius, and progress as partners hover close
+    for (const downed of w.players) {
+      if (downed.alive) continue;
+      const k = downed.reviveT / World.REVIVE_TIME;
       this.telegraphs.ring(downed.pos.x, downed.pos.y, downed.pos.z, World.REVIVE_RANGE, 0, 1, 0, 0.5, 1, 0.75, 0.35, 40);
       if (k > 0) this.telegraphs.ring(downed.pos.x, downed.pos.y, downed.pos.z, 2 + k * (World.REVIVE_RANGE - 2), 0, 1, 0, 0.6, 1, 0.8, 0.9, 40);
     }
@@ -471,8 +474,8 @@ export class View {
 
   private syncPlayer(w: World, a: number, time: number, frameDt: number): void {
     const pl = w.player;
-    // co-op: a downed P1 stays visible (blinking) so P2 can find and revive them
-    this.ship.visible = (pl.alive || (!!w.player2 && Math.floor(time * 6) % 2 === 0)) && !this.cockpit;
+    // co-op: a downed P1 stays visible (blinking) so the wingmen can find and revive them
+    this.ship.visible = (pl.alive || (w.wingmen.length > 0 && Math.floor(time * 6) % 2 === 0)) && !this.cockpit;
     _p.lerpVectors(pl.prev, pl.pos, a);
     _q.slerpQuaternions(pl.prevQuat, pl.quat, a);
     // bank + barrel roll + recoil kick

@@ -29,6 +29,10 @@ export const BAL = {
   /** total threat spent per encounter: base + per sector */
   budgetBase: 46,
   budgetPerSector: 26,
+  /** local co-op: extra regular-enemy HP per pilot beyond the first */
+  coopEnemyHp: 0.4,
+  /** local co-op: extra boss HP per pilot beyond the first */
+  coopBossHp: 0.5,
   /** multiplier on every regular enemy's HP */
   enemyHp: 1.35,
   /** multiplier on boss HP (core and parts) */

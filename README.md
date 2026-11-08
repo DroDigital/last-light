@@ -62,14 +62,15 @@ Action buttons are rebindable in Settings → Controls; rebinding one device pre
 
 Menus are navigable with arrow keys + Enter/Esc or the D-pad / left stick + A/B. Use left/right to change sliders and selection lists. On the draft screen, `1` `2` `3` pick a card. On the death screen, `R` dives again.
 
-### Local co-op
+### Local co-op (1–4 players)
 
-A second player drops in during any fight by pressing **Start** on a spare controller. They can also take the only controller while Player 1 flies with keyboard and mouse. Player 2 uses the gamepad layout above.
+Up to three more pilots drop in at any time, in every mode (Act I and II runs, Endless and the Daily Dive) and on any screen: the title, the chart, drafts, the loadout or mid-fight. Press **Start** on a spare controller to take the next free seat (P2 mint, P3 amber, P4 violet). Player 1 can fly with keyboard and mouse while every controller is a wingman, or with a controller of their own. Wingmen use the gamepad layout above, and any of them can pause a fight with **Start**.
 
-- **Sharing:** both ships share the build and the Light, and each keeps its own hull and shield. Enemies go after whichever pilot is nearer.
-- **Camera:** it stays behind Player 1 and pulls back to keep Player 2 in frame. A soft tether keeps the pair together.
-- **Downed pilots:** hover close to a downed partner for 3 s to revive them. The run ends only when both pilots are down.
-- **Leaving:** Player 2 leaves by holding **View/Back** for 1.5 s. Co-op carries over into the next run while their controller stays assigned.
+- **Sharing:** every ship shares the build and the Light, and each keeps its own hull, shield and weapon cooldowns. Enemies go after the nearest pilot.
+- **Scaling:** enemies get tougher with each extra pilot (+40% HP, +50% for bosses; levers in `src/data/balance.ts`). The scaling is live: when someone joins or leaves mid-fight, every enemy on the field rescales.
+- **Camera:** it stays behind Player 1 and pulls back to keep the whole party in frame. A soft tether keeps wingmen near Player 1, and each fight starts in formation.
+- **Downed pilots:** hover close to a downed partner for 3 s to revive them. Each extra rescuer speeds it up. The run ends only when every pilot is down. A roster under the sector readout shows each pilot's hull or revive progress.
+- **Leaving:** hold **View/Back** for 1.5 s to leave, or unplug the controller. Seats carry over into the next run and across modes while their controllers stay connected. Outside fights, a strip at the bottom of the screen shows who is seated.
 
 ## Modes
 

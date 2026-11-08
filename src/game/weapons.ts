@@ -451,8 +451,8 @@ export function updateWeapons(w: World, c: Controls, dt: number): void {
 }
 
 /**
- * Player 2's guns (local co-op). `w.player` is P2 here. The build's primary and
- * secondary are shared, so P2 keeps its own cooldowns in `w.p2Cd`.
+ * A wingman's guns (local co-op). `w.player` is that wingman here. The build's
+ * primary and secondary are shared, so each wingman keeps its own cooldowns.
  */
 export function updateWingWeapons(w: World, c: Controls, dt: number): void {
   const pl = w.player;
@@ -461,7 +461,7 @@ export function updateWingWeapons(w: World, c: Controls, dt: number): void {
   const flareRate = pl.flareT > 0 ? 2 : 1;
   const run = (wi: WeaponInstance, key: 'primary' | 'secondary', held: boolean, secondary: boolean) => {
     const keep = wi.cd;
-    wi.cd = w.p2Cd[key] - dt;
+    wi.cd = pl.wingCd[key] - dt;
     if (held) {
       if (wi.def.behavior === 'beam') {
         const tick = wi.cd <= 0;
@@ -475,7 +475,7 @@ export function updateWingWeapons(w: World, c: Controls, dt: number): void {
         pl.recoil = Math.min(1, pl.recoil + (secondary ? 0.3 : (wi.def.recoil ?? 0.05) * 4));
       }
     } else if (wi.cd < 0) wi.cd = 0;
-    w.p2Cd[key] = wi.cd;
+    pl.wingCd[key] = wi.cd;
     wi.cd = keep;
   };
   run(w.build.primary, 'primary', c.fire1, false);
