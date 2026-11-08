@@ -132,9 +132,18 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       b.add(new THREE.BoxGeometry(1.5, 0.75, 2.4), PH, 0, tr(0, 0, 0.2));
       b.add(new THREE.CylinderGeometry(0.01, 0.95, 1.5, 4), PH2, 0, tr(0, -0.05, -1.65, -Math.PI / 2, 0, Math.PI / 4, 1, 1, 0.55));
       b.add(new THREE.BoxGeometry(1.7, 0.18, 1.9), PH2, 0, tr(0, 0.42, 0.25)); // dorsal armour deck
-      b.add(new THREE.BoxGeometry(1.2, 0.08, 1.1), PH, 0, tr(0, 0.55, 0.55)); // second plate layer
+      // armour plating: staggered panels across the dorsal deck
+      for (let i = 0; i < 3; i++) {
+        const z = -0.5 + i * 0.6;
+        b.add(new THREE.BoxGeometry(0.34, 0.04, 0.42), i % 2 ? PH : PH2, 0, tr(0, 0.53, z));
+        b.mirrorX(() => new THREE.BoxGeometry(0.3, 0.035, 0.38), i % 2 ? PH2 : PH, 0, 0.5, 0.53, z);
+      }
       b.mirrorX(() => new THREE.BoxGeometry(0.22, 0.6, 2.0), PH2, 0, 0.86, 0.05, 0.2, 0, 0, -0.12); // side skirts
       b.mirrorX(() => new THREE.BoxGeometry(0.06, 0.4, 1.6), PH, 0, 0.99, 0.02, 0.25, 0, 0, -0.12); // skirt ribs
+      for (let i = 0; i < 4; i++) {
+        const z = -0.45 + i * 0.5;
+        b.mirrorX(() => new THREE.CylinderGeometry(0.035, 0.035, 0.05, 6), '#ffffff', 0.4, 0.97, -0.1, z, 0, 0, Math.PI / 2); // rivets
+      }
       // armoured bridge: smoked glass slit under a brow plate
       b.add(new THREE.BoxGeometry(0.9, 0.2, 0.42), GLASS, 0.12, tr(0, 0.5, -0.82, -0.25));
       b.add(new THREE.BoxGeometry(1.05, 0.08, 0.3), PH2, 0, tr(0, 0.63, -0.86, -0.25));
@@ -147,6 +156,7 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       b.mirrorX(() => new THREE.CylinderGeometry(0.1, 0.12, 0.9, 8), PDARK, 0, 1.5, -0.05, -1.15, Math.PI / 2);
       b.mirrorX(() => new THREE.CylinderGeometry(0.15, 0.15, 0.14, 8), PH2, 0, 1.5, -0.05, -1.45, Math.PI / 2);
       b.mirrorX(() => new THREE.CylinderGeometry(0.06, 0.06, 0.05, 8), '#ffffff', 1, 1.5, -0.05, -1.6, Math.PI / 2);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.09, 0.09, 0.22, 12), PDARK, 0, 1.5, -0.05, -1.95, Math.PI / 2); // muzzle brakes
       // dorsal mortar turret: ring, mantlet, fat barrel with a muzzle brake
       b.add(new THREE.CylinderGeometry(0.42, 0.5, 0.3, 10), PH, 0, tr(0, 0.66, 0.15));
       b.add(new THREE.BoxGeometry(0.5, 0.26, 0.4), PH2, 0, tr(0, 0.82, -0.05));
@@ -167,7 +177,7 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       // Striker: a needle interceptor. Long spine, forward-swept blades, coilgun nose, one big burner.
       b.add(new THREE.ConeGeometry(0.42, 3.4, 4), PH, 0, tr(0, 0, -0.55, -Math.PI / 2, 0, Math.PI / 4, 1, 1, 0.7));
       b.add(new THREE.BoxGeometry(0.62, 0.32, 1.5), PH2, 0, tr(0, 0, 0.75));
-      b.add(new THREE.BoxGeometry(0.12, 0.1, 2.6), PH2, 0, tr(0, 0.2, 0.05)); // dorsal spine
+      for (let i = 0; i < 8; i++) b.add(new THREE.BoxGeometry(0.1, 0.06, 0.45), PH2, 0, tr(0, 0.2, -1.5 + i * 0.42)); // spine ribs
       // bubble canopy with a frame
       b.add(new THREE.SphereGeometry(0.22, 10, 6), GLASS, 0.14, tr(0, 0.2, -0.5, 0, 0, 0, 0.75, 0.6, 2.2));
       b.add(new THREE.BoxGeometry(0.04, 0.05, 0.8), PH2, 0, tr(0, 0.33, -0.5));
@@ -178,12 +188,15 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       b.mirrorX(() => new THREE.BoxGeometry(1.6, 0.07, 0.12), PH, 0, 0.97, -0.01, 0.3, 0, -0.42, 0);
       b.mirrorX(() => new THREE.BoxGeometry(1.5, 0.06, 0.05), '#ffffff', 1, 1.0, 0.03, 0.24, 0, -0.42, 0);
       b.mirrorX(() => new THREE.BoxGeometry(0.06, 0.45, 0.6), PH, 0, 1.72, 0.12, 0.05, 0, -0.42, 0.25); // wingtip fins
+      // a second, shorter blade on each wing
+      b.mirrorX(() => new THREE.BoxGeometry(1.0, 0.03, 0.22), PH, 0, 0.82, -0.12, 0.25, 0, -0.42, 0);
+      b.mirrorX(() => new THREE.BoxGeometry(0.5, 0.03, 0.14), PH2, 0, 1.25, -0.1, 0.9, 0, -0.42, 0);
       b.mirrorX(() => new THREE.BoxGeometry(0.05, 0.05, 0.05), '#ffffff', 1, 1.74, 0.36, 0.0);
       // canards
       b.mirrorX(() => new THREE.BoxGeometry(0.55, 0.04, 0.28), PH2, 0, 0.35, 0, -1.1, 0, 0.35, 0);
       // coilgun: twin rails, coils and a glowing slug in the breech
       b.mirrorX(() => new THREE.BoxGeometry(0.05, 0.08, 1.6), PDARK, 0, 0.12, -0.2, -1.0);
-      for (const z of [-0.6, -0.95, -1.3]) b.add(new THREE.TorusGeometry(0.15, 0.03, 4, 8), PH2, 0, tr(0, -0.2, z));
+      [-0.6, -0.95, -1.3].forEach((z, i) => b.add(new THREE.TorusGeometry(0.15, 0.03, 4, 12), i === 1 ? '#ffffff' : PH2, i === 1 ? 0.7 : 0, tr(0, -0.2, z)));
       b.add(new THREE.BoxGeometry(0.06, 0.06, 0.5), '#ffffff', 0.8, tr(0, -0.2, -1.6));
       // dorsal fin with a livery stripe, then the burner: shroud, petals, hot disc
       b.add(new THREE.BoxGeometry(0.05, 0.55, 0.8), PH, 0, tr(0, 0.4, 1.1, -0.3));
@@ -202,9 +215,15 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       b.add(new THREE.BoxGeometry(0.16, 0.1, 2.2), PH, 0, tr(0, 0.32, 0.0)); // spine
       b.add(new THREE.OctahedronGeometry(0.24, 0), GLASS, 0.15, tr(0, 0.3, -0.75, 0, 0, 0, 0.8, 0.6, 1.8)); // canopy
       b.add(new THREE.OctahedronGeometry(0.26, 0), '#ffffff', 1, tr(0, 0, -0.25)); // the core
+      // ribs on the spindle, like the frame of a loom
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        b.add(new THREE.BoxGeometry(0.05, 0.22, 0.5), PH, 0, tr(Math.cos(a) * 0.5, Math.sin(a) * 0.5, -0.1, 0, 0, a));
+      }
       // the coil: armoured ring, inner glowing winding, segment clamps
-      b.add(new THREE.TorusGeometry(1.35, 0.13, 4, 10), PH, 0, tr(0, 0, 0.45, 0, 0, Math.PI / 10));
-      b.add(new THREE.TorusGeometry(1.35, 0.04, 3, 10), '#ffffff', 0.55, tr(0, 0, 0.3, 0, 0, Math.PI / 10));
+      b.add(new THREE.TorusGeometry(1.35, 0.13, 6, 28), PH, 0, tr(0, 0, 0.45, 0, 0, Math.PI / 10));
+      b.add(new THREE.TorusGeometry(1.35, 0.04, 3, 28), '#ffffff', 0.55, tr(0, 0, 0.3, 0, 0, Math.PI / 10));
+      b.add(new THREE.TorusGeometry(1.35, 0.02, 3, 32), '#ffffff', 0.45, tr(0, 0, 0.6, 0, 0, Math.PI / 10)); // back winding
       b.add(new THREE.TorusGeometry(1.2, 0.03, 3, 20), PH2, 0, tr(0, 0, 0.55));
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2;
