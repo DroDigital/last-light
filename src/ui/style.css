@@ -568,3 +568,60 @@ button:focus-visible, [data-nav]:focus-visible, select:focus-visible, input:focu
   #nodeinfo .map-legend { margin: 0; }
   #nodeinfo .map-controls button { padding: 5px 9px; }
 }
+
+/* The Hearth is the player's home: a quiet, legible frame around the living sky. */
+.title-screen {
+  position: relative;
+  background: linear-gradient(90deg, rgba(7, 6, 11, .88) 0, rgba(7, 6, 11, .62) 27%, rgba(7, 6, 11, 0) 68%);
+}
+.title-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; color: var(--paper-2); font: 11px var(--mono); letter-spacing: .15em; }
+.title-kicker-mark { color: var(--lantern); font-size: 16px; }
+.title-kicker-divider { color: var(--lantern-deep); }
+.title-progress { display: flex; align-items: center; gap: 12px; margin-top: 18px; color: var(--paper-2); font: 10px var(--mono); letter-spacing: .12em; }
+.title-progress-lights { display: flex; gap: 5px; }
+.title-progress-lights i { width: 6px; height: 6px; border: 1px solid rgba(255, 207, 106, .35); transform: rotate(45deg); }
+.title-progress-lights i.lit { background: var(--lantern); border-color: var(--lantern); box-shadow: 0 0 7px rgba(255, 207, 106, .75); }
+.title-screen .menu { margin-top: 22px; }
+
+/* Route state and selected destination remain on quiet ink instead of the sky. */
+.node-detail { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-left: 2px solid var(--lantern); background: rgba(255, 207, 106, .055); color: var(--paper-2); font-size: 12px; line-height: 1.4; }
+.node-detail-label { color: var(--lantern); font: 10px var(--mono); letter-spacing: .1em; }
+.node-detail strong { color: var(--paper); font-size: 14px; text-transform: uppercase; letter-spacing: .04em; }
+.node-detail [data-node-rarity] { color: var(--lantern); font: 10px var(--mono); text-transform: uppercase; }
+.route-legend { display: flex; flex-wrap: wrap; gap: 5px 12px; color: var(--paper-2); font: 10px var(--mono); text-transform: uppercase; }
+.route-current { color: var(--tint); } .route-reachable { color: var(--lantern); } .route-visited { opacity: .6; }
+
+/* The preview depicts the offer; this strip explains its actual effect on the build. */
+.card-comparison { padding: 8px 0; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line); font: 11px/1.35 var(--mono); color: var(--paper-2); }
+.card-comparison .compare-label { display: block; margin-bottom: 4px; color: var(--rc); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.card-comparison > div { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.card-comparison b { color: var(--rc); }
+.card-comparison strong { color: var(--paper); font-weight: 700; }
+.card .banish { position: relative; bottom: auto; right: auto; align-self: flex-end; margin-top: 4px; }
+@media (max-width: 700px) {
+  .title-kicker { margin-bottom: 8px; }
+  .title-progress { margin-top: 12px; }
+  .title-screen .menu { margin-top: 16px; }
+}
+@media (max-width: 600px) {
+  .node-detail { padding: 5px 8px; }
+  .node-detail [data-node-description], .node-detail-label, .route-legend { display: none; }
+  .node-detail strong, .node-detail [data-node-rarity] { font-size: 10px; }
+}
+
+/* Both weapon vignettes share the same animation loop; labels remain native resolution. */
+.card .pv { display: flex; align-items: center; }
+.card .pv-side { position: relative; flex: 1 1 0; min-width: 0; }
+.card .pv-side > span { position: absolute; top: 4px; left: 5px; z-index: 1; color: var(--paper-2); font: 9px var(--mono); letter-spacing: .07em; }
+.card .pv-paired { gap: 1px; background: var(--ink); }
+.card .pv-paired .pv-side { background: var(--ink); }
+.card .pv-paired .pv-side + .pv-side { border-left: 1px solid var(--line-2); }
+.card .pv-paired canvas { aspect-ratio: 76 / 44; }
+.title-screen:not(.motion-reduced) .title-kicker-mark { animation: hearth-spark .8s ease-out both; }
+.title-screen:not(.motion-reduced) .title-progress-lights i.lit { animation: hearth-kindled .5s ease-out both; animation-delay: calc(.18s + var(--light-index) * .09s); }
+@keyframes hearth-spark { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes hearth-kindled { from { opacity: 0; transform: rotate(45deg) scale(.2); } to { opacity: 1; transform: rotate(45deg) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .title-screen:not(.motion-reduced) .title-kicker-mark,
+  .title-screen:not(.motion-reduced) .title-progress-lights i.lit { animation: none; }
+}
