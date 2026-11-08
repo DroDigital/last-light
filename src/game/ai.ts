@@ -70,7 +70,7 @@ function steerTo(e: Enemy, dx: number, dy: number, dz: number, speed: number, dt
 }
 
 export function updateEnemyAI(w: World, dt: number): void {
-  const coop = !!w.player2;
+  const coop = w.wingmen.length > 0;
   const stasisR2 = (34 * w.build.ship.stasis) ** 2;
   const wake = w.build.flags.has('wakeFire');
   const hasBurnAura = w.build.triggers.some((t) => t.do === 'burnAura');

@@ -32,7 +32,24 @@ const AX_Y = new Vector3(0, 1, 0);
 const AX_X = new Vector3(1, 0, 0);
 const AX_Z = new Vector3(0, 0, 1);
 
+/** Local co-op: up to four pilots (P1 + three drop-in wingmen). */
+export const MAX_PILOTS = 4;
+/** Per-pilot colour for P2..P4 (index = slot), HUD hex and linear tint. P1 uses the hull accent. */
+export const PILOT_HEX = ['#f3eee2', '#7fe0a8', '#ffc46a', '#c49aff'] as const;
+export const PILOT_TINT: readonly (readonly [number, number, number])[] = [
+  [1, 1, 1],
+  [0.5, 1, 0.75],
+  [1, 0.78, 0.42],
+  [0.78, 0.6, 1],
+];
+
 export class Player {
+  /** co-op seat: 0 = P1, 1..3 = P2..P4 */
+  slot = 0;
+  /** a wingman's own cooldowns on the shared primary/secondary */
+  wingCd = { primary: 0, secondary: 0 };
+  /** seconds a partner has hovered beside this pilot while it is down */
+  reviveT = 0;
   pos = new Vector3();
   prev = new Vector3();
   vel = new Vector3();

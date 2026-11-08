@@ -17,7 +17,7 @@ import { SYNERGIES } from '../data/upgrades';
 import { Build, cardRarity, cardTitle, type DraftCard } from './build';
 import { generateLoot } from './loot';
 import { World } from './world';
-import { emptyControls, type Controls } from './player';
+import { PILOT_HEX, emptyControls, type Controls } from './player';
 import { Director, generateMap, embersFor, priceFor, ROOM_TIER, type EncounterKind, type MapNode, type NodeType, type SectorMap } from './run';
 import type { MeshKind } from '../render/meshes';
 import { Juice } from './juice';
@@ -108,12 +108,13 @@ export class Game {
   run: RunState | null = null;
   director: Director | null = null;
   controls: Controls = emptyControls();
-  /** local co-op: Player 2's controls (built from the second gamepad) */
-  controls2: Controls = emptyControls();
-  private p2Yaw = 0;
-  private p2Pitch = 0;
-  private p2LeaveT = 0;
+  /** local co-op: the wingmen's controls by seat (wingControls[0] = Player 2) */
+  readonly wingControls: Controls[] = [emptyControls(), emptyControls(), emptyControls()];
+  private wingAim = [0, 0, 0].map(() => ({ yaw: 0, pitch: 0, leaveT: 0 }));
   private coopPull = 0;
+  /** DOM strip that shows who is seated on every screen */
+  private partyEl: HTMLElement | null = null;
+  private partyKey = '';
   private pendingYaw = 0;
   private pendingPitch = 0;
   time = 0;
@@ -407,8 +408,8 @@ export class Game {
     (this.world as unknown as { deathBloom: boolean }).deathBloom = d.equippedCosmetics.death === 'c_death_bloom';
     this.juice.attach(this.world);
     this.hookWorld(this.world);
-    // co-op carries over between runs while Player 2's controller stays assigned
-    if (this.input.p2Index !== null) this.world.addPlayer2();
+    // co-op carries over between runs (and modes) while each wingman's controller stays seated
+    for (const seat of this.input.coopSeats) this.world.addWingman(seat);
     this.view.setHull(hull.id, hull.accent);
     const trail = d.equippedCosmetics.trail;
     const tc = trail === 'c_trail_gold' ? '#ffc040' : trail === 'c_trail_violet' ? '#b070ff' : hull.accent;
@@ -590,13 +591,12 @@ export class Game {
     pl.dodgeCharges = w.build.ship.dodges;
     pl.lumen = Math.min(pl.lumen, 99);
     pl.flareT = 0;
-    const p2 = w.player2;
-    if (p2) {
-      // Player 2 starts each fight on P1's wing, back on their feet if they were down
+    pl.reviveT = 0;
+    for (const p2 of w.wingmen) {
+      // wingmen start each fight in formation on P1, back on their feet if they were down
       p2.alive = true;
       p2.hull = Math.max(p2.hull, p2.maxHull * 0.4);
-      p2.pos.set(7, 1, 72);
-      p2.prev.copy(p2.pos);
+      w.placeOnWing(p2, pl.pos);
       p2.vel.set(0, 0, -30);
       p2.quat.identity();
       p2.prevQuat.identity();
@@ -604,7 +604,7 @@ export class Game {
       p2.boostEnergy = 1;
       p2.dodgeCharges = w.build.ship.dodges;
       p2.flareT = 0;
-      w.reviveT = 0;
+      p2.reviveT = 0;
     }
     this.view.resetTrail();
     this.camPos.set(0, 3, 82);
@@ -643,8 +643,8 @@ export class Game {
       w.player.lumen = Math.max(w.player.lumen, 50);
     }
     dir.update(dt);
-    w.update(this.controls, dt, w.player2 ? this.controls2 : undefined);
-    this.controls2.dodge = this.controls2.ability1 = this.controls2.ability2 = this.controls2.flare = false;
+    w.update(this.controls, dt, this.wingControls);
+    for (const c2 of this.wingControls) c2.dodge = c2.ability1 = c2.ability2 = c2.flare = false;
     if (dir.kind === 'derelict') {
       this.view.markers = dir.beacons.map((b) => ({ x: b.pos.x, y: b.pos.y, z: b.pos.z, r: 12, lit: b.lit ? 1 : b.progress }));
     }
@@ -652,7 +652,7 @@ export class Game {
     if (dir.kind === 'endless') run.endlessWaves = dir.endlessWave;
     // codex: enemies seen
     for (const id of w.stats.enemiesSeen) if (!this.save.data.codex.enemies.includes(id)) this.save.data.codex.enemies.push(id);
-    // co-op: the run only ends when both pilots are down
+    // co-op: the run only ends when every pilot is down
     if (!w.anyAlive()) {
       this.deathT -= dt;
       if (this.deathT <= 0) this.onDeath();
@@ -1358,61 +1358,105 @@ export class Game {
       this.pendingYaw = 0;
       this.pendingPitch = 0;
     }
-    this.gatherP2(frameDt);
+    this.gatherWingmen(frameDt);
     aim.strength = inp.lastDevice === 'pad' ? Math.min(1, s.aimAssist + 0.35) : s.aimAssist;
     aim.cone = inp.lastDevice === 'pad' ? 0.17 : 0.1;
   }
 
   /**
-   * Local co-op input. Any spare gamepad joins as Player 2 with START during a
-   * fight; holding BACK for 1.5 s leaves. P2 uses P1's pad layout.
+   * Local co-op input, live on every screen and in every mode. Any spare
+   * gamepad takes the next free seat (P2..P4) with START; holding BACK/VIEW for
+   * 1.5 s leaves. With no run in progress the seat is kept and the pilot flies
+   * from the first fight. Wingmen use P1's pad layout.
    */
-  private gatherP2(frameDt: number): void {
+  private gatherWingmen(frameDt: number): void {
     const inp = this.input;
     const w = this.world;
-    if (!w || !this.run) return;
-    if (!w.player2) {
-      if (inp.joinRequest !== null && this.state === 'combat') {
-        inp.assignP2(inp.joinRequest);
-        w.addPlayer2();
-        this.juice.toast('PLAYER 2 JOINED', '#7fe0a8');
+    if (inp.joinRequest !== null) {
+      const seat = inp.freeSeat();
+      if (seat !== null) {
+        inp.assignSeat(seat, inp.joinRequest);
+        if (w && this.run) w.addWingman(seat);
+        this.juice.toast(`PLAYER ${seat + 1} JOINED`, PILOT_HEX[seat]);
         this.audio.play('uiSelect', 0, 0.8);
       }
-      return;
     }
-    if (inp.p2Lost) {
-      this.leaveCoop('PLAYER 2 DISCONNECTED');
-      return;
-    }
-    const p = inp.p2;
-    const c = this.controls2;
-    const btn = (a: Parameters<typeof inp.padButton>[0]) => inp.padButton(a);
-    c.mx = p.lx;
-    c.mz = -p.ly;
-    c.my = (p.held(12) ? 1 : 0) - (p.held(13) ? 1 : 0);
-    c.fire1 = p.held(btn('fire1'));
-    c.fire2 = p.held(btn('fire2'));
-    c.boost = p.held(btn('boost'));
-    if (p.pressed(btn('dodge'))) c.dodge = true;
-    if (p.pressed(btn('ability1'))) c.ability1 = true;
-    if (p.pressed(btn('ability2'))) c.ability2 = true;
-    if (p.pressed(btn('flare'))) c.flare = true;
-    c.autoLevel = this.settings.autoLevel;
+    // a seated controller with no ship (e.g. joined before the run): give it one
+    if (w && this.run) for (const seat of inp.coopSeats) if (!w.wingmanInSlot(seat)) w.addWingman(seat);
     const sens = this.settings.sensitivity;
     const inv = this.settings.invertY ? -1 : 1;
-    if (this.state === 'combat') {
-      this.p2Yaw += p.rx * 2.6 * frameDt * sens;
-      this.p2Pitch += p.ry * 2.0 * frameDt * sens * inv;
-    } else this.p2Yaw = this.p2Pitch = 0;
-    this.p2LeaveT = p.held(8) ? this.p2LeaveT + frameDt : 0;
-    if (this.p2LeaveT > 1.5) this.leaveCoop('PLAYER 2 LEFT');
+    const btn = (a: Parameters<typeof inp.padButton>[0]) => inp.padButton(a);
+    for (let i = 0; i < inp.coopPads.length; i++) {
+      const seatNo = i + 1;
+      const seat = inp.coopPads[i];
+      const c = this.wingControls[i]!;
+      const aim = this.wingAim[i]!;
+      // unseated: leaveCoop already cleared these (automation may drive them directly)
+      if (!seat) continue;
+      if (seat.lost) {
+        this.leaveCoop(seatNo, `PLAYER ${seatNo + 1} DISCONNECTED`);
+        continue;
+      }
+      const p = seat.pad;
+      c.mx = p.lx;
+      c.mz = -p.ly;
+      c.my = (p.held(12) ? 1 : 0) - (p.held(13) ? 1 : 0);
+      c.fire1 = p.held(btn('fire1'));
+      c.fire2 = p.held(btn('fire2'));
+      c.boost = p.held(btn('boost'));
+      if (p.pressed(btn('dodge'))) c.dodge = true;
+      if (p.pressed(btn('ability1'))) c.ability1 = true;
+      if (p.pressed(btn('ability2'))) c.ability2 = true;
+      if (p.pressed(btn('flare'))) c.flare = true;
+      c.autoLevel = this.settings.autoLevel;
+      if (this.state === 'combat') {
+        aim.yaw += p.rx * 2.6 * frameDt * sens;
+        aim.pitch += p.ry * 2.0 * frameDt * sens * inv;
+      } else aim.yaw = aim.pitch = 0;
+      // any wingman can pause the fight too
+      if (this.state === 'combat' && p.pressed(9)) this.pause();
+      aim.leaveT = p.held(8) ? aim.leaveT + frameDt : 0;
+      if (aim.leaveT > 1.5) this.leaveCoop(seatNo, `PLAYER ${seatNo + 1} LEFT`);
+    }
+    this.syncParty();
   }
 
-  leaveCoop(msg: string): void {
-    this.world?.removePlayer2();
-    this.input.assignP2(null);
-    this.p2LeaveT = 0;
+  /** Free a co-op seat (1..3) and drop its ship. */
+  leaveCoop(seat: number, msg: string): void {
+    this.world?.removeWingman(this.world.wingmanInSlot(seat));
+    this.input.assignSeat(seat, null);
+    const aim = this.wingAim[seat - 1];
+    if (aim) aim.yaw = aim.pitch = aim.leaveT = 0;
+    const c = this.wingControls[seat - 1];
+    if (c) Object.assign(c, emptyControls());
     this.juice.toast(msg, '#ff8a6a');
+  }
+
+  /** Party strip: who is seated and whether another controller can join, on every screen but the fight HUD. */
+  private syncParty(): void {
+    if (typeof document === 'undefined') return;
+    if (!this.partyEl) {
+      this.partyEl = document.createElement('div');
+      this.partyEl.className = 'party';
+      document.body.appendChild(this.partyEl);
+    }
+    const inp = this.input;
+    const seats = inp.coopSeats;
+    const show = this.state !== 'boot' && this.state !== 'combat' && this.state !== 'warp' && (seats.length > 0 || inp.padConnected);
+    const canJoin = inp.canJoin();
+    const key = `${show}|${seats.join(',')}|${canJoin}`;
+    if (key === this.partyKey) return;
+    this.partyKey = key;
+    this.partyEl.hidden = !show;
+    if (!show) return;
+    const pips = [0, 1, 2, 3]
+      .map((s) => {
+        const on = s === 0 || seats.includes(s);
+        return `<span class="pip${on ? ' on' : ''}" style="--pc:${PILOT_HEX[s]}">P${s + 1}</span>`;
+      })
+      .join('');
+    const hint = canJoin ? '<span class="join">START ON A CONTROLLER TO JOIN</span>' : seats.length ? '<span class="join">HOLD VIEW TO LEAVE</span>' : '';
+    this.partyEl.innerHTML = pips + hint;
   }
 
   update(dt: number): void {
@@ -1420,9 +1464,13 @@ export class Game {
     if (this.state === 'combat' && this.world) {
       this.controls.yaw = this.pendingYaw;
       this.controls.pitch = this.pendingPitch;
-      this.controls2.yaw = this.p2Yaw;
-      this.controls2.pitch = this.p2Pitch;
-      this.p2Yaw = this.p2Pitch = 0;
+      for (let i = 0; i < this.wingControls.length; i++) {
+        const c2 = this.wingControls[i]!;
+        const aim = this.wingAim[i]!;
+        c2.yaw = aim.yaw;
+        c2.pitch = aim.pitch;
+        aim.yaw = aim.pitch = 0;
+      }
       this.pendingYaw = 0;
       this.pendingPitch = 0;
       this.recorder.capture(this.controls);
@@ -1587,9 +1635,10 @@ export class Game {
         // lag, no shake) so the view can never drift. Same offset and the same
         // slight downward tilt every frame; only boost changes it.
         const b = this.boostCam;
-        // co-op: pull the rigid chase camera back so Player 2 stays in frame
-        const p2 = w.player2;
-        const spread = p2 ? clamp((p2.pos.distanceTo(pl.pos) - 18) * 0.35, 0, 22) : 0;
+        // co-op: pull the rigid chase camera back so every wingman stays in frame
+        let far = 0;
+        for (const p2 of w.wingmen) far = Math.max(far, p2.pos.distanceTo(pl.pos));
+        const spread = w.wingmen.length ? clamp((far - 18) * 0.35 + (w.wingmen.length - 1) * 2, 0, 26) : 0;
         this.coopPull = damp(this.coopPull, spread, 2, dt);
         _w.set(0, CHASE_UP + b * 0.6 + this.coopPull * 0.35, CHASE_BACK + b * 3.5 + this.coopPull).applyQuaternion(_q).add(_v);
         cam.position.copy(_w);

@@ -5,6 +5,7 @@ import { subtypeName } from '../data/subtypes';
 import { HAZARD_INFO } from '../game/hazards';
 import type { Game, State } from '../game/game';
 import { World } from '../game/world';
+import { PILOT_HEX } from '../game/player';
 import { PALETTES } from '../data/palettes';
 import { fmtInt, clamp } from '../core/math';
 import { esc } from './ui';
@@ -238,65 +239,89 @@ export class Hud {
     this.el.classList.toggle('cockpit', g.camMode === 'cockpit');
   }
 
-  /** Local co-op overlay: P2's plate, an edge arrow when off-screen, the downed banner, the join hint. */
+  /** Local co-op overlay: each wingman's plate, an edge arrow when off-screen, the downed banner, the join hint. */
   private drawCoop(w: World, W: number, H: number): void {
     const c = this.ctx;
-    const p2 = w.player2;
+    const inp = this.g.input;
     c.textAlign = 'center';
-    if (!p2) {
-      if (this.g.input.padConnected && this.g.input.lastDevice === 'kbm') {
-        c.font = '400 10px "JetBrains Mono"';
-        c.fillStyle = 'rgba(127,224,168,0.7)';
-        c.fillText('P2 · PRESS START ON A CONTROLLER TO JOIN', W / 2, H - 16);
-      }
-      return;
+    // join hint whenever a spare controller could take a seat
+    if (inp.canJoin()) {
+      const seat = inp.freeSeat()!;
+      c.font = '400 10px "JetBrains Mono"';
+      c.fillStyle = PILOT_HEX[seat] + 'b3';
+      c.fillText(`P${seat + 1} · PRESS START ON A CONTROLLER TO JOIN`, W / 2, H - 16);
     }
-    const MINT = '#7fe0a8';
-    const p = this.project(p2.pos.x, p2.pos.y, p2.pos.z);
-    if (p.on) {
-      const bw = 40;
+    if (!w.wingmen.length) return;
+    for (const p2 of w.wingmen) {
+      const col = PILOT_HEX[p2.slot] ?? PILOT_HEX[1];
+      const tag = `P${p2.slot + 1}`;
+      const p = this.project(p2.pos.x, p2.pos.y, p2.pos.z);
+      if (p.on) {
+        const bw = 40;
+        c.fillStyle = 'rgba(0,0,0,0.6)';
+        c.fillRect(p.x - bw / 2, p.y - 30, bw, 4);
+        c.fillRect(p.x - bw / 2, p.y - 25, bw, 2);
+        c.fillStyle = col;
+        c.fillRect(p.x - bw / 2, p.y - 30, bw * clamp(p2.hull / p2.maxHull, 0, 1), 4);
+        c.fillStyle = '#9adcf0';
+        c.fillRect(p.x - bw / 2, p.y - 25, bw * clamp(p2.shield / Math.max(1, p2.maxShield), 0, 1), 2);
+        c.font = '800 10px Archivo';
+        c.fillStyle = col;
+        c.fillText(p2.alive ? tag : `${tag} · DOWN`, p.x, p.y - 34);
+      } else {
+        // edge arrow toward the wingman
+        let dx = p.x - W / 2;
+        let dy = p.y - H / 2;
+        if (p.behind) {
+          dx = -dx;
+          dy = -dy;
+        }
+        const ang = Math.atan2(dy, dx);
+        const r = Math.min(W, H) / 2 - 40;
+        const ax = W / 2 + Math.cos(ang) * r;
+        const ay = H / 2 + Math.sin(ang) * r;
+        c.save();
+        c.translate(ax, ay);
+        c.rotate(ang);
+        c.fillStyle = col;
+        c.beginPath();
+        c.moveTo(10, 0);
+        c.lineTo(-6, -7);
+        c.lineTo(-6, 7);
+        c.closePath();
+        c.fill();
+        c.restore();
+        c.font = '800 10px Archivo';
+        c.fillText(tag, ax, ay - 12);
+      }
+    }
+    // a party roster under the sector readout: everyone's hull (or revive progress) at a glance
+    c.textAlign = 'left';
+    let y = 122;
+    for (const pl of w.players) {
+      const col = pl.slot === 0 ? '#f3eee2' : PILOT_HEX[pl.slot] ?? PILOT_HEX[1];
+      c.font = '800 10px Archivo';
+      c.fillStyle = col;
+      c.fillText(`P${pl.slot + 1}`, 26, y + 4);
       c.fillStyle = 'rgba(0,0,0,0.6)';
-      c.fillRect(p.x - bw / 2, p.y - 30, bw, 4);
-      c.fillRect(p.x - bw / 2, p.y - 25, bw, 2);
-      c.fillStyle = MINT;
-      c.fillRect(p.x - bw / 2, p.y - 30, bw * clamp(p2.hull / p2.maxHull, 0, 1), 4);
-      c.fillStyle = '#9adcf0';
-      c.fillRect(p.x - bw / 2, p.y - 25, bw * clamp(p2.shield / Math.max(1, p2.maxShield), 0, 1), 2);
-      c.font = '800 10px Archivo';
-      c.fillStyle = MINT;
-      c.fillText(p2.alive ? 'P2' : 'P2 · DOWN', p.x, p.y - 34);
-    } else {
-      // edge arrow toward P2
-      let dx = p.x - W / 2;
-      let dy = p.y - H / 2;
-      if (p.behind) {
-        dx = -dx;
-        dy = -dy;
+      c.fillRect(48, y - 2, 60, 5);
+      c.fillStyle = pl.alive ? col : '#ff6a5a';
+      c.fillRect(48, y - 2, 60 * (pl.alive ? clamp(pl.hull / pl.maxHull, 0, 1) : clamp(pl.reviveT / World.REVIVE_TIME, 0, 1)), 5);
+      if (!pl.alive) {
+        c.font = '400 9px "JetBrains Mono"';
+        c.fillText('DOWN', 114, y + 4);
       }
-      const ang = Math.atan2(dy, dx);
-      const r = Math.min(W, H) / 2 - 40;
-      const ax = W / 2 + Math.cos(ang) * r;
-      const ay = H / 2 + Math.sin(ang) * r;
-      c.save();
-      c.translate(ax, ay);
-      c.rotate(ang);
-      c.fillStyle = MINT;
-      c.beginPath();
-      c.moveTo(10, 0);
-      c.lineTo(-6, -7);
-      c.lineTo(-6, 7);
-      c.closePath();
-      c.fill();
-      c.restore();
-      c.font = '800 10px Archivo';
-      c.fillText('P2', ax, ay - 12);
+      y += 14;
     }
-    const downed = !w.p1.alive ? 'P1' : !p2.alive ? 'P2' : '';
-    if (downed) {
-      const k = Math.round((w.reviveT / World.REVIVE_TIME) * 100);
+    c.textAlign = 'center';
+    const downed = w.players.filter((p) => !p.alive);
+    if (downed.length && w.anyAlive()) {
+      const top = downed.reduce((a, b) => (b.reviveT > a.reviveT ? b : a));
+      const k = Math.round((top.reviveT / World.REVIVE_TIME) * 100);
+      const names = downed.map((p) => `P${p.slot + 1}`).join(' + ');
       c.font = '900 13px Archivo';
-      c.fillStyle = Math.floor(this.t * 3) % 2 ? MINT : '#f3eee2';
-      c.fillText(`${downed} DOWN · ${downed === 'P1' ? 'P2' : 'P1'}: HOVER CLOSE TO REVIVE${k > 0 ? ` · ${k}%` : ''}`, W / 2, H * 0.3);
+      c.fillStyle = Math.floor(this.t * 3) % 2 ? PILOT_HEX[1] : '#f3eee2';
+      c.fillText(`${names} DOWN · HOVER CLOSE TO REVIVE${k > 0 ? ` · ${k}%` : ''}`, W / 2, H * 0.3);
     }
   }
 

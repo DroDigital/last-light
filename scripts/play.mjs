@@ -199,11 +199,12 @@ if (scenario === 'muzzle') {
 if (scenario === 'coop') {
   await ll(() => window.__ll.startRun({ seed: 'COOP' }));
   await page.waitForTimeout(2000);
-  await ll(() => { const g = window.__ll; g.startEncounter('combat', 6); g.godMode = true; g.world.addPlayer2(); const p = g.input.p2; p.now = []; p.now[7] = true; p.ly = -0.4; p.rx = 0.15; });
+  // a full four-pilot party: P2..P4 fire and thrust through the automation hooks
+  await ll(() => { const g = window.__ll; g.startEncounter('combat', 6); g.godMode = true; for (let i = 0; i < 3; i++) { g.world.addWingman(); const c = g.wingControls[i]; c.fire1 = true; c.mz = 0.4; } });
   await page.waitForTimeout(5000); await shot('coop-1');
   await ll(() => { const g = window.__ll; const w = g.world; w.withPlayer(w.player2, () => w.killPlayer('test')); });
   await page.waitForTimeout(1500); await shot('coop-down');
-  console.log('coop:', JSON.stringify(await ll(() => { const g = window.__ll; const w = g.world; return { p2: !!w.player2, p2alive: w.player2.alive, state: g.state, kills: w.stats.kills, d: +w.player2.pos.distanceTo(w.p1.pos).toFixed(1) }; })));
+  console.log('coop:', JSON.stringify(await ll(() => { const g = window.__ll; const w = g.world; return { party: w.partySize, p2alive: w.player2.alive, alive: w.players.map((p) => p.alive), state: g.state, kills: w.stats.kills, d: w.wingmen.map((p) => +p.pos.distanceTo(w.p1.pos).toFixed(1)) }; })));
 }
 if (scenario === 'endless') {
   const log = await page.evaluate(async () => {
