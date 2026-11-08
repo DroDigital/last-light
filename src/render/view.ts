@@ -6,7 +6,7 @@ import { Space } from './space';
 import { buildEnemyMesh, buildPlayerShip, type MeshKind } from './meshes';
 import { makeHullMaterial } from './materials';
 import { engineTrailBrightness, engineTrailWidth, lanternGlow } from './combat-look';
-import { haloPositions } from '../game/weapons';
+import { HARDPOINTS, haloPositions } from '../game/weapons';
 import { hexToRgb } from '../core/math';
 import { MAX_PILOTS, PILOT_TINT } from '../game/player';
 import { fxRng } from '../core/rng';
@@ -446,7 +446,7 @@ export class View {
   /** Local co-op: each wingman's ship in its pilot colour, its engine, and the revive ring around any downed pilot. */
   private syncWing(w: World, a: number, time: number): void {
     if (!w.wingmen.length) return;
-    const scale = w.build.hull.id === 'moth' ? 0.8 : w.build.hull.id === 'bastion' ? 1.2 : 1;
+    const scale = HARDPOINTS[w.build.hull.id]?.scale ?? 1;
     for (const p2 of w.wingmen) {
       _p.lerpVectors(p2.prev, p2.pos, a);
       _q.slerpQuaternions(p2.prevQuat, p2.quat, a);
@@ -484,7 +484,7 @@ export class View {
     _v.set(0, 0, 1).applyQuaternion(_q).multiplyScalar(pl.recoil * 0.35);
     this.ship.position.copy(_p).add(_v);
     this.ship.quaternion.copy(_q);
-    const scale = w.build.hull.id === 'moth' ? 0.8 : w.build.hull.id === 'bastion' ? 1.2 : 1;
+    const scale = HARDPOINTS[w.build.hull.id]?.scale ?? 1;
     this.ship.scale.setScalar(scale);
     if (this.ship.visible) {
       _m.compose(this.ship.position, this.ship.quaternion, _s.setScalar(scale));

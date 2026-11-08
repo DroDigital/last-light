@@ -90,7 +90,7 @@ export interface WorldEvents {
   telegraph: { x: number; y: number; z: number; kind: string };
   status: { kind: StatusKind; x: number; y: number; z: number };
   reaction: { id: string; x: number; y: number; z: number };
-  ability: { kind: 'shockwave' | 'stasis' };
+  ability: { kind: 'shockwave' | 'stasis' | 'laststand' };
   spawn: { x: number; y: number; z: number; faction: Faction; big: boolean };
   bossPhase: { phase: number };
   bossDeath: { x: number; y: number; z: number };
@@ -785,6 +785,7 @@ export class World {
     const w = src >= 0 ? this.weaponsByIndex[src] : null;
     if (this.build.flags.has('coherence') && w?.hasTag('energy') && pl.shield > 0) dmg *= 1.25;
     if (this.build.flags.has('starEater') && (e.def.role === 'boss' || e.def.role === 'part')) dmg *= 1.4;
+    if (this.build.flags.has('stDeadeye') && e.id === pl.aimTarget) dmg *= 1.3;
     if (e.corrode > 0) dmg *= 1 + 0.08 * e.corrode;
     dmg *= e.dmgTaken;
     // Shatter reaction: kinetic on frozen
@@ -1401,6 +1402,7 @@ export class World {
   onDodge(): void {
     this.events.emit('dodge', {});
     const pl = this.player;
+    if (this.build.flags.has('stSlipstream')) pl.slipT = 1.5;
     this.fireTriggers('dodge', pl.pos.x, pl.pos.y, pl.pos.z, 0);
   }
 
@@ -1438,6 +1440,7 @@ export class World {
     if (!pl.alive || pl.iframeT > 0 || pl.hurtT > 0) return;
     const bossK = this.boss && !this.boss.dead ? BAL.bossDamage : 1;
     let dmg = amount * BAL.enemyDamage * bossK * this.sectorDmgScale * this.build.ship.damageTaken * (this.heat >= 8 ? 1.25 : 1);
+    if (this.build.flags.has('vgIronWill')) dmg *= 1 - 0.3 * pl.missingHull();
     dmg = Math.max(1, dmg - this.build.ship.armor);
     pl.hurtT = BAL.hitGrace;
     pl.shieldDelayT = this.build.ship.shieldDelay;
@@ -1461,6 +1464,14 @@ export class World {
     if (attacker?.affixMask && attacker.has('vampiric')) attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
     if (attacker?.affixMask && attacker.has('leeching')) pl.lumen = Math.max(0, pl.lumen - 12);
     this.events.emit('hurt', { dmg: amount, hull: hullHit, x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
+    if (pl.hull <= 0 && this.build.flags.has('vgLastStand') && pl.lastStandCd <= 0) {
+      // Vanguard keystone: survive the killing blow once a minute
+      pl.hull = 1;
+      pl.iframeT = Math.max(pl.iframeT, 2);
+      pl.lastStandCd = 60;
+      this.events.emit('ability', { kind: 'laststand' });
+      this.events.emit('explosion', { x: pl.pos.x, y: pl.pos.y, z: pl.pos.z, radius: 14, r: 1, g: 0.7, b: 0.35, enemy: false });
+    }
     if (pl.hull <= 0) this.killPlayer(cause);
   }
 

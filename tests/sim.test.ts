@@ -65,8 +65,11 @@ describe('hardpoints', () => {
   it('primary shots spawn at the hull guns and secondaries at the nose', async () => {
     const { HARDPOINTS } = await import('../src/game/weapons');
     const { Quaternion, Vector3 } = await import('three');
+    const { WEAPON_BY_ID } = await import('../src/data/weapons');
     for (const hull of HULLS) {
-      const b = new Build(hull, meta());
+      // instant weapons (the Loom's Arc Caster) leave no projectile to measure: test the guns with a bolt
+      const projectile = ['bullet', 'missile'].includes(WEAPON_BY_ID[hull.start.primary]!.behavior);
+      const b = new Build(hull, meta(), projectile ? undefined : 'pulse');
       const w = new World('HP' + hull.id, b);
       w.player.pos.set(10, -5, 30);
       w.player.quat.setFromAxisAngle(new Vector3(0, 1, 0), 0.7);

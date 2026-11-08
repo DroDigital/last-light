@@ -72,6 +72,18 @@ Up to three more pilots drop in at any time, in every mode (Act I and II runs, E
 - **Downed pilots:** hover close to a downed partner for 3 s to revive them. Each extra rescuer speeds it up. The run ends only when every pilot is down. A roster under the sector readout shows each pilot's hull or revive progress.
 - **Leaving:** hold **View/Back** for 1.5 s to leave, or unplug the controller. Seats carry over into the next run and across modes while their controllers stay connected. Outside fights, a strip at the bottom of the screen shows who is seated.
 
+## Classes
+
+Every dive starts on the class screen (Quick Dive skips it and flies your last pick). Three pilot classes are free and can be played any time:
+
+| Class | Ship | Starting weapons | Passive |
+| --- | --- | --- | --- |
+| Vanguard: heavy assault | Aegis | Flak Cannon · Siege Mortar | +2 armor; shields regenerate twice as fast while firing |
+| Striker: interceptor | Kestrel | Coilshot · Cluster Pod | +1 dodge and faster recharge; each dodge primes +30% damage for 1.5 s |
+| Conduit: technomancer | Loom | Arc Caster · Gravity Well · Interceptor Wing | Status effects 25% stronger; abilities recharge 15% faster |
+
+Each class has its own skill tree: three branches of four nodes, and the last node of each branch is a keystone. Class XP from every finished dive (kills, sectors, bosses, wins, Endless waves) earns one skill point per level, up to level 12. That buys 12 of a tree's 21 points, so you have to choose. Select a learned node again to refund it (from the top of a branch down), or use **Reset tree**. The Lantern and any hulls bought in the Hearth fly from the same screen, without a tree. Data and rules are in `src/data/classes.ts`.
+
 ## Modes
 
 - **Stellar chart and salvage:** Between encounters, drag the chart to orbit and scroll to zoom; the chart buttons also work with keyboard and gamepad navigation. Each highlighted route leads to a different destination. Combat rooms range from common to mythical: higher tiers bring stronger, denser fleets and higher-tier salvage. The final approach converges on the sector boss.

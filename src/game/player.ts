@@ -82,6 +82,11 @@ export class Player {
   deathCause = '';
   aimDir = new Vector3(0, 0, -1);
   aimTarget = -1;
+  /** distance to the locked target (guns converge there); 90 when nothing is locked */
+  aimDist = 90;
+  /** class keystones: Unbreakable recharge, Slipstream damage window */
+  lastStandCd = 0;
+  slipT = 0;
   recoil = 0;
   thrust = 0;
   buffT = 0; // threadneedle
@@ -217,6 +222,8 @@ export class Player {
     if (this.iframeT > 0) this.iframeT -= dt;
     if (this.hurtT > 0) this.hurtT -= dt;
     if (this.buffT > 0) this.buffT -= dt;
+    if (this.lastStandCd > 0) this.lastStandCd -= dt;
+    if (this.slipT > 0) this.slipT -= dt;
     this.recoil = damp(this.recoil, 0, 14, dt);
     this.firingT += dt;
 
@@ -290,6 +297,14 @@ export class Player {
     if (w.build.flags.has('glassStar') && this.shield >= this.maxShield - 0.5 && this.maxShield > 0) m *= 2;
     if (this.lowHpFired) for (const t of w.build.triggers) if (t.on === 'lowHp' && t.do === 'buff') m *= 1 + t.p;
     if (w.build.flags.has('emberHull')) m *= 1 + this.heat * 0.6;
+    if (this.slipT > 0 && w.build.flags.has('stSlipstream')) m *= 1.3;
+    if (w.build.flags.has('vgIronWill')) m *= 1 + 0.5 * this.missingHull();
     return m;
+  }
+
+  /** 0 at full hull, 1 at none. */
+  missingHull(): number {
+    const max = this.maxHull;
+    return max > 0 ? Math.max(0, Math.min(1, 1 - this.hull / max)) : 0;
   }
 }

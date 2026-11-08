@@ -5,7 +5,7 @@
 import { DEFAULT_BINDINGS, type Bindings } from '../core/input';
 import type { ColorblindMode } from '../data/palettes';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export interface Settings {
   quality: 'low' | 'medium' | 'high' | 'ultra' | 'auto';
@@ -72,6 +72,15 @@ export interface SaveData {
   tutorialDone: boolean;
   hearthLevel: number;
   equippedCosmetics: { trail?: string; paint?: string; death?: string };
+  /** per-class progression: lifetime XP and learned skill-tree nodes */
+  classes: Record<string, ClassProgress>;
+  /** the ship picked last on the class screen (a class ship or a Hearth hull) */
+  selectedHull: string;
+}
+
+export interface ClassProgress {
+  xp: number;
+  learned: string[];
 }
 
 export const STARTER_WEAPONS = ['autocannon', 'scattergun', 'pulse', 'swarm', 'gravwell', 'interceptors', 'halo'];
@@ -124,6 +133,8 @@ export function defaultSave(): SaveData {
     tutorialDone: false,
     hearthLevel: 0,
     equippedCosmetics: {},
+    classes: {},
+    selectedHull: 'aegis',
   };
 }
 
@@ -161,6 +172,11 @@ export const MIGRATIONS: Record<number, Migration> = {
     }
     return { ...d, settings: { ...settings, bindings }, version: 4 };
   },
+  4: (d) => {
+    // v5 added pilot classes: per-class XP and skill trees. Returning pilots keep
+    // flying the Lantern until they pick a class.
+    return { ...d, classes: (d.classes as Record<string, ClassProgress>) ?? {}, selectedHull: (d.selectedHull as string) ?? 'lantern', version: 5 };
+  },
 };
 
 export function migrate(raw: unknown): SaveData {
@@ -180,6 +196,7 @@ export function migrate(raw: unknown): SaveData {
   merged.settings.volumes = { ...base.settings.volumes, ...(merged.settings.volumes ?? {}) };
   merged.settings.bindings = { ...base.settings.bindings, ...(merged.settings.bindings ?? {}) };
   merged.codex = { ...base.codex, ...(d.codex as object) };
+  merged.classes = typeof merged.classes === 'object' && merged.classes ? merged.classes : {};
   merged.version = SAVE_VERSION;
   return merged;
 }

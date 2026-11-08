@@ -101,6 +101,68 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       b.add(new THREE.BoxGeometry(0.05, 0.4, 1.4), '#ffffff', 0.6, tr(0, 0.25, 0.2));
       break;
     }
+    // --- class ships (src/data/classes.ts) ---
+    case 'aegis': {
+      // Vanguard: an armored gunship. Slab hull, wedge prow, twin cannon pods, dorsal mortar.
+      b.add(new THREE.BoxGeometry(1.5, 0.75, 2.4), HULL, 0, tr(0, 0, 0.2));
+      b.add(new THREE.CylinderGeometry(0.01, 0.95, 1.5, 4), HULL2, 0, tr(0, -0.05, -1.65, -Math.PI / 2, 0, Math.PI / 4, 1, 1, 0.55));
+      b.add(new THREE.BoxGeometry(1.7, 0.18, 1.9), HULL2, 0, tr(0, 0.42, 0.25)); // dorsal armor deck
+      b.mirrorX(() => new THREE.BoxGeometry(0.22, 0.6, 2.0), HULL2, 0, 0.86, 0.05, 0.2, 0, 0, -0.12); // side skirts
+      // cannon pods on stub wings
+      b.mirrorX(() => new THREE.BoxGeometry(0.9, 0.14, 0.8), HULL, 0, 1.15, -0.05, 0.3);
+      b.mirrorX(() => new THREE.BoxGeometry(0.42, 0.42, 1.7), HULL2, 0, 1.5, -0.05, 0.0);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.1, 0.12, 0.9, 6), DARK, 0, 1.5, -0.05, -1.15, Math.PI / 2);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.06, 0.06, 0.05, 6), '#ffffff', 1, 1.5, -0.05, -1.6, Math.PI / 2);
+      // dorsal mortar turret
+      b.add(new THREE.CylinderGeometry(0.42, 0.5, 0.3, 8), HULL, 0, tr(0, 0.66, 0.15));
+      b.add(new THREE.BoxGeometry(0.22, 0.22, 1.2), DARK, 0, tr(0, 0.78, -0.45, 0.12));
+      // cockpit slit and armor lights
+      b.add(new THREE.BoxGeometry(0.7, 0.07, 0.08), '#ffffff', 1, tr(0, 0.42, -0.85));
+      b.mirrorX(() => new THREE.BoxGeometry(0.04, 0.05, 1.3), '#ffffff', 0.55, 0.98, 0.3, 0.25);
+      // twin engines
+      b.mirrorX(() => new THREE.CylinderGeometry(0.3, 0.36, 0.45, 8), HULL2, 0, 0.45, 0, 1.5, Math.PI / 2);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.22, 0.22, 0.06, 8), '#ffffff', 1, 0.45, 0, 1.75, Math.PI / 2);
+      break;
+    }
+    case 'kestrel': {
+      // Striker: a needle interceptor. Long spine, forward-swept blades, coilgun nose, one big burner.
+      b.add(new THREE.ConeGeometry(0.42, 3.4, 4), HULL, 0, tr(0, 0, -0.55, -Math.PI / 2, 0, Math.PI / 4, 1, 1, 0.7));
+      b.add(new THREE.BoxGeometry(0.62, 0.32, 1.5), HULL2, 0, tr(0, 0, 0.75));
+      b.add(new THREE.ConeGeometry(0.2, 0.9, 4), '#ffffff', 0.35, tr(0, 0.2, -0.45, -Math.PI / 2, 0, Math.PI / 4, 1, 1, 0.6)); // canopy
+      // forward-swept blade wings
+      b.mirrorX(() => new THREE.BoxGeometry(1.7, 0.05, 0.55), HULL2, 0, 0.95, -0.02, 0.55, 0, -0.42, 0);
+      b.mirrorX(() => new THREE.BoxGeometry(1.5, 0.06, 0.08), '#ffffff', 1, 1.0, 0.0, 0.27, 0, -0.42, 0);
+      b.mirrorX(() => new THREE.BoxGeometry(0.06, 0.45, 0.6), HULL, 0, 1.72, 0.12, 0.05, 0, -0.42, 0.25); // wingtip fins
+      // canards
+      b.mirrorX(() => new THREE.BoxGeometry(0.55, 0.04, 0.28), HULL2, 0, 0.35, 0, -1.1, 0, 0.35, 0);
+      // coilgun rails under the nose
+      b.mirrorX(() => new THREE.BoxGeometry(0.05, 0.08, 1.6), DARK, 0, 0.12, -0.2, -1.0);
+      b.add(new THREE.BoxGeometry(0.06, 0.06, 0.5), '#ffffff', 0.8, tr(0, -0.2, -1.6));
+      // dorsal fin and burner
+      b.add(new THREE.BoxGeometry(0.05, 0.55, 0.8), HULL, 0, tr(0, 0.4, 1.1, -0.3));
+      b.add(new THREE.CylinderGeometry(0.34, 0.42, 0.5, 8), HULL, 0, tr(0, 0, 1.65, Math.PI / 2));
+      b.add(new THREE.CylinderGeometry(0.27, 0.27, 0.06, 8), '#ffffff', 1, tr(0, 0, 1.92, Math.PI / 2));
+      break;
+    }
+    case 'loom': {
+      // Conduit: a spindle threaded through a coil ring, with four charge nodes on the ring.
+      b.add(new THREE.OctahedronGeometry(0.75, 0), HULL2, 0, tr(0, 0, -0.1, 0, 0, 0, 0.7, 0.55, 2.4));
+      b.add(new THREE.OctahedronGeometry(0.26, 0), '#ffffff', 1, tr(0, 0, -0.25));
+      b.add(new THREE.TorusGeometry(1.35, 0.13, 4, 10), HULL, 0, tr(0, 0, 0.45, 0, 0, Math.PI / 10));
+      b.add(new THREE.TorusGeometry(1.35, 0.04, 3, 10), '#ffffff', 0.55, tr(0, 0, 0.3, 0, 0, Math.PI / 10));
+      // spokes from spindle to ring
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        b.add(new THREE.BoxGeometry(1.2, 0.08, 0.14), HULL, 0, tr(Math.cos(a) * 0.72, Math.sin(a) * 0.72, 0.45, 0, 0, a));
+        b.add(new THREE.OctahedronGeometry(0.2, 0), '#ffffff', 1, tr(Math.cos(a) * 1.35, Math.sin(a) * 1.35, 0.45));
+      }
+      // side emitters (the guns) and a split tail
+      b.mirrorX(() => new THREE.ConeGeometry(0.16, 0.7, 4), HULL2, 0, 1.35, 0, -0.05, -Math.PI / 2);
+      b.mirrorX(() => new THREE.BoxGeometry(0.06, 0.4, 0.9), HULL, 0, 0.18, 0.25, 1.35, 0.25, 0, 0.35);
+      b.add(new THREE.CylinderGeometry(0.22, 0.3, 0.4, 6), HULL, 0, tr(0, 0, 1.55, Math.PI / 2));
+      b.add(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 6), '#ffffff', 1, tr(0, 0, 1.76, Math.PI / 2));
+      break;
+    }
     default: {
       // The Lantern: a lightship carrying its own little sun
       b.add(new THREE.ConeGeometry(0.55, 2.6, 6), HULL, 0, tr(0, 0, -0.5, -Math.PI / 2));
