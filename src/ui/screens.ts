@@ -43,7 +43,7 @@ function cardDesc(c: DraftCard): string {
     case 'upgrade':
       return c.def.desc;
     case 'weapon':
-      return `<span class="dim">${c.def.family} · ${c.def.slot}</span><br>${c.def.desc}<br><span class="faint">Evolves at Lv 5 with <b>${c.def.evolve.tag}</b>.</span>`;
+      return `<span class="dim">${c.def.family} · ${c.def.slot === 'system' ? 'system · always on' : `linked ${c.def.slot} · fires with your ${c.def.slot === 'primary' ? 'primary' : 'secondary'} trigger`}</span><br>${c.def.desc}<br><span class="faint">Evolves at Lv 5 with <b>${c.def.evolve.tag}</b>.</span>`;
     case 'level':
       return `Level ${c.weapon.level} → ${c.weapon.level + 1}. +20% damage, faster fire${c.weapon.level + 1 >= 3 ? ', more projectiles' : ''}.${c.weapon.level + 1 >= MAX_LEVEL ? `<br><span class="light">Max level: evolves with the ${c.weapon.def.evolve.tag} tag.</span>` : ''}`;
     case 'evolve':
@@ -189,6 +189,8 @@ export function showMap(g: Game): void {
         <div class="stat"><span>Light</span><b>${fmtInt(w.player.light)}</b></div>
         <div class="stat"><span>Primary</span><b>${esc(b.primary.name)} Lv${b.primary.level}</b></div>
         <div class="stat"><span>Secondary</span><b>${esc(b.secondary.name)} Lv${b.secondary.level}</b></div>
+        ${b.linked.map((x) => `<div class="stat"><span>Linked</span><b>${esc(x.name)} Lv${x.level}</b></div>`).join('')}
+        ${b.linked.length < b.linkSlots ? `<div class="stat"><span>Linked</span><b class="faint">${b.linkSlots - b.linked.length} open hardpoint${b.linkSlots - b.linked.length > 1 ? 's' : ''}</b></div>` : ''}
         ${b.systems.map((s) => `<div class="stat"><span>System</span><b>${esc(s.name)} Lv${s.level}</b></div>`).join('')}
         <div class="stat"><span>Upgrades</span><b>${[...b.upgrades.values()].reduce((a, c) => a + c, 0)}</b></div>
         <div class="stat"><span>Synergies</span><b>${[...b.synergies].map((s) => SYNERGIES.find((x) => x.id === s)?.name).join(', ') || '—'}</b></div>
@@ -259,11 +261,11 @@ export function showDraft(g: Game): void {
   const previewPhases: number[] = [];
   const rerollCost = run.freeRerolls > 0 ? 'FREE' : `${20 + run.rerolls * 15} Light`;
   const src = run.draftCtx?.source;
-  const title = src ? DROP_INFO[src].name : run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
+  const title = run.draftCtx?.armory ? 'Armory · Arm a Hardpoint' : src ? DROP_INFO[src].name : run.draftCtx?.minRarity === 'legendary' ? 'Rift Spoils' : run.draftCtx?.minRarity === 'rare' ? 'Rare Salvage' : 'Choose an Upgrade';
   const queued = run.draftQueue?.length ?? 0;
   g.ui.show(
     'draft',
-    `<h1>${title}</h1><div class="dim">Light <span class="light mono">${fmtInt(w.player.light)}</span> · Cards marked COMBO work with your build${queued ? ` · <span style="color:var(--lantern)">${queued} more draft${queued > 1 ? 's' : ''} queued from drops</span>` : ''}</div>
+    `<h1>${title}</h1>${run.draftCtx?.armory ? `<div class="dim" style="margin-bottom:6px">Pick a gun for a linked hardpoint. It fires together with your main weapon on the same trigger.</div>` : ''}<div class="dim">Light <span class="light mono">${fmtInt(w.player.light)}</span> · Cards marked COMBO work with your build${queued ? ` · <span style="color:var(--lantern)">${queued} more draft${queued > 1 ? 's' : ''} queued from drops</span>` : ''}</div>
      <div class="cards">${cards
        .map((c, i) => {
          const r = cardRarity(c);

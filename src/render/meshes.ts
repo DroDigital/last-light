@@ -326,6 +326,7 @@ export type MeshKind =
   | 'dropCache'
   | 'dropRepair'
   | 'dropCell'
+  | 'dropBarrier'
   // Act II bosses
   | 'crucible'
   | 'singularity'
@@ -690,6 +691,12 @@ export function buildEnemyMesh(kind: MeshKind, seed = 1): THREE.BufferGeometry {
       b.add(new THREE.CylinderGeometry(0.32, 0.32, 1, 8), HULL2, 0);
       b.add(new THREE.CylinderGeometry(0.26, 0.26, 0.7, 8), '#ffffff', 1);
       b.add(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 8), '#ffffff', 0.6, tr(0, 0.56, 0));
+      break;
+    }
+    case 'dropBarrier': {
+      // a hex shield plate inside a thin ring
+      b.add(new THREE.CylinderGeometry(0.55, 0.55, 0.16, 6), '#ffffff', 1, tr(0, 0, 0, Math.PI / 2, 0, 0));
+      b.add(new THREE.TorusGeometry(0.8, 0.07, 4, 12), '#ffffff', 0.7);
       break;
     }
     case 'pylon': {

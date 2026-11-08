@@ -10,10 +10,17 @@ function build(): Build {
 }
 
 describe('draft comparison', () => {
-  it('names the equipped weapon a primary pick will replace', () => {
+  it('mounts a new primary on an open linked hardpoint', () => {
     const b = build();
     const candidate = WEAPONS.find((w) => w.slot === 'primary' && w.id !== b.primary.def.id)!;
-    expect(draftComparison({ kind: 'weapon', def: candidate, combo: 0 }, b)).toEqual({ before: `${b.primary.name} · Lv ${b.primary.level}`, after: `${candidate.name} · Lv 1`, label: 'Primary' });
+    expect(draftComparison({ kind: 'weapon', def: candidate, combo: 0 }, b)).toEqual({ before: `Open hardpoint (${b.linkSlots} free)`, after: `${candidate.name} · Lv 1`, label: 'Linked primary' });
+  });
+  it('names the linked gun a pick will swap out when every hardpoint is full', () => {
+    const b = build();
+    const guns = WEAPONS.filter((w) => w.slot !== 'system' && !b.ownsWeapon(w.id));
+    for (const g of guns.slice(0, b.linkSlots)) b.addWeapon(g);
+    const candidate = guns[b.linkSlots]!;
+    expect(draftComparison({ kind: 'weapon', def: candidate, combo: 0 }, b).before).toBe(`${b.linked[0]!.name} · Lv 1`);
   });
   it('shows which system will be replaced when all slots are full', () => {
     const b = build();
@@ -31,11 +38,11 @@ describe('draft comparison', () => {
 });
 
 describe('current weapon preview', () => {
-  it('previews the equipped weapon before a replacement', async () => {
+  it('has no current weapon preview while a linked hardpoint is open', async () => {
     const { currentWeaponPreview } = await import('../src/ui/draft-comparison');
     const b = build();
     const candidate = WEAPONS.find((w) => w.slot === 'primary' && w.id !== b.primary.def.id)!;
-    expect(currentWeaponPreview({ kind: 'weapon', def: candidate, combo: 0 }, b)).toEqual({ kind: 'weapon', def: b.primary.def, combo: 0 });
+    expect(currentWeaponPreview({ kind: 'weapon', def: candidate, combo: 0 }, b)).toBeNull();
   });
   it('has no current weapon preview when a system slot is empty', async () => {
     const { currentWeaponPreview } = await import('../src/ui/draft-comparison');

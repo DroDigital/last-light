@@ -18,6 +18,10 @@ import { EFFECTS, type LootItem, type LootSlot, type WeaponSide } from './loot';
 
 export const MAX_LEVEL = 5;
 export const MAX_SYSTEMS = 3;
+/** Linked hardpoints a run starts with: extra guns that fire with the primary/secondary trigger. */
+export const BASE_LINKS = 2;
+/** Most linked hardpoints a build can carry (Auxiliary Hardpoint upgrades add the rest). */
+export const MAX_LINKS = 4;
 
 const WEAPON_STATS = new Set<string>([
   'damage', 'rate', 'speed', 'life', 'size', 'count', 'spread', 'pierce', 'homing', 'ricochet', 'split',
@@ -108,6 +112,11 @@ export class Build {
   hull: HullDef;
   primary: WeaponInstance;
   secondary: WeaponInstance;
+  /**
+   * Linked hardpoints: extra primary/secondary weapons. Each fires on its own
+   * cooldown whenever the matching trigger is held, alongside the main gun.
+   */
+  linked: WeaponInstance[] = [];
   systems: WeaponInstance[] = [];
   upgrades = new Map<string, number>();
   tags: Partial<Record<Tag, number>> = {};
@@ -197,7 +206,17 @@ export class Build {
   }
 
   get weapons(): WeaponInstance[] {
-    return [this.primary, this.secondary, ...this.systems];
+    return [this.primary, this.secondary, ...this.linked, ...this.systems];
+  }
+
+  /** How many linked hardpoints this build has (base + Auxiliary Hardpoint stacks). */
+  get linkSlots(): number {
+    return Math.min(MAX_LINKS, BASE_LINKS + (this.upgrades.get('aux_hardpoint') ?? 0));
+  }
+
+  /** The linked weapon a new primary/secondary would push out (null while a hardpoint is free). */
+  linkVictim(): WeaponInstance | null {
+    return this.linked.length >= this.linkSlots ? this.linked[0]! : null;
   }
 
   ownsWeapon(id: string): WeaponInstance | undefined {
@@ -218,9 +237,12 @@ export class Build {
       return owned;
     }
     const w = new WeaponInstance(def);
-    if (def.slot === 'primary') this.primary = w;
-    else if (def.slot === 'secondary') this.secondary = w;
-    else {
+    if (def.slot === 'primary' || def.slot === 'secondary') {
+      // new guns mount on a linked hardpoint and fire alongside the main ones;
+      // when every hardpoint is full the oldest linked gun is swapped out
+      if (this.linked.length >= this.linkSlots) this.linked.shift();
+      this.linked.push(w);
+    } else {
       if (this.systems.length >= MAX_SYSTEMS) this.systems.shift();
       this.systems.push(w);
     }
@@ -446,7 +468,7 @@ export class Build {
   }
 
   /** Generate a 3-card draft. Deterministic given rng. */
-  draft(rng: Rng, opts: { count?: number; minRarity?: Rarity; allowArtifacts?: boolean; luckBonus?: number; weaponsOnly?: boolean } = {}): DraftCard[] {
+  draft(rng: Rng, opts: { count?: number; minRarity?: Rarity; allowArtifacts?: boolean; luckBonus?: number; weaponsOnly?: boolean; newWeaponsOnly?: boolean } = {}): DraftCard[] {
     const count = opts.count ?? 3;
     const cards: DraftCard[] = [];
     const used = new Set<string>();
@@ -475,12 +497,13 @@ export class Build {
     while (cards.length < count && guard++ < 60) {
       const roll = rng.next();
       // weapon caches offer weapons and levels; ordinary drafts mostly upgrades
-      const pW = opts.weaponsOnly ? 0.65 : 0.14;
-      const pL = opts.weaponsOnly ? 1 : 0.28;
+      const open = this.linked.length < this.linkSlots || this.systems.length < MAX_SYSTEMS;
+      const pW = opts.newWeaponsOnly ? 1 : opts.weaponsOnly ? 0.65 : open ? 0.24 : 0.14;
+      const pL = opts.weaponsOnly || opts.newWeaponsOnly ? 1 : open ? 0.36 : 0.28;
       if (roll < pW) {
         // new weapon
         const options = WEAPONS.filter(
-          (w) => !this.ownsWeapon(w.id) && this.meta.unlockedWeapons.has(w.id) && !used.has('w' + w.id),
+          (w) => !this.ownsWeapon(w.id) && this.meta.unlockedWeapons.has(w.id) && !used.has('w' + w.id) && (!opts.newWeaponsOnly || w.slot !== 'system'),
         );
         if (options.length) {
           const def = rng.pick(options);

@@ -22,6 +22,7 @@ const B_AB1 = 16;
 const B_AB2 = 32;
 const B_FLARE = 64;
 const B_LEVEL = 128;
+const B_GUARD = 256;
 
 const q16 = (v: number) => Math.round(Math.max(-1, Math.min(1, v)) * 32767);
 const qAng = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -84,6 +85,7 @@ export class ReplayRecorder {
     out.ability2 = !!(b & B_AB2);
     out.flare = !!(b & B_FLARE);
     out.autoLevel = !!(b & B_LEVEL);
+    out.guard = !!(b & B_GUARD);
     aim.strength = v.getUint8(o + 16) / 255;
     aim.cone = v.getUint8(o + 17) / 500;
     return out;
@@ -103,7 +105,8 @@ function buttons(c: Controls): number {
     (c.ability1 ? B_AB1 : 0) |
     (c.ability2 ? B_AB2 : 0) |
     (c.flare ? B_FLARE : 0) |
-    (c.autoLevel ? B_LEVEL : 0)
+    (c.autoLevel ? B_LEVEL : 0) |
+    (c.guard ? B_GUARD : 0)
   );
 }
 

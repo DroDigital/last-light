@@ -65,7 +65,17 @@ export interface RunState {
   eventOutcome?: string;
   shop?: ShopItem[];
   draft?: DraftCard[];
-  draftCtx?: { minRarity?: 'rare' | 'legendary'; artifacts?: boolean; curse?: boolean; after: 'map' | 'sector' | 'endless'; weaponsOnly?: boolean; source?: DropKind };
+  draftCtx?: {
+    minRarity?: 'rare' | 'legendary';
+    artifacts?: boolean;
+    curse?: boolean;
+    /** where the run goes next: the chart, the next sector, the hangar between waves, or the first Endless wave */
+    after: 'map' | 'sector' | 'endless' | 'wave';
+    weaponsOnly?: boolean;
+    /** the opening armory: three new guns for a linked hardpoint */
+    armory?: boolean;
+    source?: DropKind;
+  };
   /** drafts earned from drops, opened one after another once the fight ends */
   draftQueue?: NonNullable<RunState['draftCtx']>[];
   lore: string[];
@@ -437,10 +447,14 @@ export class Game {
       this.run.endless = true;
       this.pipe.setPalette(paletteById(SECTORS[0]!.palette), 1.2);
       this.buildBackdrop(SECTORS[0]!.palette, hashString(seed));
-      this.nextEndlessWave();
+      // the armory comes first; picking (or skipping) launches wave one
+      this.openDraft({ armory: true, after: 'wave' });
       return;
     }
     this.enterSector(0, true);
+    // every dive opens with a free gun for a linked hardpoint, so the first
+    // fight already has two weapons on the trigger
+    this.openDraft({ armory: true, after: 'map' });
   }
 
   /**
@@ -755,7 +769,7 @@ export class Game {
     const run = this.run!;
     const w = this.world!;
     run.draftCtx = ctx;
-    run.draft = w.build.draft(run.rng.fork('draft' + run.encounters + ':' + run.rerolls + ':' + (run.draftQueue?.length ?? 0)), { minRarity: ctx.minRarity, allowArtifacts: ctx.artifacts, weaponsOnly: ctx.weaponsOnly });
+    run.draft = w.build.draft(run.rng.fork('draft' + run.encounters + ':' + run.rerolls + ':' + (run.draftQueue?.length ?? 0)), this.draftOpts(ctx));
     if (ctx.curse) {
       const curses = UPGRADES.filter((u) => u.rarity === 'curse' && !w.build.upgrades.has(u.id));
       if (curses.length) {
@@ -818,7 +832,7 @@ export class Game {
     if (run.freeRerolls > 0) run.freeRerolls--;
     else w.player.light -= cost;
     run.rerolls++;
-    run.draft = w.build.draft(run.rng.fork('reroll' + run.rerolls), { minRarity: run.draftCtx?.minRarity, allowArtifacts: run.draftCtx?.artifacts });
+    run.draft = w.build.draft(run.rng.fork('reroll' + run.rerolls), this.draftOpts(run.draftCtx));
     S.showDraft(this);
     this.audio.play('cardIn', 0, 0.8);
   }
@@ -829,8 +843,13 @@ export class Game {
     if (!card || card.kind !== 'upgrade' || run.banishes <= 0) return;
     run.banishes--;
     this.world!.build.banished.add(card.def.id);
-    run.draft = this.world!.build.draft(run.rng.fork('banish' + run.banishes + run.rerolls), { minRarity: run.draftCtx?.minRarity, allowArtifacts: run.draftCtx?.artifacts });
+    run.draft = this.world!.build.draft(run.rng.fork('banish' + run.banishes + run.rerolls), this.draftOpts(run.draftCtx));
     S.showDraft(this);
+  }
+
+  /** Draft options for a draft context (shared by the first deal, rerolls and banishes). */
+  private draftOpts(ctx: RunState['draftCtx']): Parameters<Build['draft']>[1] {
+    return { minRarity: ctx?.minRarity, allowArtifacts: ctx?.artifacts, weaponsOnly: ctx?.weaponsOnly, newWeaponsOnly: ctx?.armory };
   }
 
   private afterDraft(): void {
@@ -841,6 +860,7 @@ export class Game {
       return;
     }
     if (run.draftCtx?.after === 'endless') this.openInventory('endless');
+    else if (run.draftCtx?.after === 'wave') this.nextEndlessWave();
     else if (run.draftCtx?.after === 'sector') this.enterSector(run.sector + 1);
     else this.openMap();
   }
@@ -1411,6 +1431,7 @@ export class Game {
     if (inp.pressed('ability1')) c.ability1 = true;
     if (inp.pressed('ability2')) c.ability2 = true;
     if (inp.pressed('flare')) c.flare = true;
+    c.guard = inp.held('guard');
     c.autoLevel = s.autoLevel;
     const sens = s.sensitivity;
     const inv = s.invertY ? -1 : 1;
@@ -1505,6 +1526,7 @@ export class Game {
       if (p.pressed(btn('ability1'))) c.ability1 = true;
       if (p.pressed(btn('ability2'))) c.ability2 = true;
       if (p.pressed(btn('flare'))) c.flare = true;
+      c.guard = p.held(btn('guard'));
       c.autoLevel = this.settings.autoLevel;
       if (this.state === 'combat') {
         aim.yaw += p.rx * 2.6 * frameDt * sens;

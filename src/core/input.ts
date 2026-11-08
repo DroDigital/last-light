@@ -16,6 +16,7 @@ export type Action =
   | 'ability1'
   | 'ability2'
   | 'flare'
+  | 'guard'
   | 'camera'
   | 'map'
   | 'pause'
@@ -36,6 +37,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   ability1: 'Ability: Shockwave',
   ability2: 'Ability: Stasis',
   flare: 'Flare overdrive',
+  guard: 'Guard / parry',
   camera: 'Toggle camera',
   map: 'Sector map',
   pause: 'Pause',
@@ -59,6 +61,7 @@ export const DEFAULT_BINDINGS: Bindings = {
   ability1: ['KeyQ', 'Pad4'],
   ability2: ['KeyE', 'Pad5'],
   flare: ['KeyF', 'Pad3'],
+  guard: ['KeyX', 'Mouse1', 'Pad2'],
   camera: ['KeyV', 'Pad8'],
   map: ['Tab', 'Pad10'],
   pause: ['Escape', 'KeyP', 'Pad9'],

@@ -5,17 +5,17 @@
  */
 export const BAL = {
   /** multiplier on every point of damage the player takes */
-  enemyDamage: 1.25,
+  enemyDamage: 1.45,
   /** multiplier on signature-move cooldowns (higher = fewer special attacks) */
   moveCooldown: 1.35,
   /** extra enemy damage per sector (sector 1 = +0) */
-  enemyDamagePerSector: 0.24,
+  enemyDamagePerSector: 0.3,
   /** multiplier on enemy projectile speed */
   enemyShotSpeed: 1.7,
   /** multiplier on how far ahead aimed enemy shots lead the player */
   enemyLead: 1.6,
   /** multiplier on enemy fire cadence (higher = fires more often) */
-  enemyFireRate: 1.5,
+  enemyFireRate: 1.75,
   /** seconds of grace after any hit (stops one volley landing as many hits) */
   hitGrace: 0.2,
   /** a beam can hit at most once per this many seconds */
@@ -24,11 +24,11 @@ export const BAL = {
   tokensBase: 4,
   tokensPerSector: 1,
   /** live enemy threat the director keeps on the field: base + per sector */
-  liveThreatBase: 15,
+  liveThreatBase: 17,
   liveThreatPerSector: 5,
   /** total threat spent per encounter: base + per sector */
-  budgetBase: 46,
-  budgetPerSector: 26,
+  budgetBase: 58,
+  budgetPerSector: 32,
   /** local co-op: extra regular-enemy HP per pilot beyond the first */
   coopEnemyHp: 0.4,
   /** local co-op: extra boss HP per pilot beyond the first */
@@ -36,7 +36,7 @@ export const BAL = {
   /** multiplier on every regular enemy's HP */
   enemyHp: 1.35,
   /** multiplier on boss HP (core and parts) */
-  bossHp: 1.3,
+  bossHp: 2,
   /** fraction of the per-sector HP growth that bosses get */
   bossSectorHp: 0.6,
   /** multiplier on everything that hurts the player during a boss fight */
@@ -46,5 +46,5 @@ export const BAL = {
   /** per map row within a sector: budget and HP (damage gets half) */
   perRow: 0.06,
   /** the director spawns up to this many times its baseline against a strong build */
-  maxPower: 2.4,
+  maxPower: 3,
 };
