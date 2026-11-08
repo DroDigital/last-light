@@ -28,8 +28,15 @@ export interface RailFx {
   b: number;
 }
 
-/** Aim assist tuning, set by the game from settings/device. */
-export const aim = { strength: 0.55, cone: 0.07, range: 240 };
+/**
+ * Aim assist tuning, set by the game from settings/device. `strength`/`cone`
+ * are Player 1's (mouse or pad, recorded in replays); `padStrength`/`padCone`
+ * are what wingmen get, since they always fly with a controller.
+ */
+export const aim = { strength: 0.55, cone: 0.07, range: 240, padStrength: 0.85, padCone: 0.17 };
+
+/** Behaviors that hit instantly along the aim line: leading the target makes them miss. */
+const HITSCAN = new Set(['rail', 'beam', 'arc']);
 
 /** pooled hit records for beams/rails (no per-tick object allocation) */
 const hitPool: { e: Enemy; t: number }[] = [];
@@ -41,35 +48,65 @@ function pushHit(e: Enemy, t: number): void {
   hits.push(h);
 }
 
+/**
+ * Lock-on and aim assist for the pilot in `w.player`.
+ *
+ * Gating and ranking are separate: a target qualifies when it sits inside its
+ * cone (the base cone, widened for big or close targets so it feels the same in
+ * screen space) and within range. Among those, the smallest angular error wins,
+ * with only a mild preference for closer targets. The current lock is sticky: it
+ * holds out to a wider cone and is only dropped for a clearly better candidate,
+ * so the lock does not flicker between two neighbours.
+ */
 function computeAim(w: World): void {
   const pl = w.player;
   pl.forward(_f);
   pl.aimDir.copy(_f);
+  pl.aimDist = 90;
+  const wing = pl.slot > 0;
+  const strength = wing ? aim.padStrength : aim.strength;
+  const baseCone = wing ? aim.padCone : aim.cone;
+  const prev = pl.aimTarget;
   pl.aimTarget = -1;
-  if (aim.strength <= 0) return;
+  if (strength <= 0) return;
+  const deadeye = w.build.flags.has('stDeadeye');
+  const keep = deadeye ? 2.2 : 1.6;
   let best: Enemy | null = null;
-  let bestScore = Math.cos(aim.cone * 2.2);
+  let bestScore = Infinity;
+  let held: Enemy | null = null;
+  let heldScore = Infinity;
   for (const e of w.enemies) {
     if (!e.alive || !e.revealed || e.def.role === 'inert' || e.invuln) continue;
     _t.copy(e.pos).sub(pl.pos);
     const dist = _t.length();
     if (dist > aim.range || dist < 2) continue;
-    const dot = _t.dot(_f) / dist;
-    // widen the cone for nearby targets so the assist feels consistent in screen space
-    const cone = Math.cos(Math.min(0.5, aim.cone + (e.radius * 0.6) / dist));
-    if (dot < cone) continue;
-    const score = dot - dist / 4000;
-    if (score > bestScore) {
+    const ang = Math.acos(Math.min(1, Math.max(-1, _t.dot(_f) / dist)));
+    const cone = Math.min(0.5, baseCone + (e.radius * 0.6) / dist);
+    const score = ang / cone + (dist / aim.range) * 0.35;
+    if (ang <= cone && score < bestScore) {
       bestScore = score;
       best = e;
     }
+    if (e.id === prev && ang <= Math.min(0.6, cone * keep)) {
+      held = e;
+      heldScore = score;
+    }
   }
+  // keep the current lock unless the new candidate is clearly better
+  if (held && (!best || best === held || bestScore > heldScore * 0.6)) best = held;
   if (!best) return;
-  const sp = Math.max(120, w.build.primary.params.speed);
+  const pw = w.build.primary;
   const dist = best.pos.distanceTo(pl.pos);
-  _t.copy(best.pos).addScaledVector(best.vel, (dist / sp) * 0.9).sub(pl.pos).normalize();
-  pl.aimDir.lerp(_t, aim.strength).normalize();
+  _t.copy(best.pos);
+  if (!HITSCAN.has(pw.def.behavior)) {
+    const sp = Math.max(60, pw.params.speed);
+    _t.addScaledVector(best.vel, (dist / sp) * 0.9);
+  }
+  _t.sub(pl.pos).normalize();
+  pl.aimDir.lerp(_t, strength).normalize();
   pl.aimTarget = best.id;
+  // guns converge on the locked target instead of a fixed 90 units out
+  pl.aimDist = Math.max(15, Math.min(200, dist));
 }
 
 /**
@@ -85,6 +122,9 @@ export const HARDPOINTS: Record<string, { primary: [number, number, number]; nos
   prism: { primary: [1.05, 0, -0.35], nose: [0, 0, -1.65], scale: 1 },
   ember: { primary: [1.3, -0.1, 0.05], nose: [0, 0, -1.65], scale: 1 },
   wraith: { primary: [0.8, 0, -0.45], nose: [0, 0, -1.85], scale: 1 },
+  aegis: { primary: [1.5, -0.05, -1.6], nose: [0, 0.78, -1.05], scale: 1.1 },
+  kestrel: { primary: [0.12, -0.2, -1.8], nose: [0, -0.2, -1.85], scale: 0.95 },
+  loom: { primary: [1.35, 0, -0.4], nose: [0, 0, -1.9], scale: 1 },
 };
 
 const _bank = new Quaternion();
@@ -103,7 +143,7 @@ const _conv = new Vector3();
 /** Direction from a muzzle to the shared convergence point on the aim line. */
 function convergeDir(w: World, m: Vector3, out: Vector3): Vector3 {
   const pl = w.player;
-  _conv.copy(pl.pos).addScaledVector(pl.aimDir, 90);
+  _conv.copy(pl.pos).addScaledVector(pl.aimDir, pl.aimDist);
   return out.copy(_conv).sub(m).normalize();
 }
 const _aim = new Vector3();

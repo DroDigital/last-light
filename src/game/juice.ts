@@ -388,6 +388,18 @@ export class Juice {
             const ang = (i / 80) * Math.PI * 2;
             P().spawn(p.x, p.y, p.z, Math.cos(ang) * 90, (r() - 0.5) * 10, Math.sin(ang) * 90, 0.35, 1.4, 3, 2.8, 2.5, 1, 4);
           }
+        } else if (a.kind === 'laststand') {
+          // Vanguard keystone: a gold shell snaps around the ship
+          this.audio.play('shockwave', 0, 0.8);
+          this.addTrauma(0.5);
+          this.hitStop(90);
+          this.flash = Math.max(this.flash, 0.25);
+          this.toast('UNBREAKABLE', '#ffb35c');
+          const p = w.player.pos;
+          if (!this.settings().reducedMotion) {
+            this.view.addRing(p.x, p.y, p.z, 1, 10, 0.6, 1, 0.7, 0.3);
+            this.view.addRing(p.x, p.y, p.z, 3, 18, 0.9, 1, 0.85, 0.5);
+          }
         } else {
           this.audio.play('stasis', 0, 0.9);
           this.flash = Math.max(this.flash, 0.15);

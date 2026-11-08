@@ -420,7 +420,7 @@ export class Hud {
     this.drawCoop(w, W, H);
     if (!pl.alive) return;
     // reticle at aim point
-    const aimP = _w.copy(pl.pos).addScaledVector(pl.aimDir, 90);
+    const aimP = _w.copy(pl.pos).addScaledVector(pl.aimDir, pl.aimDist);
     const a = this.project(aimP.x, aimP.y, aimP.z);
     pl.forward(_v);
     const fwdP = this.project(pl.pos.x + _v.x * 90, pl.pos.y + _v.y * 90, pl.pos.z + _v.z * 90);
@@ -443,7 +443,7 @@ export class Hud {
     const brackets = this.bracketList;
     brackets.length = 0;
     for (const e of w.enemies) {
-      if (!e.alive || !e.revealed || e.def.role === 'inert' || e.def.role === 'part') continue;
+      if (!e.alive || !e.revealed || e.def.role === 'inert' || (e.def.role === 'part' && e.id !== pl.aimTarget)) continue;
       const d = e.id === pl.aimTarget ? -1 : e.pos.distanceToSquared(pl.pos);
       if (d >= 110 * 110) continue;
       const rec = this.bracketPool[brackets.length] ?? (this.bracketPool[brackets.length] = { e, d });

@@ -4,11 +4,13 @@
  * how much hull each encounter costs.
  *
  *   npx vite-node scripts/balance.ts [runs=12] [skill=good|ok|poor] [hull=lantern]
+ *   CLASS_SKILLS=max plays a class ship (aegis, kestrel, loom) with a max-level skill tree.
  */
 import { Vector3, Quaternion } from 'three';
 import { World } from '../src/game/world';
 import { Build } from '../src/game/build';
 import { HULLS, SECTORS } from '../src/data/world';
+import { CLASS_BY_ID, MAX_CLASS_LEVEL, canLearn, skillLoadout, skillPoints } from '../src/data/classes';
 import { emptyControls } from '../src/game/player';
 import { Director, type EncounterKind } from '../src/game/run';
 import { WEAPONS } from '../src/data/weapons';
@@ -19,6 +21,18 @@ import { enemyClass } from '../src/data/drops';
 const runs = Number(process.argv[2] ?? 12);
 const skill = (process.argv[3] ?? 'ok') as 'good' | 'ok' | 'poor';
 const hullId = process.argv[4] ?? 'lantern';
+/** CLASS_SKILLS=max plays a class ship at max level, its points spent tier by tier across the branches. */
+const CLASS_SKILLS = process.env.CLASS_SKILLS ?? 'none';
+function maxTree(classId: string): string[] {
+  const learned: string[] = [];
+  const cls = CLASS_BY_ID[classId]!;
+  for (let tier = 1; tier <= 4; tier++)
+    for (const br of cls.branches) {
+      const node = br.nodes.find((x) => x.tier === tier)!;
+      if (canLearn(classId, learned, node.id, skillPoints(MAX_CLASS_LEVEL)) === 'ok') learned.push(node.id);
+    }
+  return learned;
+}
 const SKILL = {
   // turn gain, aim noise (rad), reaction dodge chance/s near bullets, kite distance
   good: { gain: 14, noise: 0.01, dodge: 2.5, kite: 45, ability: true },
@@ -111,7 +125,9 @@ function playEncounter(w: World, kind: EncounterKind, sector: number, seed: numb
 
 function playRun(seed: number): { reached: string; logs: EncLog[]; won: boolean } {
   const rng = new Rng(seed);
-  const b = new Build(HULLS.find((h) => h.id === hullId)!, meta());
+  const hull = HULLS.find((h) => h.id === hullId)!;
+  const b = new Build(hull, meta());
+  if (hull.classId) b.setSkills(skillLoadout(hull.classId, CLASS_SKILLS === 'max' ? maxTree(hull.classId) : []));
   const w = new World('BAL' + seed, b);
   w.refreshParams();
   if (process.env.DROPLOG) {

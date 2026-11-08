@@ -13,6 +13,7 @@ import type {
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import type { Rng } from '../core/rng';
+import type { SkillLoadout } from '../data/classes';
 import { EFFECTS, type LootItem, type LootSlot, type WeaponSide } from './loot';
 
 export const MAX_LEVEL = 5;
@@ -123,6 +124,8 @@ export class Build {
   unlockedEffects = new Set<string>();
   /** history for the run summary */
   picks: string[] = [];
+  /** class passive + learned skill-tree nodes (fixed for the run) */
+  skills: SkillLoadout = { mods: [], triggers: [], flags: [] };
 
   constructor(hull: HullDef, meta: BuildMeta, primaryOverride?: string) {
     this.hull = hull;
@@ -131,6 +134,12 @@ export class Build {
     this.secondary = new WeaponInstance(WEAPON_BY_ID[hull.start.secondary]!);
     if (hull.start.system) this.systems.push(new WeaponInstance(WEAPON_BY_ID[hull.start.system]!));
     for (const f of hull.flags) this.flags.add(f);
+    this.recompute();
+  }
+
+  /** Apply a class passive and skill-tree loadout for this run. */
+  setSkills(loadout: SkillLoadout): void {
+    this.skills = loadout;
     this.recompute();
   }
 
@@ -240,9 +249,9 @@ export class Build {
     const tags: Partial<Record<Tag, number>> = {};
     const addTag = (t: Tag, n = 1) => (tags[t] = (tags[t] ?? 0) + n);
     for (const w of this.weapons) for (const t of w.def.tags) addTag(t);
-    const mods: StatMod[] = [];
-    const triggers: TriggerDef[] = [];
-    const flags = new Set<string>(this.hull.flags);
+    const mods: StatMod[] = [...this.skills.mods];
+    const triggers: TriggerDef[] = [...this.skills.triggers];
+    const flags = new Set<string>([...this.hull.flags, ...this.skills.flags]);
     for (const [id, n] of this.upgrades) {
       const u = UPGRADES.find((x) => x.id === id);
       if (!u) continue;
