@@ -10,7 +10,7 @@ import { Rng } from '../core/rng';
  */
 type Part = { geo: THREE.BufferGeometry; color: string; emit: number };
 
-function prep(geo: THREE.BufferGeometry, color: string, emit: number, m?: THREE.Matrix4): THREE.BufferGeometry {
+export function prep(geo: THREE.BufferGeometry, color: string, emit: number, m?: THREE.Matrix4): THREE.BufferGeometry {
   let g = geo.index ? geo.toNonIndexed() : geo;
   g.deleteAttribute('uv');
   if (m) g.applyMatrix4(m);
@@ -56,9 +56,15 @@ class B {
   }
 }
 
-const HULL = '#1a1820';
-const HULL2 = '#2a2630';
-const DARK = '#0b0a0e';
+// enemy plating: dark, but light enough that panel lines and speculars read
+const HULL = '#25222c';
+const HULL2 = '#363140';
+const DARK = '#121017';
+// player livery: gunmetal plating, lighter armour, smoked glass, black intakes
+const PH = '#302c38';
+const PH2 = '#433e4d';
+const GLASS = '#1d3446';
+const PDARK = '#0e0d12';
 
 // --- Player hulls (forward is -Z) -------------------------------------------
 
@@ -66,39 +72,58 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
   const b = new B();
   switch (hull) {
     case 'moth': {
-      b.add(new THREE.ConeGeometry(0.35, 2.2, 5), HULL, 0, tr(0, 0, -0.3, -Math.PI / 2));
-      b.mirrorX(() => new THREE.BoxGeometry(1.8, 0.05, 0.9), HULL2, 0, 0.95, 0, 0.3, 0, 0.3, 0.15);
+      b.add(new THREE.ConeGeometry(0.35, 2.2, 5), PH, 0, tr(0, 0, -0.3, -Math.PI / 2));
+      b.mirrorX(() => new THREE.BoxGeometry(1.8, 0.05, 0.9), PH2, 0, 0.95, 0, 0.3, 0, 0.3, 0.15);
       b.mirrorX(() => new THREE.BoxGeometry(1.5, 0.06, 0.12), '#ffffff', 1, 1.0, 0.03, 0.72, 0, 0.3, 0.15);
       b.add(new THREE.SphereGeometry(0.18, 6, 4), '#ffffff', 1, tr(0, 0, 0.85));
+      b.add(new THREE.SphereGeometry(0.2, 8, 5), GLASS, 0.12, tr(0, 0.16, -0.55, 0, 0, 0, 0.8, 0.6, 1.8));
+      b.mirrorX(() => new THREE.BoxGeometry(0.04, 0.35, 0.5), PH2, 0, 1.75, 0.12, 0.55, 0, 0.3, 0.15);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.1, 0.13, 0.3, 8), PH, 0, 0.3, -0.02, 0.75, Math.PI / 2);
+      b.add(new THREE.BoxGeometry(0.08, 0.05, 1.6), PH2, 0, tr(0, 0.18, 0.0));
       break;
     }
     case 'bastion': {
-      b.add(new THREE.BoxGeometry(1.4, 0.7, 2.6), HULL, 0, tr(0, 0, 0));
-      b.add(new THREE.BoxGeometry(0.9, 0.5, 1.0), HULL2, 0, tr(0, 0.35, -0.7));
-      b.mirrorX(() => new THREE.BoxGeometry(0.6, 0.9, 2.2), HULL2, 0, 1.0, 0, 0.2);
+      b.add(new THREE.BoxGeometry(1.4, 0.7, 2.6), PH, 0, tr(0, 0, 0));
+      b.add(new THREE.BoxGeometry(0.9, 0.5, 1.0), PH2, 0, tr(0, 0.35, -0.7));
+      b.mirrorX(() => new THREE.BoxGeometry(0.6, 0.9, 2.2), PH2, 0, 1.0, 0, 0.2);
       b.mirrorX(() => new THREE.CylinderGeometry(0.28, 0.32, 0.4, 8), '#ffffff', 1, 1.0, 0, 1.35, Math.PI / 2);
       b.add(new THREE.BoxGeometry(0.7, 0.1, 0.1), '#ffffff', 1, tr(0, 0.62, -1.2));
+      b.add(new THREE.BoxGeometry(0.6, 0.22, 0.6), GLASS, 0.12, tr(0, 0.68, -0.85));
+      b.mirrorX(() => new THREE.BoxGeometry(0.12, 0.12, 1.2), PDARK, 0, 0.45, -0.1, -1.4);
+      b.mirrorX(() => new THREE.BoxGeometry(0.62, 0.14, 2.0), PH, 0, 1.0, 0.5, 0.25);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.22, 0.22, 0.05, 10), '#ffffff', 1, 1.0, 0, 1.58, Math.PI / 2);
+      b.add(new THREE.BoxGeometry(0.08, 0.6, 0.8), PH2, 0, tr(0, 0.8, 0.8));
       break;
     }
     case 'prism': {
-      b.add(new THREE.OctahedronGeometry(0.9, 0), HULL2, 0, tr(0, 0, 0, 0, 0, 0, 0.8, 0.6, 1.8));
-      b.mirrorX(() => new THREE.TetrahedronGeometry(0.6), HULL, 0, 1.0, 0, 0.4, 0.2, 0, 0.5, 1, 0.4, 1.6);
+      b.add(new THREE.OctahedronGeometry(0.9, 0), PH2, 0, tr(0, 0, 0, 0, 0, 0, 0.8, 0.6, 1.8));
+      b.mirrorX(() => new THREE.TetrahedronGeometry(0.6), PH, 0, 1.0, 0, 0.4, 0.2, 0, 0.5, 1, 0.4, 1.6);
       b.add(new THREE.OctahedronGeometry(0.28, 0), '#ffffff', 1, tr(0, 0.2, -0.3));
       b.add(new THREE.CylinderGeometry(0.2, 0.25, 0.3, 6), '#ffffff', 1, tr(0, 0, 1.5, Math.PI / 2));
+      b.add(new THREE.OctahedronGeometry(0.22, 0), GLASS, 0.15, tr(0, 0.42, -0.6, 0, 0, 0, 0.8, 0.6, 1.6));
+      b.mirrorX(() => new THREE.BoxGeometry(0.04, 0.04, 1.6), '#ffffff', 0.5, 0.55, 0, -0.1, 0, 0.35, 0);
+      b.mirrorX(() => new THREE.TetrahedronGeometry(0.22), PH2, 0, 0.35, -0.35, 1.0);
       break;
     }
     case 'ember': {
-      b.add(new THREE.ConeGeometry(0.6, 2.8, 6), HULL, 0, tr(0, 0, -0.2, -Math.PI / 2));
-      b.mirrorX(() => new THREE.BoxGeometry(1.3, 0.12, 1.2), HULL2, 0, 0.8, -0.1, 0.5, 0, 0.5, -0.25);
+      b.add(new THREE.ConeGeometry(0.6, 2.8, 6), PH, 0, tr(0, 0, -0.2, -Math.PI / 2));
+      b.mirrorX(() => new THREE.BoxGeometry(1.3, 0.12, 1.2), PH2, 0, 0.8, -0.1, 0.5, 0, 0.5, -0.25);
       b.mirrorX(() => new THREE.BoxGeometry(0.12, 0.5, 0.9), '#ffffff', 0.7, 1.35, 0.1, 0.6, 0, 0, 0.2);
       b.add(new THREE.CylinderGeometry(0.35, 0.45, 0.5, 6), '#ffffff', 1, tr(0, 0, 1.25, Math.PI / 2));
+      b.add(new THREE.SphereGeometry(0.26, 8, 5), GLASS, 0.12, tr(0, 0.32, -0.4, 0, 0, 0, 0.8, 0.6, 1.9));
+      b.mirrorX(() => new THREE.BoxGeometry(0.28, 0.28, 0.7), PDARK, 0, 0.55, -0.1, 0.1);
+      b.mirrorX(() => new THREE.ConeGeometry(0.1, 0.8, 4), PH2, 0, 1.0, 0.0, -0.4, -Math.PI / 2);
+      b.add(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 10), '#ffffff', 1, tr(0, 0, 1.52, Math.PI / 2));
       break;
     }
     case 'wraith': {
-      b.add(new THREE.ConeGeometry(0.5, 3.0, 3), HULL, 0, tr(0, 0, -0.3, -Math.PI / 2, 0, Math.PI));
-      b.mirrorX(() => new THREE.ConeGeometry(0.25, 2.0, 3), HULL2, 0, 0.8, 0, 0.6, -Math.PI / 2, 0, 0.3);
+      b.add(new THREE.ConeGeometry(0.5, 3.0, 3), PH, 0, tr(0, 0, -0.3, -Math.PI / 2, 0, Math.PI));
+      b.mirrorX(() => new THREE.ConeGeometry(0.25, 2.0, 3), PH2, 0, 0.8, 0, 0.6, -Math.PI / 2, 0, 0.3);
       b.mirrorX(() => new THREE.SphereGeometry(0.16, 5, 3), '#ffffff', 1, 0.8, 0, 1.55);
       b.add(new THREE.BoxGeometry(0.05, 0.4, 1.4), '#ffffff', 0.6, tr(0, 0.25, 0.2));
+      b.add(new THREE.ConeGeometry(0.18, 0.9, 3), GLASS, 0.18, tr(0, 0.22, -0.4, -Math.PI / 2, 0, Math.PI));
+      b.mirrorX(() => new THREE.BoxGeometry(0.03, 0.03, 2.2), '#ffffff', 0.45, 0.45, -0.05, 0.1, 0, 0.12, 0);
+      b.mirrorX(() => new THREE.BoxGeometry(0.04, 0.38, 0.5), PH2, 0, 0.62, 0.18, 1.05, 0, 0, -0.4);
       break;
     }
     // --- class ships (src/data/classes.ts) ---
@@ -122,6 +147,20 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       // twin engines
       b.mirrorX(() => new THREE.CylinderGeometry(0.3, 0.36, 0.45, 8), HULL2, 0, 0.45, 0, 1.5, Math.PI / 2);
       b.mirrorX(() => new THREE.CylinderGeometry(0.22, 0.22, 0.06, 8), '#ffffff', 1, 0.45, 0, 1.75, Math.PI / 2);
+      // armor plating: staggered panels across the dorsal deck, bolted down
+      for (let i = 0; i < 3; i++) {
+        const z = -0.5 + i * 0.6;
+        b.add(new THREE.BoxGeometry(0.34, 0.04, 0.42), i % 2 ? HULL : HULL2, 0, tr(0, 0.53, z));
+        b.mirrorX(() => new THREE.BoxGeometry(0.3, 0.035, 0.38), i % 2 ? HULL2 : HULL, 0, 0.5, 0.53, z);
+      }
+      // rivets along the side skirts
+      for (let i = 0; i < 4; i++) {
+        const z = -0.45 + i * 0.5;
+        b.mirrorX(() => new THREE.CylinderGeometry(0.035, 0.035, 0.05, 6), '#ffffff', 0.4, 0.97, -0.1, z, 0, 0, Math.PI / 2);
+      }
+      // muzzle brakes on the cannon pods and a lip on each engine
+      b.mirrorX(() => new THREE.CylinderGeometry(0.09, 0.09, 0.22, 12), DARK, 0, 1.5, -0.05, -1.95, Math.PI / 2);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.32, 0.32, 0.08, 12), HULL2, 0, 0.45, 0, 1.7, Math.PI / 2);
       break;
     }
     case 'kestrel': {
@@ -142,14 +181,23 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       b.add(new THREE.BoxGeometry(0.05, 0.55, 0.8), HULL, 0, tr(0, 0.4, 1.1, -0.3));
       b.add(new THREE.CylinderGeometry(0.34, 0.42, 0.5, 8), HULL, 0, tr(0, 0, 1.65, Math.PI / 2));
       b.add(new THREE.CylinderGeometry(0.27, 0.27, 0.06, 8), '#ffffff', 1, tr(0, 0, 1.92, Math.PI / 2));
+      // spine ribs along the fuselage
+      for (let i = 0; i < 8; i++) b.add(new THREE.BoxGeometry(0.1, 0.06, 0.45), HULL2, 0, tr(0, 0.2, -1.5 + i * 0.42));
+      // a second, shorter blade on each wing
+      b.mirrorX(() => new THREE.BoxGeometry(1.0, 0.03, 0.22), HULL, 0, 0.82, -0.12, 0.25, 0, -0.42, 0);
+      b.mirrorX(() => new THREE.BoxGeometry(0.5, 0.03, 0.14), HULL2, 0, 1.25, -0.1, 0.9, 0, -0.42, 0);
+      // coilgun coils: rings round the nose, the middle one glowing
+      for (let i = 0; i < 4; i++) b.add(new THREE.TorusGeometry(0.24, 0.03, 4, 12), i === 1 ? '#ffffff' : HULL2, i === 1 ? 0.7 : 0, tr(0, 0, -1.3 - i * 0.35));
+      // canopy bezel
+      b.add(new THREE.TorusGeometry(0.2, 0.025, 4, 12), HULL2, 0, tr(0, 0.2, -0.45));
       break;
     }
     case 'loom': {
       // Conduit: a spindle threaded through a coil ring, with four charge nodes on the ring.
       b.add(new THREE.OctahedronGeometry(0.75, 0), HULL2, 0, tr(0, 0, -0.1, 0, 0, 0, 0.7, 0.55, 2.4));
       b.add(new THREE.OctahedronGeometry(0.26, 0), '#ffffff', 1, tr(0, 0, -0.25));
-      b.add(new THREE.TorusGeometry(1.35, 0.13, 4, 10), HULL, 0, tr(0, 0, 0.45, 0, 0, Math.PI / 10));
-      b.add(new THREE.TorusGeometry(1.35, 0.04, 3, 10), '#ffffff', 0.55, tr(0, 0, 0.3, 0, 0, Math.PI / 10));
+      b.add(new THREE.TorusGeometry(1.35, 0.13, 6, 28), HULL, 0, tr(0, 0, 0.45, 0, 0, Math.PI / 10));
+      b.add(new THREE.TorusGeometry(1.35, 0.04, 3, 28), '#ffffff', 0.55, tr(0, 0, 0.3, 0, 0, Math.PI / 10));
       // spokes from spindle to ring
       for (let i = 0; i < 4; i++) {
         const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
@@ -161,17 +209,46 @@ export function buildPlayerShip(hull: string): THREE.BufferGeometry {
       b.mirrorX(() => new THREE.BoxGeometry(0.06, 0.4, 0.9), HULL, 0, 0.18, 0.25, 1.35, 0.25, 0, 0.35);
       b.add(new THREE.CylinderGeometry(0.22, 0.3, 0.4, 6), HULL, 0, tr(0, 0, 1.55, Math.PI / 2));
       b.add(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 6), '#ffffff', 1, tr(0, 0, 1.76, Math.PI / 2));
+      // a fine glowing winding round the back of the ring
+      b.add(new THREE.TorusGeometry(1.35, 0.02, 3, 32), '#ffffff', 0.45, tr(0, 0, -0.3, 0, 0, Math.PI / 10));
+      // ribs on the spindle, like the frame of a loom
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        b.add(new THREE.BoxGeometry(0.05, 0.22, 0.5), HULL, 0, tr(Math.cos(a) * 0.5, Math.sin(a) * 0.5, -0.1, 0, 0, a));
+      }
       break;
     }
     default: {
       // The Lantern: a lightship carrying its own little sun
-      b.add(new THREE.ConeGeometry(0.55, 2.6, 6), HULL, 0, tr(0, 0, -0.5, -Math.PI / 2));
-      b.add(new THREE.BoxGeometry(0.8, 0.45, 1.4), HULL2, 0, tr(0, 0, 0.6));
-      b.mirrorX(() => new THREE.BoxGeometry(1.6, 0.08, 0.9), HULL2, 0, 0.95, 0, 0.6, 0, 0.35, 0);
-      b.mirrorX(() => new THREE.BoxGeometry(0.2, 0.25, 1.1), HULL, 0, 1.75, 0, 0.75);
-      b.mirrorX(() => new THREE.CylinderGeometry(0.2, 0.26, 0.35, 6), '#ffffff', 1, 0.55, 0, 1.4, Math.PI / 2);
-      b.add(new THREE.IcosahedronGeometry(0.26, 0), '#ffffff', 1, tr(0, 0.3, 0.1)); // the lantern
+      // fuselage: flattened octagonal nose, armoured midsection, dorsal spine
+      b.add(new THREE.ConeGeometry(0.55, 2.6, 8), PH, 0, tr(0, 0, -0.5, -Math.PI / 2, 0, 0, 1, 1, 0.72));
+      b.add(new THREE.BoxGeometry(0.9, 0.42, 1.5), PH2, 0, tr(0, 0, 0.55));
+      b.add(new THREE.BoxGeometry(0.18, 0.12, 2.3), PH2, 0, tr(0, 0.26, 0.15));
+      b.add(new THREE.BoxGeometry(0.14, 0.2, 1.4), PH, 0, tr(0, -0.28, 0.45));
+      // smoked canopy with a glint of the hull accent
+      b.add(new THREE.SphereGeometry(0.3, 10, 6), GLASS, 0.12, tr(0, 0.22, -0.55, 0, 0, 0, 0.75, 0.55, 2.0));
+      // swept wings with lighter leading-edge armour
+      b.mirrorX(() => new THREE.BoxGeometry(1.6, 0.08, 0.9), PH2, 0, 0.95, 0, 0.6, 0, 0.35, 0);
+      b.mirrorX(() => new THREE.BoxGeometry(1.55, 0.1, 0.16), PH, 0, 0.98, 0.01, 0.2, 0, 0.35, 0);
+      // wingtip weapon pods with barrels
+      b.mirrorX(() => new THREE.BoxGeometry(0.2, 0.25, 1.1), PH, 0, 1.75, 0, 0.75);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.045, 0.045, 0.9, 6), PDARK, 0, 1.75, -0.04, -0.2, Math.PI / 2);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.07, 0.07, 0.12, 6), PH2, 0, 1.75, -0.04, -0.62, Math.PI / 2);
+      // intakes either side of the cockpit
+      b.mirrorX(() => new THREE.BoxGeometry(0.22, 0.22, 0.55), PDARK, 0, 0.52, -0.04, 0.0);
+      // canted twin tail fins
+      b.mirrorX(() => new THREE.BoxGeometry(0.05, 0.5, 0.65), PH2, 0, 0.36, 0.42, 1.05, 0, 0, -0.32);
+      // engines: shrouded nozzles with a hot inner disc
+      b.mirrorX(() => new THREE.CylinderGeometry(0.22, 0.28, 0.5, 10), PH, 0, 0.55, 0, 1.4, Math.PI / 2);
+      b.mirrorX(() => new THREE.CylinderGeometry(0.19, 0.19, 0.06, 10), '#ffffff', 1, 0.55, 0, 1.66, Math.PI / 2);
+      // the lantern itself, caged on the spine
+      b.add(new THREE.IcosahedronGeometry(0.26, 0), '#ffffff', 1, tr(0, 0.42, 0.25));
+      b.add(new THREE.TorusGeometry(0.34, 0.03, 4, 12), PH2, 0, tr(0, 0.42, 0.25, 0, Math.PI / 2, 0));
+      b.add(new THREE.TorusGeometry(0.34, 0.03, 4, 12), PH2, 0, tr(0, 0.42, 0.25, Math.PI / 2, 0, 0));
+      // accent livery stripe and running lights
+      b.add(new THREE.BoxGeometry(0.06, 0.02, 1.2), '#ffffff', 0.35, tr(0, 0.33, 0.6));
       b.mirrorX(() => new THREE.BoxGeometry(0.06, 0.04, 0.8), '#ffffff', 0.6, 1.75, 0.15, 0.75);
+      b.mirrorX(() => new THREE.BoxGeometry(0.05, 0.05, 0.05), '#ffffff', 1, 1.75, 0.0, 1.32);
     }
   }
   return b.build();

@@ -224,9 +224,18 @@ export class Director {
   /** Arena dressing: asteroids (and turret rigs bolted to some). */
   private dress(): void {
     const w = this.w;
-    const n = this.kind === 'boss' ? 10 : this.sector.asteroids;
+    // the arena is big: rocks gather in a few dense fields (cover, landmarks)
+    // with a thin scatter between them
+    const n = this.kind === 'boss' ? 18 : Math.min(110, Math.round(this.sector.asteroids * 2.2));
+    const fields: Vector3[] = [];
+    const nf = 3 + this.rng.int(0, 1);
+    for (let f = 0; f < nf; f++)
+      fields.push(new Vector3(this.rng.range(-1, 1), this.rng.range(-0.35, 0.35), this.rng.range(-1, 1)).normalize().multiplyScalar(this.rng.range(120, w.arenaRadius * 0.8)));
     for (let i = 0; i < n; i++) {
-      const p = new Vector3(this.rng.range(-1, 1), this.rng.range(-0.5, 0.5), this.rng.range(-1, 1)).normalize().multiplyScalar(this.rng.range(30, w.arenaRadius * 0.9));
+      const inField = this.kind !== 'boss' && i % 5 < 3;
+      const p = inField
+        ? new Vector3(this.rng.range(-1, 1), this.rng.range(-0.6, 0.6), this.rng.range(-1, 1)).multiplyScalar(this.rng.range(15, 110)).add(fields[i % nf]!)
+        : new Vector3(this.rng.range(-1, 1), this.rng.range(-0.5, 0.5), this.rng.range(-1, 1)).normalize().multiplyScalar(this.rng.range(30, w.arenaRadius * 0.9));
       if (p.distanceTo(w.player.pos) < 25) continue;
       const a = w.spawnEnemy('asteroid', p.x, p.y, p.z);
       const s = this.rng.range(0.6, 2.2);
@@ -376,7 +385,7 @@ export class Director {
     if (this.rng.chance(0.2)) dir.negate(); // occasional flank from behind
     const dist = this.rng.range(80, 120);
     const center = pl.pos.clone().addScaledVector(dir, dist);
-    if (center.length() > w.arenaRadius) center.setLength(w.arenaRadius * 0.9);
+    if (center.length() > w.arenaRadius * 0.95) center.setLength(w.arenaRadius * 0.9);
     let count = Math.max(1, Math.min(def.role === 'swarmer' ? 22 : 6, Math.round(need / Math.max(1, def.threat))));
     if (this.w.heat >= 9 && def.role === 'swarmer') count = Math.round(count * 1.3);
     const formation = def.role === 'swarmer' ? this.rng.pick(['cluster', 'ring', 'line'] as const) : this.rng.pick(['cluster', 'line'] as const);

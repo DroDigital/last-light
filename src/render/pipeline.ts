@@ -22,7 +22,7 @@ export interface LookSettings {
 }
 
 export const DEFAULT_LOOK: LookSettings = {
-  pixelScale: 3,
+  pixelScale: 2,
   matrix: 1,
   spread: 1.0,
   bloom: 0.9,

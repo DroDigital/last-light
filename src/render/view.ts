@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { World } from '../game/world';
 import { Pipeline } from './pipeline';
-import { Particles, Streaks, Bullets, Telegraphs } from './fx';
+import { Particles, Streaks, Bullets, Telegraphs, Shells } from './fx';
 import { Space } from './space';
 import { buildEnemyMesh, buildPlayerShip, type MeshKind } from './meshes';
 import { makeHullMaterial } from './materials';
@@ -71,7 +71,7 @@ class InstancedKind {
     this.mesh.count = 0;
     this.mesh.layers.enable(1); // native-res depth prepass for hidden-line edges
   }
-  withEdges(view: View, opts: { haloGain?: number; coreGain?: number } = {}): this {
+  withEdges(view: View, opts: { haloGain?: number; coreGain?: number; angle?: number } = {}): this {
     this.edges = new EdgeBatch(this.mesh.geometry, { matrix: this.mesh.instanceMatrix, color: this.mesh.instanceColor!, fx: this.fx }, opts);
     view.world.add(this.edges.halo);
     view.tele.add(this.edges.core);
@@ -135,7 +135,7 @@ export class View {
   readonly world = new THREE.Scene();
   readonly overlay = new THREE.Scene();
   readonly tele = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.3, 2400);
+  readonly camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.3, 6500);
   readonly space: Space;
   readonly particles: Particles;
   readonly streaks: Streaks;
@@ -149,15 +149,21 @@ export class View {
   /** the wingmen's ships (local co-op, P2..P4) */
   private wing: InstancedKind;
   ship: THREE.Mesh;
-  private shipEdges: EdgeBatch;
+  shipEdges: EdgeBatch;
   private rings: VecRing[] = [];
   private sparks: VecSpark[] = [];
   /** reserved player tone (LDR) for crisp bolt cores */
   private playerTone = new THREE.Vector3(0.75, 0.96, 1);
   private projectileColors = new Map<number, [number, number, number]>();
-  private shipMat: THREE.ShaderMaterial;
+  shipMat: THREE.ShaderMaterial;
   private shipHull = '';
   hullMat: THREE.ShaderMaterial;
+  /** near-field dust that streaks past the lens: speed and scale at a glance */
+  private specks = new Float32Array(320 * 3);
+  private specksReady = false;
+  private prevCam = new THREE.Vector3();
+  /** volumetric fireballs and shield bubbles */
+  readonly shells: Shells;
   /** engine trail history */
   private trail: Float32Array = new Float32Array(48 * 6);
   private trailHead = 0;
@@ -182,6 +188,8 @@ export class View {
     this.space = new Space(pipe.lights);
     this.world.add(this.space.group);
     this.world.add(this.space.dust);
+    this.world.add(this.space.vista.world);
+    this.world.add(this.space.vista.sky);
     this.hullMat = makeHullMaterial(pipe.lights);
     for (const k of KINDS) {
       const ik = new InstancedKind(buildEnemyMesh(k, k.length * 13), this.hullMat, k === 'asteroid' ? 120 : 400);
@@ -198,7 +206,8 @@ export class View {
     this.halos = new InstancedKind(buildEnemyMesh('halo', 5), this.hullMat, 24);
     this.world.add(this.halos.mesh);
     this.halos.withEdges(this, { haloGain: 2.4, coreGain: 0.8 });
-    this.shipMat = makeHullMaterial(pipe.lights, { rim: 1.8, emissive: 2.2 });
+    // a lighter rim than enemies so the shaded plating, not a glow, defines the ship
+    this.shipMat = makeHullMaterial(pipe.lights, { rim: 1.0, emissive: 1.8 });
     this.ship = new THREE.Mesh(buildPlayerShip('lantern'), this.shipMat);
     this.ship.frustumCulled = false;
     this.ship.layers.enable(1);
@@ -207,10 +216,10 @@ export class View {
     this.ghosts = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 3, emissive: 4 }), 12);
     this.world.add(this.ghosts.mesh);
     this.ghosts.withEdges(this, { haloGain: 0.8, coreGain: 0.45 });
-    this.wing = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 1.8, emissive: 2.2 }), MAX_PILOTS);
+    this.wing = new InstancedKind(buildPlayerShip('lantern'), makeHullMaterial(pipe.lights, { rim: 1.0, emissive: 1.8 }), MAX_PILOTS);
     this.wing.mesh.frustumCulled = false;
     this.world.add(this.wing.mesh);
-    this.wing.withEdges(this, { haloGain: 0.7, coreGain: 0.7 });
+    this.wing.withEdges(this, { haloGain: 0.25, coreGain: 0.55, angle: 42 });
 
     for (const k of PROP_KINDS) {
       const ik = new InstancedKind(buildEnemyMesh(k, k.length * 7), this.hullMat, PROP_CAP);
@@ -223,6 +232,8 @@ export class View {
     this.world.add(this.particles.points);
     this.streaks = new Streaks(6000, pipe.resUniform);
     this.world.add(this.streaks.mesh);
+    this.shells = new Shells(96);
+    this.world.add(this.shells.mesh);
     this.bullets = new Bullets(8192, pipe.bulletUniforms);
     this.overlay.add(this.bullets.mesh);
     this.telegraphs = new Telegraphs(24000);
@@ -230,7 +241,9 @@ export class View {
   }
 
   private makeShipEdges(id: string): EdgeBatch {
-    const e = new EdgeBatch(buildPlayerShip(id), 1, { haloGain: 0.7, coreGain: 0.7 });
+    // detailed hulls: only the strong silhouette creases get vector lines, and
+    // the dithered halo stays faint so the shaded plating reads underneath
+    const e = new EdgeBatch(buildPlayerShip(id), 1, { haloGain: 0.22, coreGain: 0.5, angle: 42 });
     this.world.add(e.halo);
     this.tele.add(e.core);
     return e;
@@ -321,6 +334,7 @@ export class View {
       this.syncDrones(w, alpha, time);
       this.syncFx(w, time);
       this.syncTelegraphs(w, time);
+      this.syncSpecks(frameDt);
     } else if (this.showcase) {
       // map / hearth / title: the real ship, parked in the scene
       const sc = this.showcase;
@@ -334,6 +348,7 @@ export class View {
       this.ship.visible = false;
     }
     this.syncVectors(frameDt);
+    this.shells.update(frameDt);
     for (const mk of this.markers) {
       const k = mk.lit;
       // relight radius stays a crisp ring (gameplay read); the beacon itself is a dithered lighthouse
@@ -542,7 +557,7 @@ export class View {
         this.trailCount = Math.min(48, this.trailCount + 1);
       }
       if (pl.vel.lengthSq() < 4 && this.trailCount > 2) this.trailCount -= 1;
-      const len = Math.min(this.trailCount, Math.round(15 * w.build.ship.speed * (pl.boosting ? 1.25 : 1)));
+      const len = Math.min(this.trailCount, Math.round(11 * w.build.ship.speed * (pl.boosting ? 1.3 : 1)));
       const tc = this.trailColor;
       for (let e = 0; e < 2; e++) {
         let px = e === 0 ? ex + right.x * 0.55 * scale : ex - right.x * 0.55 * scale;
@@ -793,6 +808,45 @@ export class View {
       _m.compose(d.pos, _q.setFromEuler(_e), _s.setScalar(1));
       if (Math.floor(time * 14) % 5 !== 0) this.ghosts.push(_m, 0.5, 0.9, 1, 0, 0.35, 0.8, 0);
       this.telegraphs.ring(d.pos.x, d.pos.y, d.pos.z, 2.5 + Math.sin(time * 10) * 0.5, 0, 1, 0, 0.2, 0.7, 0.6, 0.4, 16);
+    }
+  }
+
+  /** Dust motes in a box that wraps around the camera, drawn as motion streaks. */
+  private syncSpecks(dt: number): void {
+    const cam = this.camera.position;
+    const S = this.specks;
+    const H = 45;
+    if (!this.specksReady) {
+      for (let i = 0; i < S.length; i += 3) {
+        S[i] = cam.x + (fxRng.next() * 2 - 1) * H;
+        S[i + 1] = cam.y + (fxRng.next() * 2 - 1) * H;
+        S[i + 2] = cam.z + (fxRng.next() * 2 - 1) * H;
+      }
+      this.specksReady = true;
+      this.prevCam.copy(cam);
+    }
+    const inv = dt > 1e-4 ? 1 / dt : 0;
+    let vx = (cam.x - this.prevCam.x) * inv;
+    let vy = (cam.y - this.prevCam.y) * inv;
+    let vz = (cam.z - this.prevCam.z) * inv;
+    const sp = Math.hypot(vx, vy, vz);
+    // a teleport (new encounter, respawn) is not motion
+    if (sp > 400) vx = vy = vz = 0;
+    this.prevCam.copy(cam);
+    const blur = 0.05;
+    const k = 0.05 + Math.min(1, sp / 120) * 0.22;
+    for (let i = 0; i < S.length; i += 3) {
+      let x = S[i]! - cam.x;
+      let y = S[i + 1]! - cam.y;
+      let z = S[i + 2]! - cam.z;
+      x = ((((x + H) % (2 * H)) + 2 * H) % (2 * H)) - H;
+      y = ((((y + H) % (2 * H)) + 2 * H) % (2 * H)) - H;
+      z = ((((z + H) % (2 * H)) + 2 * H) % (2 * H)) - H;
+      S[i] = x + cam.x;
+      S[i + 1] = y + cam.y;
+      S[i + 2] = z + cam.z;
+      const tint = (i / 3) % 5 === 0 ? 1.3 : 1;
+      this.streaks.push(S[i]!, S[i + 1]!, S[i + 2]!, S[i]! - vx * blur - 0.02, S[i + 1]! - vy * blur, S[i + 2]! - vz * blur, 0.55 * k * tint, 0.62 * k * tint, 0.8 * k * tint, 0.03, 0.01);
     }
   }
 

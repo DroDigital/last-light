@@ -7,6 +7,8 @@ The look is **Chroma Dither**, three styles with one job each:
 - **Everything with energy** (ships, enemies, bolts, shock rings) draws crisp native-res vector cores, with bloom halos rendered as dither.
 - **Information** follows Swiss brutalism: bold grotesk type, target brackets, kill confirmations, and a signal-orange accent that is never dithered.
 
+- **Scale** comes from real geometry, not just paint. Each sector has a gas giant with rings and a lit terminator filling the sky. Far outside the arena sit an arc of mountain-sized asteroids and a broken ring station thousands of metres across, all with true parallax. Distance haze dissolves far hulls into the nebula, and near-field dust streaks past the lens at speed. The arena is 640 m across its radius, almost three times its old size, with rocks gathered into fields.
+
 Where light dies, the world prints in three inks.
 
 ## Run it

@@ -100,16 +100,42 @@ void main() {
   if (!gl_FrontFacing) n = -n;
   vec3 v = normalize(cameraPosition - vWorld);
   float ndl = dot(n, uStarDir);
-  vec3 diffuse = vAlbedo * (uStarColor * max(ndl, 0.0) * 0.55 + uAmbient);
+  // Panel lines: an object-space plating grid, anti-aliased and faded out
+  // when it would turn into shimmer at distance.
+  vec3 albedo = vAlbedo;
+  if (vEmit < 0.5) {
+    vec3 g = vLocal * vec3(2.2, 2.2, 1.4);
+    vec3 fw = fwidth(g) + 1e-4;
+    vec3 ln = 1.0 - smoothstep(vec3(0.0), fw * 1.2, abs(fract(g - 0.5) - 0.5));
+    vec3 an = abs(n);
+    float line = max(max(ln.y * an.x, ln.z * an.x), max(max(ln.x * an.y, ln.z * an.y), max(ln.x * an.z, ln.y * an.z)));
+    float fade = 1.0 - smoothstep(0.18, 0.45, max(fw.x, max(fw.y, fw.z)));
+    albedo *= 1.0 - line * 0.45 * fade;
+    // faint per-plate value variation
+    albedo *= 0.88 + 0.24 * hash13(floor(g));
+  }
+  // Wrapped key light + hemispheric ambient (sky above, warm bounce below)
+  float wrapL = max((ndl + 0.25) / 1.25, 0.0);
+  vec3 hemi = uAmbient * mix(0.55, 1.6, n.y * 0.5 + 0.5);
+  vec3 diffuse = albedo * (uStarColor * wrapL * 0.6 + hemi);
+  // Glossy highlight from the star (metal plating)
+  vec3 hv = normalize(uStarDir + v);
+  float spec = pow(max(dot(n, hv), 0.0), 48.0) * step(0.0, ndl);
+  diffuse += uStarColor * spec * 0.6 * (1.0 - vEmit);
   // Strong rim from the nearest star: back-lit edges glow
   float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
   // rim only on edges that face the star (back-lit silhouettes)
   float facing = clamp(dot(n, uStarDir) + 0.2, 0.0, 1.0);
   float back = clamp(0.35 + 0.65 * dot(-v, uStarDir), 0.0, 1.0);
   vec3 rim = uStarColor * fres * uRim * facing * (0.5 + back * 1.5);
-  vec3 pl = pointLights(vWorld, n, 0.3) * (vAlbedo * 2.0 + 0.035 + fres * 0.45);
+  vec3 pl = pointLights(vWorld, n, 0.3) * (albedo * 2.0 + 0.035 + fres * 0.45);
   vec3 emiss = vTint * vEmit * uEmissive * (1.0 + vFx.z);
   vec3 col = diffuse + rim + pl + emiss;
+  // Aerial perspective: distance dissolves hulls into the nebula's haze, so
+  // near things pop and colossal far things read as far
+  float dist = length(cameraPosition - vWorld);
+  float haze = 1.0 - exp(-max(dist - 120.0, 0.0) / 2400.0);
+  col = mix(col, uAmbient * 2.2 + uStarColor * 0.035, haze * 0.7);
   // Hit flash: blow out to hot white
   col = mix(col, vec3(4.0, 3.8, 3.6), clamp(vFx.x, 0.0, 1.0));
   // Frozen tint on dissolve leading edge
@@ -191,15 +217,36 @@ uniform vec3 uColor;
 uniform float uPower;
 uniform float uTime;
 uniform float uPulse;
+float sh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float sn(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(sh(i), sh(i + vec2(1, 0)), f.x), mix(sh(i + vec2(0, 1)), sh(i + vec2(1, 1)), f.x), f.y);
+}
 void main() {
   float r = length(vUv) * 2.0;
-  float core = smoothstep(0.32, 0.28, r);
-  float glow = exp(-r * 3.2) * 1.4;
-  float rays = pow(max(0.0, 1.0 - abs(vUv.x * vUv.y) * 60.0), 6.0) * exp(-r * 1.5) * 0.5;
-  float flick = 0.9 + 0.1 * sin(uTime * 3.0 + r * 20.0);
-  vec3 col = uColor * (core * 6.0 + glow * flick + rays) * uPower * (1.0 + uPulse);
   if (r > 1.0) discard;
-  gl_FragColor = vec4(col, core);
+  const float R = 0.3;
+  float ang = atan(vUv.y, vUv.x);
+  // photosphere: limb-darkened disc with boiling granulation
+  float disc = smoothstep(R + 0.006, R - 0.006, r);
+  float mu = sqrt(max(0.0, 1.0 - (r * r) / (R * R)));
+  float gran = sn(vUv * 46.0 + vec2(uTime * 0.21, -uTime * 0.17)) * 0.6 + sn(vUv * 110.0 - uTime * 0.4) * 0.4;
+  float photo = disc * (0.42 + 0.58 * pow(mu, 0.6)) * (0.82 + 0.3 * gran);
+  // chromosphere: a thin hot rim just past the limb
+  float chrom = exp(-abs(r - R) * 90.0) * 0.9;
+  // corona: soft glow broken into slowly turning streamers
+  float stream = sn(vec2(ang * 3.0 + uTime * 0.03, r * 3.0 - uTime * 0.05)) * 0.7 + sn(vec2(ang * 9.0 - uTime * 0.02, r * 6.0)) * 0.3;
+  float corona = exp(-(r - R) * 5.5) * (0.35 + stream * 0.9) * (1.0 - disc);
+  float halo = exp(-r * 3.0) * 0.5;
+  // diffraction spikes (four long, four short) like a real lens
+  float spikes = pow(max(0.0, 1.0 - abs(vUv.x * vUv.y) * 70.0), 8.0) * exp(-r * 2.0) * 0.6;
+  vec2 ru = mat2(0.7071, -0.7071, 0.7071, 0.7071) * vUv;
+  spikes += pow(max(0.0, 1.0 - abs(ru.x * ru.y) * 140.0), 8.0) * exp(-r * 4.5) * 0.3;
+  float flick = 0.92 + 0.08 * sin(uTime * 2.3 + ang * 4.0);
+  vec3 hot = mix(uColor, vec3(1.0), 0.35);
+  vec3 col = hot * photo * 3.2 + uColor * (chrom * 1.6 + (corona + halo) * flick + spikes);
+  col *= uPower * (1.0 + uPulse);
+  gl_FragColor = vec4(col, disc);
 }
 `;
 
@@ -242,7 +289,11 @@ void main() {
   vec2 c = gl_PointCoord - 0.5;
   float d = dot(c, c) * 4.0;
   if (d > 1.0) discard;
-  gl_FragColor = vec4(vColor.rgb * (1.0 - d * 0.6), 0.0);
+  // hot desaturated core inside a soft coloured glow
+  float glow = exp(-d * 2.6);
+  float core = smoothstep(0.35, 0.0, d);
+  vec3 pc = vColor.rgb * (0.25 + glow * 0.9) + vec3(max(vColor.r, max(vColor.g, vColor.b))) * core * 0.35;
+  gl_FragColor = vec4(pc, 0.0);
 }
 `;
 
@@ -276,7 +327,10 @@ void main() {
   // extend caps slightly
   c.xy += dir * (t - 0.5) * 2.0 / uRes * c.w;
   gl_Position = c;
-  vCol = vec4(aCol.rgb, 1.0);
+  // ribbons that swing past the lens (engine trail in a hard turn) fade out
+  // instead of smearing across the screen
+  float nearFade = smoothstep(6.0, 16.0, c.w);
+  vCol = vec4(aCol.rgb * nearFade, 1.0);
   vUv = vec2(t, position.y * 2.0);
 }
 `;
@@ -285,8 +339,11 @@ export const STREAK_FRAG = /* glsl */ `
 varying vec4 vCol;
 varying vec2 vUv;
 void main() {
+  // hot white core, soft coloured falloff
   float across = 1.0 - abs(vUv.y);
-  gl_FragColor = vec4(vCol.rgb * (0.4 + across * 0.8), 0.0);
+  float core = smoothstep(0.55, 1.0, across);
+  vec3 c = vCol.rgb * (0.3 + across * 0.7) + vec3(dot(vCol.rgb, vec3(0.33))) * core * 0.35;
+  gl_FragColor = vec4(c, 0.0);
 }
 `;
 
@@ -525,6 +582,16 @@ void main() {
     hdr.b = texture2D(tScene, uvL - vec2(ab, 0.0)).b;
   }
   hdr += texture2D(tBloom, uvL).rgb * uBloom * 0.3;
+  // Anamorphic lens streak: the brightest light smears into a thin horizontal
+  // flare (sampled from the soft bloom so it costs a handful of taps)
+  vec3 ana = vec3(0.0);
+  float px = 1.0 / uLowRes.x;
+  for (int i = 1; i <= 10; i++) {
+    float o = float(i) * 2.2 * px;
+    float wgt = exp(-float(i) * 0.26);
+    ana += (max(texture2D(tBloom, uvL + vec2(o, 0.0)).rgb - 0.6, 0.0) + max(texture2D(tBloom, uvL - vec2(o, 0.0)).rgb - 0.6, 0.0)) * wgt;
+  }
+  hdr += ana * vec3(0.55, 0.75, 1.0) * uBloom * 0.05;
   // Warp streak: smear along radial direction
   if (uWarp > 0.0) {
     vec2 c = uvL - 0.5;
@@ -637,4 +704,83 @@ void main() {
 export const TELE_FRAG = /* glsl */ `
 varying vec4 vCol;
 void main() { gl_FragColor = vCol; }
+`;
+
+/**
+ * Shells: volumetric-looking expanding spheres. Mode 0 is a boiling fireball
+ * (noise-displaced, white-hot → orange → ember ramp), mode 1 a shield bubble
+ * (fresnel rim with a hex lattice), mode 2 a soft energy burst.
+ */
+export const SHELL_VERT = /* glsl */ `
+attribute vec4 aSphere;  // xyz centre, w radius
+attribute vec4 aShell;   // x age 0..1, y mode, z seed, w intensity
+attribute vec3 aTint;
+varying vec3 vN;
+varying vec3 vWorld;
+varying vec4 vShell;
+varying vec3 vTint;
+varying float vDisp;
+float h3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float n3(vec3 x) {
+  vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+void main() {
+  vec3 n = normalize(position);
+  float t = aShell.x;
+  float disp = 0.0;
+  if (aShell.y < 0.5) {
+    vec3 q = n * 2.3 + aShell.z * 17.0 + vec3(0.0, t * 1.6, 0.0);
+    disp = n3(q) * 0.65 + n3(q * 2.3) * 0.35;
+    disp = (disp - 0.45) * 0.55 * (1.0 - t * 0.5);
+  }
+  vDisp = disp;
+  vec3 world = aSphere.xyz + n * aSphere.w * (1.0 + disp);
+  vN = n;
+  vWorld = world;
+  vShell = aShell;
+  vTint = aTint;
+  gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+}
+`;
+
+export const SHELL_FRAG = /* glsl */ `
+varying vec3 vN;
+varying vec3 vWorld;
+varying vec4 vShell;
+varying vec3 vTint;
+varying float vDisp;
+void main() {
+  vec3 v = normalize(cameraPosition - vWorld);
+  float ndv = abs(dot(normalize(vN), v));
+  float fres = 1.0 - ndv;
+  float t = vShell.x;
+  float inten = vShell.w;
+  vec3 col;
+  if (vShell.y < 0.5) {
+    // fireball: hottest in the middle of the ball and in the early frames
+    float heat = clamp((1.0 - t) * (0.55 + ndv * 0.6) + vDisp * 1.4, 0.0, 1.0);
+    vec3 ember = vec3(0.55, 0.08, 0.02);
+    vec3 orange = vec3(2.2, 0.75, 0.12);
+    vec3 yellow = vec3(3.0, 2.2, 0.8);
+    vec3 white = vec3(4.0, 3.8, 3.4);
+    vec3 ramp = heat < 0.33 ? mix(ember, orange, heat / 0.33) : heat < 0.66 ? mix(orange, yellow, (heat - 0.33) / 0.33) : mix(yellow, white, (heat - 0.66) / 0.34);
+    ramp = mix(ramp, ramp * vTint * 1.6, 0.35);
+    float fade = (1.0 - t) * (1.0 - t);
+    col = ramp * fade * (0.35 + ndv * 0.65);
+  } else if (vShell.y < 1.5) {
+    // shield: rim light plus a faint hex lattice that ripples outward
+    vec3 p = normalize(vN) * 9.0;
+    vec2 hp = vec2(p.x + p.z * 0.5, p.y + p.z * 0.866);
+    vec2 g = abs(fract(hp) - 0.5);
+    float lattice = smoothstep(0.42, 0.5, max(g.x, g.y));
+    float fade = 1.0 - t;
+    col = vTint * (pow(fres, 2.5) * 1.6 + lattice * 0.35 + 0.05) * fade;
+  } else {
+    float fade = (1.0 - t) * (1.0 - t);
+    col = vTint * (pow(fres, 1.5) * 1.2 + 0.15) * fade;
+  }
+  gl_FragColor = vec4(col * inten, 0.0);
+}
 `;
