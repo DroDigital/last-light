@@ -289,9 +289,9 @@ export class Game {
     const presets = {
       low: { px: 4, budget: 0.4, strokes: 600, bloom: 0.6 },
       medium: { px: 3, budget: 0.7, strokes: 1000, bloom: 0.8 },
-      high: { px: 3, budget: 1, strokes: 1400, bloom: 0.9 },
-      ultra: { px: 2, budget: 1, strokes: 2000, bloom: 1 },
-      auto: { px: 3, budget: 1, strokes: 1400, bloom: 0.9 },
+      high: { px: 2, budget: 1, strokes: 1600, bloom: 0.95 },
+      ultra: { px: 2, budget: 1, strokes: 2400, bloom: 1 },
+      auto: { px: 2, budget: 1, strokes: 1600, bloom: 0.95 },
     } as const;
     const p = presets[q];
     look.pixelScale = p.px;

@@ -17,6 +17,7 @@ import './hud-polish.css';
 
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
+const _q = new THREE.Quaternion();
 
 /** In-run HUD: native-resolution DOM + a 2D canvas for world-anchored marks. */
 export class Hud {
@@ -190,10 +191,17 @@ export class Hud {
     const s = w.build.ship;
     r.cddodge!.style.height = pl.dodgeCharges >= s.dodges ? '0%' : `${(1 - pl.dodgeRecharge / s.dodgeCd) * 100}%`;
     r.ndodge!.textContent = `DODGE ×${pl.dodgeCharges}`;
-    r.kdodge!.textContent = hudBindingLabel(g.input.bindings, 'dodge', g.input.lastDevice);
-    r.kq!.textContent = hudBindingLabel(g.input.bindings, 'ability1', g.input.lastDevice);
-    r.ke!.textContent = hudBindingLabel(g.input.bindings, 'ability2', g.input.lastDevice);
-    r.ks!.textContent = hudBindingLabel(g.input.bindings, 'fire2', g.input.lastDevice);
+    // long key names (L-SHIFT, RMB) shrink to fit the tile instead of colliding with the label
+    const keyCap = (el: HTMLElement, a: Parameters<typeof hudBindingLabel>[1]) => {
+      const t = hudBindingLabel(g.input.bindings, a, g.input.lastDevice);
+      if (el.textContent === t) return;
+      el.textContent = t;
+      el.classList.toggle('long', t.length > 3);
+    };
+    keyCap(r.kdodge!, 'dodge');
+    keyCap(r.kq!, 'ability1');
+    keyCap(r.ke!, 'ability2');
+    keyCap(r.ks!, 'fire2');
     r.abdodge!.classList.toggle('ready', pl.dodgeCharges > 0);
     const qcd = 9 * s.abilityCd;
     const ecd = 14 * s.abilityCd;
@@ -345,6 +353,64 @@ export class Hud {
     return { x: (_v.x * 0.5 + 0.5) * W, y: (-_v.y * 0.5 + 0.5) * H, on: !behind && Math.abs(_v.x) < 1 && Math.abs(_v.y) < 1, behind };
   }
 
+  /** Hit confirm: four ticks that kick out on a hit, a signal-orange X on a kill. */
+  private drawHitMarkers(x: number, y: number): void {
+    const j = this.g.juice;
+    const c = this.ctx;
+    if (j.hitMark > 0.01) {
+      const k = j.hitMark;
+      const r0 = 7 + (1 - k) * 6;
+      c.strokeStyle = `rgba(255,255,255,${(k * 0.95).toFixed(3)})`;
+      c.lineWidth = 2;
+      c.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+        c.moveTo(x + sx * r0, y + sy * r0);
+        c.lineTo(x + sx * (r0 + 6), y + sy * (r0 + 6));
+      }
+      c.stroke();
+    }
+    if (j.killMark > 0.01) {
+      const k = j.killMark;
+      const r = 10 + (1 - k) * 10;
+      c.strokeStyle = `rgba(255,79,0,${k.toFixed(3)})`;
+      c.lineWidth = 3;
+      c.beginPath();
+      c.moveTo(x - r, y - r);
+      c.lineTo(x - r * 0.45, y - r * 0.45);
+      c.moveTo(x + r, y - r);
+      c.lineTo(x + r * 0.45, y - r * 0.45);
+      c.moveTo(x + r, y + r);
+      c.lineTo(x + r * 0.45, y + r * 0.45);
+      c.moveTo(x - r, y + r);
+      c.lineTo(x - r * 0.45, y + r * 0.45);
+      c.stroke();
+    }
+  }
+
+  /** Incoming damage: an arc on a ring round the screen centre, pointing at the shooter. */
+  private drawDamageArcs(w: World, W: number, H: number): void {
+    const j = this.g.juice;
+    if (!j.damageDirs.length) return;
+    const c = this.ctx;
+    const cam = this.g.view.camera;
+    const R = Math.min(W, H) * 0.3;
+    for (const d of j.damageDirs) {
+      // direction to the source in camera space (x right, y up, z toward the viewer)
+      _v.set(d.x, d.y, d.z).sub(w.player.pos).applyQuaternion(_q.copy(cam.quaternion).invert());
+      const ang = Math.atan2(-_v.y, _v.x);
+      const a = clamp(d.t, 0, 1);
+      c.strokeStyle = d.hull ? `rgba(255,70,50,${(a * 0.9).toFixed(3)})` : `rgba(120,220,255,${(a * 0.8).toFixed(3)})`;
+      c.lineWidth = 6;
+      c.beginPath();
+      c.arc(W / 2, H / 2, R, ang - 0.32, ang + 0.32);
+      c.stroke();
+      c.lineWidth = 2;
+      c.beginPath();
+      c.arc(W / 2, H / 2, R + 9, ang - 0.18, ang + 0.18);
+      c.stroke();
+    }
+  }
+
   private draw2d(w: World): void {
     const c = this.ctx;
     const g = this.g;
@@ -370,6 +436,8 @@ export class Hud {
     c.stroke();
     c.fillStyle = 'rgba(200,255,244,0.95)';
     c.fillRect(a.x - 1.5, a.y - 1.5, 3, 3);
+    this.drawHitMarkers(a.x, a.y);
+    this.drawDamageArcs(w, W, H);
     // Swiss target brackets: the aim target plus the nearest few on-screen threats
     // pooled candidate records (this runs every frame over every enemy)
     const brackets = this.bracketList;
@@ -571,33 +639,102 @@ export class Hud {
       }
     }
     if (g.camMode === 'cockpit') this.drawCockpit(w, W, H, fwdP.x, fwdP.y);
-    // mini map (Tab): top-down radar
+    // mini map (Tab): top-down radar, sized for the wide arena
     if (this.miniMap) {
-      const R = 90;
+      const R = 104;
+      const RANGE = 380;
       const ox = W - R - 30;
       const oy = H / 2;
-      c.fillStyle = 'rgba(0,0,0,0.5)';
+      c.save();
+      c.fillStyle = 'rgba(7,6,11,0.72)';
       c.beginPath();
       c.arc(ox, oy, R, 0, Math.PI * 2);
       c.fill();
-      c.strokeStyle = 'rgba(255,240,200,0.3)';
-      c.stroke();
+      c.beginPath();
+      c.arc(ox, oy, R, 0, Math.PI * 2);
+      c.clip();
+      // range rings and a sweeping scan line
+      c.strokeStyle = 'rgba(255,240,200,0.12)';
+      c.lineWidth = 1;
+      for (const k of [1 / 3, 2 / 3]) {
+        c.beginPath();
+        c.arc(ox, oy, R * k, 0, Math.PI * 2);
+        c.stroke();
+      }
+      const sweep = (this.t * 1.6) % (Math.PI * 2);
+      const grad = c.createConicGradient ? c.createConicGradient(sweep - 0.6, ox, oy) : null;
+      if (grad) {
+        grad.addColorStop(0, 'rgba(95,211,192,0)');
+        grad.addColorStop(0.095, 'rgba(95,211,192,0.16)');
+        grad.addColorStop(0.1, 'rgba(95,211,192,0)');
+        c.fillStyle = grad;
+        c.fillRect(ox - R, oy - R, R * 2, R * 2);
+      }
       pl.forward(_v);
       const yaw = Math.atan2(_v.x, -_v.z);
+      const cs = Math.cos(-yaw);
+      const sn = Math.sin(-yaw);
+      const toMap = (x: number, z: number) => {
+        const dx = x - pl.pos.x;
+        const dz = z - pl.pos.z;
+        return [ox + ((dx * cs - dz * sn) / RANGE) * R, oy + ((dx * sn + dz * cs) / RANGE) * R] as const;
+      };
+      // the arena wall, when it is in range
+      const [ax, ay] = toMap(0, 0);
+      c.strokeStyle = 'rgba(255,44,214,0.45)';
+      c.setLineDash([4, 4]);
+      c.beginPath();
+      c.arc(ax, ay, (w.arenaRadius / RANGE) * R, 0, Math.PI * 2);
+      c.stroke();
+      c.setLineDash([]);
       for (const e of w.enemies) {
         if (!e.alive) continue;
-        const dx = e.pos.x - pl.pos.x;
-        const dz = e.pos.z - pl.pos.z;
-        const rx = dx * Math.cos(-yaw) - dz * Math.sin(-yaw);
-        const rz = dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
-        const sx = ox + (rx / 200) * R;
-        const sy = oy + (rz / 200) * R;
-        if (Math.hypot(sx - ox, sy - oy) > R) continue;
-        c.fillStyle = e.def.role === 'inert' ? 'rgba(160,140,120,0.5)' : e.def.role === 'boss' ? '#ff7050' : '#ffb080';
+        const [sx, sy] = toMap(e.pos.x, e.pos.z);
+        const d = Math.hypot(sx - ox, sy - oy);
+        const above = e.pos.y - pl.pos.y;
+        if (d > R - 3) {
+          if (e.def.role === 'inert') continue;
+          // threats past the rim cling to it as small ticks
+          const k = (R - 4) / d;
+          c.fillStyle = e.def.role === 'boss' ? '#ff7050' : 'rgba(255,176,128,0.6)';
+          c.fillRect(ox + (sx - ox) * k - 1, oy + (sy - oy) * k - 1, 2, 2);
+          continue;
+        }
+        if (e.def.role === 'inert') {
+          c.fillStyle = 'rgba(160,140,120,0.45)';
+          c.fillRect(sx - 1, sy - 1, 2, 2);
+          continue;
+        }
+        c.fillStyle = e.def.role === 'boss' ? '#ff7050' : e.rarity > 0 ? '#ffd060' : '#ffb080';
         c.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+        // altitude stalk: above or below the ship
+        if (Math.abs(above) > 12) {
+          c.fillRect(sx - 0.5, sy, 1, clamp(-above / 12, -8, 8));
+        }
       }
+      for (const p2 of w.wingmen) {
+        const [sx, sy] = toMap(p2.pos.x, p2.pos.z);
+        c.fillStyle = PILOT_HEX[p2.slot] ?? '#7fe0a8';
+        c.fillRect(sx - 2, sy - 2, 4, 4);
+      }
+      c.restore();
+      c.strokeStyle = 'rgba(255,240,200,0.35)';
+      c.beginPath();
+      c.arc(ox, oy, R, 0, Math.PI * 2);
+      c.stroke();
+      // the ship: a heading chevron
       c.fillStyle = '#c8fff4';
-      c.fillRect(ox - 2, oy - 2, 4, 4);
+      c.beginPath();
+      c.moveTo(ox, oy - 6);
+      c.lineTo(ox + 4, oy + 4);
+      c.lineTo(ox, oy + 2);
+      c.lineTo(ox - 4, oy + 4);
+      c.closePath();
+      c.fill();
+      c.font = '400 9px "JetBrains Mono"';
+      c.textAlign = 'center';
+      c.fillStyle = 'rgba(235,232,225,0.5)';
+      c.fillText(`${RANGE} M`, ox, oy + R + 14);
     }
   }
 

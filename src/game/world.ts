@@ -82,7 +82,8 @@ export interface WorldEvents {
   /** local co-op: player 2 joined/left/was revived */
   coop: { joined: boolean; revived?: boolean; slot?: number };
   graze: { x: number; y: number; z: number; count: number };
-  hurt: { dmg: number; hull: boolean; x: number; y: number; z: number };
+  /** sx/sy/sz: where the hit came from, when known (for directional damage cues) */
+  hurt: { dmg: number; hull: boolean; x: number; y: number; z: number; sx?: number; sy?: number; sz?: number };
   shieldBreak: Record<string, never>;
   dodge: Record<string, never>;
   flare: { on: boolean };
@@ -177,7 +178,8 @@ export class World {
   private qdepth = 0;
   /** dedicated buffer for the projectile sweep */
   private pbuf = new Int32Array(512);
-  arenaRadius = 230;
+  /** soft boundary of the play space (was 230; widened for a sense of scale) */
+  arenaRadius = 640;
   boss: BossController | null = null;
   /** Params registry: build weapons first, then trigger/virtual weapons. */
   params: WeaponParams[] = [];
@@ -1154,7 +1156,7 @@ export class World {
       for (const p of this.players) {
         if (!p.alive) continue;
         const d = p.pos.distanceTo(_a.set(x, y, z));
-        if (d < radius + p.radius) this.withPlayer(p, () => this.hurtPlayer(dmg * (1 - (d / (radius + 1)) * 0.5), 'Explosion'));
+        if (d < radius + p.radius) this.withPlayer(p, () => this.hurtPlayer(dmg * (1 - (d / (radius + 1)) * 0.5), 'Explosion', undefined, { x, y, z }));
       }
       return;
     }
@@ -1435,7 +1437,7 @@ export class World {
     }
   }
 
-  hurtPlayer(amount: number, cause: string, attacker?: Enemy): void {
+  hurtPlayer(amount: number, cause: string, attacker?: Enemy, from?: { x: number; y: number; z: number }): void {
     const pl = this.player;
     if (!pl.alive || pl.iframeT > 0 || pl.hurtT > 0) return;
     const bossK = this.boss && !this.boss.dead ? BAL.bossDamage : 1;
@@ -1463,7 +1465,8 @@ export class World {
     this.stats.damageTaken += amount;
     if (attacker?.affixMask && attacker.has('vampiric')) attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
     if (attacker?.affixMask && attacker.has('leeching')) pl.lumen = Math.max(0, pl.lumen - 12);
-    this.events.emit('hurt', { dmg: amount, hull: hullHit, x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
+    const src = from ?? attacker?.pos;
+    this.events.emit('hurt', { dmg: amount, hull: hullHit, x: pl.pos.x, y: pl.pos.y, z: pl.pos.z, sx: src?.x, sy: src?.y, sz: src?.z });
     if (pl.hull <= 0 && this.build.flags.has('vgLastStand') && pl.lastStandCd <= 0) {
       // Vanguard keystone: survive the killing blow once a minute
       pl.hull = 1;
@@ -1777,7 +1780,9 @@ export class World {
           }
           const dmg = P.dmg[i]!;
           const cause = P.kind[i] === 4 ? 'Mine' : 'Enemy fire';
-          this.withPlayer(tp, () => this.hurtPlayer(dmg, cause));
+          // the round came from back along its path
+          _a.set(x0 - P.vx[i]! * 0.5, y0 - P.vy[i]! * 0.5, z0 - P.vz[i]! * 0.5);
+          this.withPlayer(tp, () => this.hurtPlayer(dmg, cause, undefined, _a));
           P.kill(i);
           consumed = true;
           break;
