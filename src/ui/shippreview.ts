@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { buildPlayerShip } from '../render/meshes';
 import { hexToRgb } from '../core/math';
+import { SHIP_GLOW_CHUNK } from '../render/shaders';
+import { SHIP_GLOW, type ShipGlow } from '../render/combat-look';
 
 /**
  * Turntable preview of a ship for the class screen. One small WebGL context,
@@ -32,6 +34,8 @@ void main() {
 const FRAG = /* glsl */ `
 uniform vec3 uTint;
 uniform float uTime;
+uniform float uGlowStyle;
+${SHIP_GLOW_CHUNK}
 varying vec3 vN;
 varying vec3 vV;
 varying vec3 vCol;
@@ -49,7 +53,7 @@ void main() {
   vec3 n = normalize(vN);
   vec3 v = normalize(vV);
   vec3 key = normalize(vec3(-0.5, 0.8, 0.6));
-  vec3 albedo = vCol;
+  vec3 albedo = glowAlbedo(uGlowStyle, vCol, vEmit);
   if (vEmit < 0.5) {
     vec3 g = vLocal * vec3(2.2, 2.2, 1.4);
     vec3 fw = fwidth(g) + 1e-4;
@@ -67,8 +71,14 @@ void main() {
   col += vec3(1.0, 0.95, 0.88) * spec * 0.9 * (1.0 - vEmit);
   float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   col += uTint * fres * 1.1;
-  float pulse = 0.85 + 0.15 * sin(uTime * 3.0);
-  col = mix(col, uTint * 1.6 + vec3(0.35), clamp(vEmit, 0.0, 1.0) * pulse);
+  if (uGlowStyle < 0.5) {
+    // classic: lit parts blow out to the accent
+    float pulse = 0.85 + 0.15 * sin(uTime * 3.0);
+    col = mix(col, uTint * 1.6 + vec3(0.35), clamp(vEmit, 0.0, 1.0) * pulse);
+  } else {
+    // same blend as in flight, scaled to this turntable's exposure
+    col += glowLight(uGlowStyle, uTint, vEmit, 2.4, 0.0, max(dot(n, v), 0.0), vLocal, uTime);
+  }
   // posterize through the ordered dither, like the game's palette pass
   float levels = 6.0;
   col = floor(col * levels + bayer(gl_FragCoord.xy)) / levels;
@@ -105,7 +115,7 @@ function init(): boolean {
   camera = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
   camera.position.set(0, 2.1, 6.4);
   camera.lookAt(0, 0, 0);
-  mat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: { uTint: { value: new THREE.Color(1, 1, 1) }, uTime: { value: 0 } } });
+  mat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, uniforms: { uTint: { value: new THREE.Color(1, 1, 1) }, uTime: { value: 0 }, uGlowStyle: { value: 2 } } });
   edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.32 });
   return true;
 }
@@ -149,9 +159,17 @@ function frame(now: number): void {
 }
 
 /** Mount a turntable of `hull` into the element; it stops by itself once the element leaves the DOM. */
+/** Match the in-flight ship light style (Settings > Video > Ship lights). */
+export function setPreviewGlow(style: ShipGlow): void {
+  glowStyle = SHIP_GLOW[style]?.style ?? 2;
+  if (mat) mat.uniforms.uGlowStyle!.value = glowStyle;
+}
+let glowStyle = 2;
+
 export function mountShipPreview(el: HTMLElement | null, hull: string, accent: string): void {
   if (!el || !init() || !renderer) return;
   setShip(hull, accent);
+  mat.uniforms.uGlowStyle!.value = glowStyle;
   host = el;
   el.appendChild(renderer.domElement);
   if (!raf) {

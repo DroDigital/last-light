@@ -111,6 +111,12 @@ export class EdgeBatch {
     this.halo.renderOrder = 4;
   }
 
+  /** Retune the halo (dithered bloom) and core (crisp line) strengths. */
+  setGains(halo: number, core: number): void {
+    (this.halo.material as THREE.ShaderMaterial).uniforms.uGain!.value = halo;
+    (this.core.material as THREE.ShaderMaterial).uniforms.uGain!.value = core;
+  }
+
   /** For batches that own their instance data. */
   begin(): void {
     this.count = 0;

@@ -4,6 +4,7 @@ import { esc } from './ui';
 import { HULLS, HEARTH_HULLS, HEARTH_UNLOCKS, DIALOGUE, CHALLENGES, LORE, HEAT_LEVELS, SECTORS, BOSSES } from '../data/world';
 import { registerClassActions } from './classes';
 import { CLASS_BY_ID } from '../data/classes';
+import { SHIP_GLOW, type ShipGlow } from '../render/combat-look';
 export { showClasses } from './classes';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
 import { UPGRADES, SYNERGIES } from '../data/upgrades';
@@ -514,6 +515,7 @@ export function showSettings(g: Game, refresh = false): void {
   let body: string;
   if (tab === 'video') {
     body = select('Quality', 'quality', s.quality, [['auto', 'Auto (adaptive)'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']]) +
+      select('Ship lights', 'shipGlow', s.shipGlow, (Object.keys(SHIP_GLOW) as ShipGlow[]).map((k) => [k, SHIP_GLOW[k].label])) +
       slider('Field of view', 'fov', s.fov, 55, 100, 1, (x) => x.toFixed(0)) + toggle('CRT scanlines', 'scanlines', s.scanlines) + toggle('Cockpit camera (V)', 'cockpit', s.cockpit);
   } else if (tab === 'audio') {
     body = select('Music', 'music', s.music, [['recorded', 'Soundtrack · digitaldro'], ['procedural', 'Procedural score']]) + slider('Master', 'volumes.master', s.volumes.master, 0, 1, 0.05) + slider('Music', 'volumes.music', s.volumes.music, 0, 1, 0.05) + slider('Effects', 'volumes.sfx', s.volumes.sfx, 0, 1, 0.05) +
@@ -596,7 +598,7 @@ export function registerActions(g: Game): void {
     const key = el.dataset.key!;
     const s = g.settings as unknown as Record<string, unknown>;
     const num = Number(v);
-    const val = isNaN(num) || key === 'quality' || key === 'colorblind' || key === 'music' ? v : num;
+    const val = isNaN(num) || key === 'quality' || key === 'colorblind' || key === 'music' || key === 'shipGlow' ? v : num;
     if (key.startsWith('volumes.')) (s.volumes as Record<string, number>)[key.slice(8)] = num;
     else s[key] = val;
     const label = el.parentElement?.querySelector('.v');
