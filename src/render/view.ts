@@ -348,6 +348,9 @@ export class View {
       this.ship.visible = false;
     }
     this.syncVectors(frameDt);
+    // boss hazards that need volume (shock shells, horizons, umbra pools, crystal orbs)
+    const vol = w?.boss?.vol;
+    if (vol) for (let i = 0; i + 9 < vol.length; i += 10) this.shells.put(vol[i]!, vol[i + 1]!, vol[i + 2]!, vol[i + 3]!, vol[i + 4]!, vol[i + 5]!, vol[i + 6]!, vol[i + 7]!, vol[i + 8]!, vol[i + 9]!);
     this.shells.update(frameDt);
     for (const mk of this.markers) {
       const k = mk.lit;
@@ -937,6 +940,14 @@ export class View {
         T.ring(t.ax, t.ay, t.az, r, 1, 0, 0, 1, 0.3, 0.15, a, 24);
         T.ring(t.ax, t.ay, t.az, r, 0, 1, 0, 1, 0.3, 0.15, a, 24);
         T.ring(t.ax, t.ay, t.az, r, 0, 0, 1, 1, 0.3, 0.15, a, 24);
+      }
+    }
+    // the boss's own vector layer: each boss draws its moves in its colour
+    const bfx = w.boss?.fx;
+    if (bfx) {
+      for (let i = 0; i + 11 < bfx.length; i += 12) {
+        if (bfx[i] === 0) T.seg(bfx[i + 1]!, bfx[i + 2]!, bfx[i + 3]!, bfx[i + 4]!, bfx[i + 5]!, bfx[i + 6]!, bfx[i + 7]!, bfx[i + 8]!, bfx[i + 9]!, bfx[i + 10]!);
+        else T.ring(bfx[i + 1]!, bfx[i + 2]!, bfx[i + 3]!, bfx[i + 4]!, bfx[i + 5]!, bfx[i + 6]!, bfx[i + 7]!, bfx[i + 8]!, bfx[i + 9]!, bfx[i + 10]!, bfx[i + 11]!, 48);
       }
     }
     // stasis field

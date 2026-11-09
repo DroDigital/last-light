@@ -92,6 +92,8 @@ export class Enemy {
   /** staged break-apart for heavy ships: 0 intact, 1 cracked, 2 venting */
   breakStage = 0;
   isBossCore = false;
+  /** arena dressing (a rig bolted to a rock): a bonus target that never holds a fight open */
+  optional = false;
   dmgTaken = 1;
 
   /** ids come from the owning World so a seeded run always numbers its enemies the same way */
@@ -125,6 +127,7 @@ export class Enemy {
     this.invuln = false;
     this.partIndex = -1;
     this.bossKey = '';
+    this.optional = false;
     this.shieldedBy = 0;
     this.lastSrc = -1;
     this.breakStage = 0;

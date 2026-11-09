@@ -40,7 +40,7 @@ export const BAL = {
   /** fraction of the per-sector HP growth that bosses get */
   bossSectorHp: 0.6,
   /** multiplier on everything that hurts the player during a boss fight */
-  bossDamage: 1.5,
+  bossDamage: 1.3,
   /** enemy HP growth per sector */
   sectorHp: 0.6,
   /** per map row within a sector: budget and HP (damage gets half) */

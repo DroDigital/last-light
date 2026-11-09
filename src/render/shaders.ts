@@ -734,6 +734,14 @@ void main() {
     vec3 q = n * 2.3 + aShell.z * 17.0 + vec3(0.0, t * 1.6, 0.0);
     disp = n3(q) * 0.65 + n3(q * 2.3) * 0.35;
     disp = (disp - 0.45) * 0.55 * (1.0 - t * 0.5);
+  } else if (aShell.y > 2.5 && aShell.y < 3.5) {
+    // shockfront: a thin torn skin that ripples as it travels
+    vec3 q = n * 3.1 + aShell.z * 11.0 + vec3(t * 3.0);
+    disp = (n3(q) - 0.5) * 0.08;
+  } else if (aShell.y > 4.5 && aShell.y < 5.5) {
+    // umbra: crawling, boiling darkness
+    vec3 q = n * 1.7 + aShell.z * 9.0 + vec3(0.0, -t * 2.5, t * 1.3);
+    disp = (n3(q) * 0.7 + n3(q * 2.7) * 0.3 - 0.5) * 0.35;
   }
   vDisp = disp;
   vec3 world = aSphere.xyz + n * aSphere.w * (1.0 + disp);
@@ -777,9 +785,36 @@ void main() {
     float lattice = smoothstep(0.42, 0.5, max(g.x, g.y));
     float fade = 1.0 - t;
     col = vTint * (pow(fres, 2.5) * 1.6 + lattice * 0.35 + 0.05) * fade;
-  } else {
+  } else if (vShell.y < 2.5) {
     float fade = (1.0 - t) * (1.0 - t);
     col = vTint * (pow(fres, 1.5) * 1.2 + 0.15) * fade;
+  } else if (vShell.y < 3.5) {
+    // shockfront: hard rim, interference bands running pole to pole, torn by noise
+    vec3 nn = normalize(vN);
+    float bands = 0.5 + 0.5 * sin(nn.y * 26.0 - t * 40.0 + vShell.z * 6.0);
+    float tear = step(0.18, vDisp + 0.1);
+    float rim = pow(fres, 3.0);
+    col = vTint * (rim * 2.2 + bands * rim * 0.9 + 0.04) * mix(0.4, 1.0, tear) * (1.0 - t * 0.6);
+  } else if (vShell.y < 4.5) {
+    // event horizon: nothing in the middle, a razor photon ring, accretion streaks swirling round
+    vec3 nn = normalize(vN);
+    float ang = atan(nn.z, nn.x);
+    float swirl = 0.5 + 0.5 * sin(ang * 7.0 + nn.y * 9.0 - vShell.x * 30.0);
+    float ring = smoothstep(0.82, 0.97, fres);
+    float disc = (1.0 - smoothstep(0.0, 0.22, abs(nn.y))) * swirl;
+    col = vTint * (ring * 3.0 + disc * fres * 1.4);
+  } else if (vShell.y < 5.5) {
+    // umbra: a dim violet smoke whose edges burn
+    float edge = smoothstep(0.55, 0.95, fres);
+    float smoke = clamp(vDisp * 3.0 + 0.4, 0.0, 1.0);
+    col = vTint * (edge * 1.4 * smoke + 0.06) ;
+  } else {
+    // crystal: hard facets that flash as they turn
+    vec3 nn = normalize(vN);
+    vec3 f = floor(nn * 3.5 + 0.5);
+    float facet = fract(sin(dot(f, vec3(12.9898, 78.233, 37.719)) + vShell.x * 8.0) * 43758.5453);
+    float edges = step(0.42, max(max(abs(fract(nn.x * 3.5) - 0.5), abs(fract(nn.y * 3.5) - 0.5)), abs(fract(nn.z * 3.5) - 0.5)));
+    col = vTint * (pow(fres, 2.0) * 1.5 + facet * 0.5 * step(0.7, facet) + edges * 0.6);
   }
   gl_FragColor = vec4(col * inten, 0.0);
 }

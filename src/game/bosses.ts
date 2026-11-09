@@ -6,6 +6,7 @@ import type { EnemyDef } from './types';
 import { BOSSES, type BossDef } from '../data/world';
 import { fireAt, ringBurst, faceDir } from './ai';
 import type { MeshKind } from '../render/meshes';
+import { BOSS_COLOR, SIGNATURES, flightPos, moveSignature, runSignature, startSignature, updateZones, type Flight, type Signature, type Zone } from './bossmoves';
 
 const _a = new Vector3();
 const _b = new Vector3();
@@ -15,7 +16,31 @@ const UP = new Vector3(0, 1, 0);
 const AX_Z = new Vector3(0, 0, 1);
 const _d = new Vector3();
 
-type Pattern = 'volley' | 'ring' | 'spiral' | 'sweep' | 'charge' | 'summon' | 'mines' | 'homing' | 'pull' | 'wall' | 'beams' | 'rain' | 'nova' | 'cross' | 'clones';
+type Basic = 'volley' | 'ring' | 'spiral' | 'sweep' | 'charge' | 'summon' | 'mines' | 'homing' | 'pull' | 'wall' | 'beams' | 'rain' | 'nova' | 'cross' | 'clones';
+export type Pattern = Basic | Signature;
+
+/**
+ * Pattern cooldown multiplier per boss (lower = relentless). Every boss is
+ * faster than before; the Act I bosses most of all, since they were the ones
+ * players walked through. Act II and the finales are the fastest.
+ */
+const TEMPO: Record<string, number> = {
+  foreman: 0.6, leviathan: 0.6, glasschoir: 0.64, pulsarheart: 0.68, lastdark: 0.64,
+  kilnmother: 0.56, horizoneater: 0.56, quasarregent: 0.54, ironmagnetar: 0.52, endlessnight: 0.48,
+};
+/**
+ * HP multiplier per boss on top of BAL.bossHp. Act II bosses meet late-run
+ * builds and used to fall before their later phases got a turn.
+ */
+const HP_MUL: Record<string, number> = {
+  foreman: 1.15, leviathan: 1.1, glasschoir: 1, pulsarheart: 0.85, lastdark: 0.95,
+  kilnmother: 2.2, horizoneater: 2.3, quasarregent: 2.5, ironmagnetar: 2.7, endlessnight: 3,
+};
+/** Order in the run (0 = first boss): drives the overlap pressure. */
+const RUN_ORDER: Record<string, number> = {
+  foreman: 0, leviathan: 1, glasschoir: 2, pulsarheart: 3, lastdark: 4,
+  kilnmother: 5, horizoneater: 6, quasarregent: 7, ironmagnetar: 8, endlessnight: 9,
+};
 
 /** Act II bosses fight in four phases (75/50/25%) and use the new patterns. */
 const DEEP = new Set(['kilnmother', 'horizoneater', 'quasarregent', 'ironmagnetar', 'endlessnight']);
@@ -59,10 +84,37 @@ export class BossController {
   private sweepAxis = new Vector3();
   private spin = 0;
   totalMaxHp = 1;
+  /** signature-move state (see bossmoves.ts) */
+  fx: number[] = [];
+  /** volumetric spheres this tick: x, y, z, radius, mode, r, g, b, intensity, age (drawn by the shell renderer) */
+  vol: number[] = [];
+  zones: Zone[] = [];
+  flights = new Map<Enemy, Flight>();
+  orbs: { x: number; y: number; z: number; vx: number; vy: number; vz: number; t: number; fuse: number; n: number }[] = [];
+  sigI = 0;
+  sigNext = 0;
+  sigList: Enemy[] = [];
+  sigDir = new Vector3();
+  sigAt = new Vector3();
+  sigAxis = new Vector3();
+  beamBoost = 1;
+  spread = 1;
+  spreadTarget = 1;
+  /** brief palette drains on top of the phase's base hush */
+  hushPulse = 0;
+  hushBase = 0;
+  /** which boss's move the Endless Night is wearing */
+  maskOf = '';
+  color: [number, number, number];
+  tempo: number;
+  /** final-phase overlap: extra fire on top of whatever the boss is doing */
+  private pressureT = 4;
 
   constructor(public id: string, w: World, hpScale: number, bpm: number) {
     this.def = BOSSES[id]!;
     this.bpm = bpm;
+    this.color = BOSS_COLOR[id] ?? [1.4, 0.6, 0.3];
+    this.tempo = TEMPO[id] ?? 0.6;
     this.setup(w, hpScale);
   }
 
@@ -81,7 +133,8 @@ export class BossController {
     return hp / max;
   }
 
-  private setup(w: World, hpScale: number): void {
+  private setup(w: World, hpScaleIn: number): void {
+    const hpScale = hpScaleIn * (HP_MUL[this.id] ?? 1);
     const hp = this.def.hp * hpScale;
     const start = _a.copy(w.player.pos).normalize().multiplyScalar(-90);
     if (start.lengthSq() < 1) start.set(0, 10, -90);
@@ -198,30 +251,72 @@ export class BossController {
     this.totalMaxHp = this.core.maxHp;
   }
 
-  private patternsFor(): Pattern[] {
+  /**
+   * Each phase's rotation. Signature moves (bossmoves.ts) carry the identity;
+   * the shared patterns fill the gaps. Later phases add moves and drop the
+   * gentle ones, and the last phase of every boss also gets overlap pressure.
+   */
+  patternsFor(): Pattern[] {
     const p = this.phase;
-    switch (this.id) {
-      case 'foreman':
-        return [['volley', 'summon', 'ring', 'volley'], ['sweep', 'ring', 'volley', 'summon'], ['charge', 'spiral', 'charge', 'ring']][p]! as Pattern[];
-      case 'leviathan':
-        return [['volley', 'ring', 'volley', 'summon'], ['charge', 'volley', 'charge', 'ring'], ['spiral', 'charge', 'homing', 'summon']][p]! as Pattern[];
-      case 'glasschoir':
-        return [['sweep', 'volley', 'sweep', 'ring'], ['homing', 'ring', 'sweep', 'summon'], ['spiral', 'homing', 'wall', 'sweep']][p]! as Pattern[];
-      case 'pulsarheart':
-        return [['beams', 'volley', 'beams', 'summon'], ['beams', 'homing', 'beams', 'wall'], ['beams', 'spiral', 'beams', 'homing']][p]! as Pattern[];
-      case 'kilnmother':
-        return [['volley', 'rain', 'ring', 'summon'], ['rain', 'mines', 'spiral', 'volley'], ['rain', 'wall', 'homing', 'ring'], ['nova', 'rain', 'spiral', 'wall']][p]! as Pattern[];
-      case 'horizoneater':
-        return [['ring', 'pull', 'spiral', 'homing'], ['pull', 'nova', 'wall', 'ring'], ['spiral', 'pull', 'homing', 'nova'], ['nova', 'pull', 'wall', 'spiral']][p]! as Pattern[];
-      case 'quasarregent':
-        return [['beams', 'volley', 'beams', 'summon'], ['cross', 'homing', 'beams', 'ring'], ['beams', 'cross', 'spiral', 'wall'], ['cross', 'beams', 'nova', 'homing']][p]! as Pattern[];
-      case 'ironmagnetar':
-        return [['volley', 'charge', 'mines', 'ring'], ['wall', 'charge', 'spiral', 'mines'], ['charge', 'homing', 'wall', 'nova'], ['nova', 'charge', 'wall', 'spiral']][p]! as Pattern[];
-      case 'endlessnight':
-        return [['clones', 'spiral', 'ring', 'homing'], ['wall', 'clones', 'nova', 'pull'], ['nova', 'spiral', 'homing', 'cross', 'wall'], ['clones', 'nova', 'wall', 'rain', 'spiral', 'pull']][p]! as Pattern[];
-      default:
-        return [['summon', 'pull', 'ring', 'volley'], ['wall', 'homing', 'pull', 'summon'], ['spiral', 'homing', 'wall', 'charge']][p]! as Pattern[];
-    }
+    const L: Record<string, Pattern[][]> = {
+      foreman: [
+        ['drillLaunch', 'volley', 'scrapCage', 'conveyor', 'summon', 'ring'],
+        ['tractor', 'drillLaunch', 'conveyor', 'sweep', 'scrapCage', 'mortarField'],
+        ['mortarField', 'drillLaunch', 'tractor', 'scrapCage', 'charge', 'conveyor', 'spiral'],
+      ],
+      leviathan: [
+        ['breath', 'volley', 'coil', 'eruption', 'ring', 'summon'],
+        ['dive', 'breath', 'coil', 'eruption', 'charge', 'volley'],
+        ['coil', 'eruption', 'dive', 'breath', 'spiral', 'dive', 'homing'],
+      ],
+      glasschoir: [
+        ['chorusSnipe', 'refract', 'sweep', 'requiem', 'volley'],
+        ['lattice', 'refract', 'requiem', 'chorusSnipe', 'homing', 'summon'],
+        ['lattice', 'requiem', 'chorusSnipe', 'refract', 'spiral', 'wall', 'lattice'],
+      ],
+      pulsarheart: [
+        ['beams', 'pulseWave', 'metronome', 'strobe', 'volley'],
+        ['strobe', 'magnetarSnap', 'beams', 'metronome', 'pulseWave', 'homing'],
+        ['magnetarSnap', 'metronome', 'strobe', 'beams', 'pulseWave', 'spiral', 'magnetarSnap'],
+      ],
+      kilnmother: [
+        ['kilnMortars', 'pourStream', 'slagPools', 'volley', 'ring'],
+        ['bellows', 'slagPools', 'pourStream', 'kilnMortars', 'spiral', 'mines'],
+        ['kilnMortars', 'pourStream', 'bellows', 'rain', 'slagPools', 'wall'],
+        ['pourStream', 'nova', 'kilnMortars', 'bellows', 'slagPools', 'rain', 'pourStream'],
+      ],
+      horizoneater: [
+        ['lensing', 'pull', 'accretion', 'ring', 'tidalShear'],
+        ['horizonGrow', 'lensing', 'accretion', 'tidalShear', 'nova'],
+        ['accretion', 'horizonGrow', 'lensing', 'spiral', 'tidalShear', 'homing'],
+        ['horizonGrow', 'tidalShear', 'accretion', 'lensing', 'nova', 'horizonGrow', 'wall'],
+      ],
+      quasarregent: [
+        ['judgment', 'beams', 'coronation', 'volley', 'summon'],
+        ['courtCharge', 'judgment', 'jetSweep', 'coronation', 'cross'],
+        ['jetSweep', 'coronation', 'judgment', 'cross', 'courtCharge', 'spiral'],
+        ['coronation', 'judgment', 'cross', 'jetSweep', 'courtCharge', 'nova', 'judgment'],
+      ],
+      ironmagnetar: [
+        ['polarity', 'shrapnel', 'volley', 'railLock', 'mines'],
+        ['shrapnel', 'railLock', 'ironStorm', 'polarity', 'charge', 'wall'],
+        ['ironStorm', 'railLock', 'polarity', 'shrapnel', 'nova', 'charge'],
+        ['polarity', 'ironStorm', 'railLock', 'nova', 'shrapnel', 'charge', 'railLock'],
+      ],
+      endlessnight: [
+        ['masks', 'clones', 'masks', 'spiral', 'masks'],
+        ['eclipse', 'masks', 'clones', 'masks', 'nova'],
+        ['firstLight', 'masks', 'eclipse', 'masks', 'cross', 'masks'],
+        ['firstLight', 'masks', 'eclipse', 'masks', 'clones', 'firstLight', 'masks', 'nova'],
+      ],
+      lastdark: [
+        ['swallow', 'eyeLances', 'summon', 'ring', 'drain', 'pull'],
+        ['eyeLances', 'drain', 'swallow', 'wall', 'umbraWave', 'homing'],
+        ['umbraWave', 'drain', 'swallow', 'eyeLances', 'spiral', 'charge', 'umbraWave'],
+      ],
+    };
+    const phases = L[this.id] ?? L.lastdark!;
+    return phases[Math.min(p, phases.length - 1)]!;
   }
 
   onPartKilled(w: World, e: Enemy): void {
@@ -236,6 +331,8 @@ export class BossController {
         w.eproj.clear();
         w.telegraphs.length = 0;
         for (const b of this.beams) b.on = false;
+        this.zones.length = 0;
+        this.orbs.length = 0;
       }
       return;
     }
@@ -284,7 +381,12 @@ export class BossController {
 
   update(w: World, dt: number): void {
     const core = this.core;
+    this.fx.length = 0;
+    this.vol.length = 0;
     if (this.dead) return;
+    if (this.hushPulse > 0) this.hushPulse -= dt;
+    this.hush = Math.max(this.hushBase, this.hushPulse > 0 ? 0.92 : 0);
+    this.spread += (this.spreadTarget - this.spread) * Math.min(1, dt * 2);
     if (this.dying > 0) {
       this.dying -= dt;
       core.vel.multiplyScalar(0.95);
@@ -331,8 +433,14 @@ export class BossController {
       w.eproj.clear();
       w.telegraphs.length = 0;
       ringBurst(w, core.pos.x, core.pos.y, core.pos.z, 18, 30, 8, 1, 0, _c.set(0, 1, 0));
-      if (this.id === 'lastdark') this.hush = this.phase === 1 ? 0.85 : 0.35;
-      if (this.id === 'endlessnight') this.hush = this.phase === 2 ? 0.9 : this.phase === 3 ? 0.2 : 0.5;
+      if (this.id === 'lastdark') this.hushBase = this.phase === 1 ? 0.85 : 0.35;
+      if (this.id === 'endlessnight') this.hushBase = this.phase === 2 ? 0.9 : this.phase === 3 ? 0.2 : 0.5;
+      this.zones.length = 0;
+      this.orbs.length = 0;
+      for (const b of this.beams) b.on = false;
+      this.beamBoost = 1;
+      this.spreadTarget = 1;
+      this.pressureT = 2.5;
       if (this.id === 'quasarregent' && this.phase >= 2) this.beams.push({ dir: new Vector3(1, 0, 0), rate: -0.5, len: 240, width: 2.4, on: false, warm: 0 });
       if (this.id === 'pulsarheart' && this.phase === 2) {
         this.beams.push({ dir: new Vector3(0, 0, 1), rate: -0.6, len: 220, width: 2.2, on: false, warm: 0 });
@@ -350,13 +458,16 @@ export class BossController {
     const dist = _a.length() || 1;
     _a.multiplyScalar(1 / dist);
     const speedMul = 1 + this.phase * 0.25;
-    if (this.active !== 'charge') {
+    if (this.intro <= 0 && moveSignature(this, w, dt)) {
+      // a signature move is steering the body
+    } else if (this.active !== 'charge') {
       if (this.id === 'horizoneater') {
         // it IS the black hole: it holds the centre and drags you in
         core.vel.lerp(_b.copy(core.pos).multiplyScalar(-1), Math.min(1, dt));
         _c.copy(core.pos).sub(pl.pos);
         const l = _c.length() || 1;
-        pl.vel.addScaledVector(_c, ((8 + this.phase * 4) * dt) / l);
+        // the farther you run, the harder it drags: you cannot kite a black hole from range
+        pl.vel.addScaledVector(_c, ((8 + this.phase * 4) * (1 + Math.max(0, l - 50) / 40) * dt) / l);
       } else if (this.id === 'leviathan') {
         this.orbitA += dt * (0.35 + this.phase * 0.12);
         const r = 85;
@@ -381,6 +492,7 @@ export class BossController {
 
     this.positionParts(w, dt);
     this.updateBeams(w, dt);
+    updateZones(this, w, dt);
 
     // contact damage from core + parts
     const pr = pl.radius;
@@ -388,13 +500,14 @@ export class BossController {
       if (!e.alive) return;
       const rr = e.radius + pr;
       if (e.pos.distanceToSquared(pl.pos) < rr * rr) {
-        w.hurtPlayer(18 * e.dmgMul, this.def.name, e);
+        w.hurtPlayer(22 * e.dmgMul, this.def.name, e);
         _b.copy(pl.pos).sub(e.pos).normalize();
         pl.vel.addScaledVector(_b, 50);
       }
     };
     check(core);
-    for (const p of this.parts) check(p);
+    // while the choir spreads its lattice the beams are the threat, not the shards' bodies
+    if (this.spread < 1.3) for (const p of this.parts) check(p);
 
     // pulsar heartbeat synced to the sector tempo
     if (this.id === 'pulsarheart') {
@@ -408,7 +521,35 @@ export class BossController {
     }
 
     if (this.intro > 0 || this.invulnT > 0) return;
+    this.applyPressure(w, dt);
     this.runPatterns(w, dt, dist);
+  }
+
+  /**
+   * Overlap pressure: from the last phase (and the second-to-last for the
+   * later bosses), the boss keeps up a background fire on top of its current
+   * move. It grows with the boss's place in the run.
+   */
+  private applyPressure(w: World, dt: number): void {
+    const last = this.patternsCount() - 1;
+    const order = RUN_ORDER[this.id] ?? 0;
+    const from = order >= 5 ? last - 1 : last;
+    if (this.phase < from) return;
+    this.pressureT -= dt;
+    if (this.pressureT > 0) return;
+    this.pressureT = Math.max(1.2, 3.4 - order * 0.2 - (this.phase - from) * 0.6);
+    const core = this.core;
+    const shooters = this.parts.filter((p) => p.alive);
+    const src = shooters.length ? shooters[w.rng.int(0, shooters.length - 1)]! : core;
+    if (w.rng.chance(0.5)) fireAt(w, src, 60 + order * 3, 10, 2, 3 + Math.floor(order / 3), 0.07, 0.8, 0.9);
+    else {
+      _c.copy(w.player.pos).sub(core.pos).normalize();
+      ringBurst(w, core.pos.x, core.pos.y, core.pos.z, 14 + order * 2, 24 + order, 10, 1, w.time, _b.crossVectors(_c, UP).normalize());
+    }
+  }
+
+  patternsCount(): number {
+    return DEEP.has(this.id) ? 4 : 3;
   }
 
   private positionParts(w: World, dt: number): void {
@@ -437,7 +578,7 @@ export class BossController {
       p.prev.copy(p.pos);
       p.prevQuat.copy(p.quat);
       if (!p.alive) continue;
-      _a.copy(p.offset);
+      _a.copy(p.offset).multiplyScalar(this.spread);
       if (this.id === 'foreman' && p.partIndex < 4) {
         _a.applyAxisAngle(AX_Z, this.spin * 2);
         _a.applyQuaternion(core.quat);
@@ -452,7 +593,16 @@ export class BossController {
         const b = this.beams[p.partIndex];
         if (b) _a.copy(b.dir).multiplyScalar(this.id === 'quasarregent' ? 15 : 14);
       } else _a.applyQuaternion(core.quat);
-      p.pos.copy(core.pos).add(_a);
+      _a.add(core.pos);
+      // a launched part follows its flight, then returns to this mount
+      if (!flightPos(this, p, _a, p.pos)) p.pos.copy(_a);
+      else {
+        _d.copy(p.pos).sub(p.prev);
+        if (_d.lengthSq() > 0.05) {
+          _b.copy(p.pos).addScaledVector(_d, -3);
+          this.fx.push(0, p.pos.x, p.pos.y, p.pos.z, _b.x, _b.y, _b.z, this.color[0], this.color[1], this.color[2], 0.9, 0);
+        }
+      }
       _b.copy(w.player.pos).sub(p.pos);
       faceDir(p, _b, dt, 4);
     }
@@ -466,7 +616,7 @@ export class BossController {
       const emitterAlive = i >= 2 || this.parts[i]?.alive;
       // rotate around a tilted axis so beams sweep through the player's space
       _c.set(0.3, 1, 0.2).normalize();
-      b.dir.applyAxisAngle(_c, b.rate * dt * (1 + this.phase * 0.3) * (this.active === 'beams' ? 1.4 : 0.6)).normalize();
+      b.dir.applyAxisAngle(_c, b.rate * dt * (1 + this.phase * 0.3) * (this.active === 'beams' ? 1.4 : 0.6) * this.beamBoost).normalize();
       if (!b.on || !emitterAlive) continue;
       if (b.warm < 1) {
         b.warm += dt * 0.8;
@@ -490,12 +640,20 @@ export class BossController {
       this.active = list[this.patternIdx % list.length]!;
       this.patternIdx++;
       this.activeT = 0;
-      this.startPattern(w);
+      this.maskOf = '';
+      if (SIGNATURES.has(this.active)) {
+        if (this.active !== 'masks') w.events.emit('bossMove', { id: this.active, boss: this.id });
+        startSignature(this, w, this.active as Signature);
+      } else this.startPattern(w);
       return;
     }
     this.activeT += dt * heatSpd;
     const t = this.activeT;
     const ph = this.phase;
+    if (SIGNATURES.has(this.active)) {
+      runSignature(this, w, this.active as Signature, dt * heatSpd, t);
+      return;
+    }
     switch (this.active) {
       case 'volley': {
         if (t > 0.6) {
@@ -757,8 +915,9 @@ export class BossController {
     }
   }
 
-  private end(cool: number): void {
+  /** Finish the current move; the next one starts after `cool` seconds (scaled by this boss's tempo). */
+  end(cool: number): void {
     this.active = null;
-    this.patternT = cool;
+    this.patternT = cool * this.tempo;
   }
 }

@@ -504,6 +504,17 @@ export class Shells {
     this.mesh.renderOrder = 4;
   }
 
+  /** one-frame shells driven from the sim (boss hazards), drawn after the timed list */
+  private frame: number[] = [];
+
+  /**
+   * A sphere for this frame only, at an exact radius (so it matches a hitbox).
+   * Modes 3 shockfront, 4 event horizon, 5 umbra, 6 crystal. `age` 0..1 drives the animation.
+   */
+  put(x: number, y: number, z: number, radius: number, mode: number, r: number, g: number, b: number, inten: number, age: number): void {
+    this.frame.push(x, y, z, radius, mode, r, g, b, inten, age);
+  }
+
   /** mode 0 fireball, 1 shield bubble, 2 energy burst. `follow` keeps it on a moving point. */
   add(x: number, y: number, z: number, r0: number, r1: number, dur: number, mode: number, r: number, g: number, b: number, inten = 1, follow?: { x: number; y: number; z: number }): void {
     if (this.list.length >= this.capacity) this.list.shift();
@@ -531,6 +542,14 @@ export class Shells {
       this.tint.set([s.r, s.g, s.b], n * 3);
       n++;
     }
+    const F = this.frame;
+    for (let i = 0; i + 9 < F.length && n < this.capacity; i += 10) {
+      this.sphere.set([F[i]!, F[i + 1]!, F[i + 2]!, F[i + 3]!], n * 4);
+      this.shell.set([F[i + 9]!, F[i + 4]!, (i * 0.137) % 1, F[i + 8]!], n * 4);
+      this.tint.set([F[i + 5]!, F[i + 6]!, F[i + 7]!], n * 3);
+      n++;
+    }
+    F.length = 0;
     this.geo.instanceCount = n;
     const sizes = [4, 4, 3];
     for (let k = 0; k < this.attrs.length; k++) {

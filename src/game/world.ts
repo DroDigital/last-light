@@ -100,6 +100,8 @@ export interface WorldEvents {
   playerDeath: { cause: string };
   evolve: { name: string };
   beamTick: { secondary: boolean };
+  /** a boss started a signature move (`mask`: the boss whose move the Endless Night is borrowing) */
+  bossMove: { id: string; boss: string; mask?: string };
   /** the guard went up or down */
   guard: { up: boolean; x: number; y: number; z: number };
   /** a perfect parry: `reflected` when a shot was sent back */
@@ -2244,7 +2246,7 @@ export class World {
 
   liveEnemyCount(): number {
     let n = 0;
-    for (const e of this.enemies) if (e.alive && e.def.role !== 'inert' && e.def.role !== 'part') n++;
+    for (const e of this.enemies) if (e.alive && !e.optional && e.def.role !== 'inert' && e.def.role !== 'part') n++;
     return n;
   }
 }

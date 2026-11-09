@@ -11,7 +11,8 @@ import { PALETTES } from '../data/palettes';
 import { fmtInt, clamp } from '../core/math';
 import { esc } from './ui';
 import type { SfxId } from '../audio/audio';
-import { SECTORS } from '../data/world';
+import { BOSSES, SECTORS } from '../data/world';
+import { SIGNATURES, SIG_NAME, type Signature } from '../game/bossmoves';
 import { hudBindingLabel, visibleMapLabels, type MapLabelPosition } from './hud-layout';
 import './hud-polish.css';
 
@@ -253,7 +254,9 @@ export class Hud {
       const f = boss.hpFrac();
       r.bosshp!.style.width = `${f * 100}%`;
       r.bossghost!.style.width = `${f * 100}%`;
-      r.bossphase!.textContent = boss.dying > 0 ? 'COLLAPSING' : `${boss.def.phases[boss.phase]}${boss.core.invuln ? ' · SHIELDED — destroy its parts' : boss.core.dmgTaken < 0.6 ? ' · ARMORED — break its parts' : ''}`;
+      const move = boss.active && SIGNATURES.has(boss.active) ? SIG_NAME[boss.active as Signature] : '';
+      const mask = boss.maskOf && boss.maskOf !== boss.id ? ` (the ${BOSSES[boss.maskOf]?.name ?? ''} mask)` : '';
+      r.bossphase!.textContent = boss.dying > 0 ? 'COLLAPSING' : `${boss.def.phases[boss.phase]}${move ? ` · ▸ ${move.toUpperCase()}${mask}` : ''}${boss.core.invuln ? ' · SHIELDED — destroy its parts' : boss.core.dmgTaken < 0.6 ? ' · ARMORED — break its parts' : ''}`;
     } else r.boss!.style.display = 'none';
     // toasts
     const j = g.juice;

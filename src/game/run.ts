@@ -5,6 +5,7 @@ import { SECTORS, type SectorDef } from '../data/world';
 import { ENEMY_BY_ID } from '../data/enemies';
 import { RARITY, rollRarity, type Rarity } from '../data/affixes';
 import type { World } from './world';
+import type { Enemy } from './entities';
 import { Vector3 } from 'three';
 import { BossController } from './bosses';
 
@@ -167,6 +168,10 @@ export class Director {
   private straggleT = 0;
   private lastKills = 0;
   private noKillT = 0;
+  /** how long the last few hostiles have been sitting far away */
+  private farT = 0;
+  /** Act II: countdown to the next warp ambush */
+  private ambushT = 14;
 
   /**
    * @param depth row of the sector map (0 = first jump). Fights get tougher row by
@@ -248,6 +253,8 @@ export class Director {
       if (this.kind !== 'boss' && this.sector.pool.some(([id]) => id === 'turretrig') && this.rng.chance(0.12)) {
         const t = w.spawnEnemy('turretrig', p.x, p.y + a.radius + 1, p.z);
         t.spawnT = 0;
+        // a rig on a rock is cover and a bonus, not a chore: it never holds the fight open
+        t.optional = true;
       }
     }
   }
@@ -276,7 +283,7 @@ export class Director {
 
   liveThreat(): number {
     let t = 0;
-    for (const e of this.w.enemies) if (e.alive && e.def.role !== 'inert' && e.def.role !== 'part' && e.def.role !== 'boss') t += e.def.threat * RARITY[e.rarity].threat;
+    for (const e of this.w.enemies) if (e.alive && !e.optional && e.def.role !== 'inert' && e.def.role !== 'part' && e.def.role !== 'boss') t += e.def.threat * RARITY[e.rarity].threat;
     return t;
   }
 
@@ -317,6 +324,8 @@ export class Director {
       this.spent = this.budget;
       this.elitesLeft = 0;
     }
+    this.convergeStragglers(dt);
+    if (this.sector.act === 2 && this.kind !== 'tutorial') this.updateAmbush(dt);
     // endless waves are finite too: each wave ends, pays a draft, and the next one is harder
     const exhausted = this.spent >= this.budget && this.elitesLeft <= 0;
     if (exhausted) {
@@ -348,8 +357,92 @@ export class Director {
     const target = this.targetThreat();
     if (live < target) {
       this.spawnGroup(target - live);
-      this.spawnCd = 1.2 + this.rng.next() * 1.4;
+      // the Deep keeps the pressure on: reinforcements arrive faster
+      this.spawnCd = (1.2 + this.rng.next() * 1.4) * (this.sector.act === 2 ? 0.7 : 1);
     } else this.spawnCd = 0.5;
+  }
+
+  /**
+   * Nobody should fly a lap of the arena to find the last two ships. When only
+   * a few hostiles are left and all of them hang back far away, they warp in
+   * around the player (telegraphed) and the fight comes to you.
+   */
+  private convergeStragglers(dt: number): void {
+    const w = this.w;
+    const pl = w.player;
+    let n = 0;
+    let near = false;
+    for (const e of w.enemies) {
+      if (!e.alive || e.optional || e.def.role === 'inert' || e.def.role === 'part' || e.def.role === 'boss') continue;
+      n++;
+      if (e.pos.distanceTo(pl.pos) < 110) near = true;
+    }
+    if (n === 0 || n > 5 || near) {
+      this.farT = 0;
+      return;
+    }
+    this.farT += dt;
+    if (this.farT < 3.5) return;
+    this.farT = 0;
+    const fwd = pl.forward(new Vector3());
+    let k = 0;
+    for (const e of w.enemies) {
+      if (!e.alive || e.optional || e.def.role === 'inert' || e.def.role === 'part' || e.def.role === 'boss') continue;
+      const a = (k++ / n) * Math.PI * 1.2 - 0.6;
+      const p = fwd.clone().applyAxisAngle(new Vector3(0, 1, 0), a).multiplyScalar(this.rng.range(42, 60)).add(pl.pos);
+      p.y += this.rng.range(-8, 8);
+      this.warpTo(e, p);
+    }
+  }
+
+  /** Telegraph and move an enemy to `p` (a short blink, so the arrival reads). */
+  private warpTo(e: Enemy, p: Vector3): void {
+    const w = this.w;
+    w.events.emit('explosion', { x: e.pos.x, y: e.pos.y, z: e.pos.z, radius: 4, r: 0.6, g: 0.5, b: 1, enemy: false });
+    w.addTelegraph({ kind: 'sphere', ax: p.x, ay: p.y, az: p.z, bx: 0, by: 0, bz: 0, radius: e.radius * 2.5, dur: 0.7, owner: e.id });
+    e.pos.copy(p);
+    e.prev.copy(p);
+    e.vel.set(0, 0, 0);
+    e.spawnT = 0.7;
+  }
+
+  /**
+   * Act II warp ambush: every 14-22 s a ring of the sector's hostiles folds in
+   * around you from the dark. Paid from the fight's budget, so fights get
+   * denser, not longer.
+   */
+  private updateAmbush(dt: number): void {
+    if (this.spent >= this.budget) return;
+    this.ambushT -= dt;
+    if (this.ambushT > 0) return;
+    this.ambushT = this.rng.range(14, 22);
+    const w = this.w;
+    const pl = w.player;
+    let id = this.pickEnemy();
+    for (let tries = 0; tries < 6 && ['turret', 'carrier', 'sniper'].includes(ENEMY_BY_ID[id]!.role); tries++) id = this.pickEnemy();
+    const def = ENEMY_BY_ID[id]!;
+    const n = Math.max(3, Math.min(def.role === 'swarmer' ? 12 : 6, Math.round(14 / Math.max(1, def.threat))));
+    // the ring stands across your flight path
+    const fwd = pl.forward(new Vector3());
+    const side = new Vector3().crossVectors(fwd, new Vector3(0, 1, 0)).normalize();
+    if (side.lengthSq() < 0.5) side.set(1, 0, 0);
+    const up = new Vector3().crossVectors(side, fwd).normalize();
+    const center = pl.pos.clone().addScaledVector(fwd, 20);
+    w.addTelegraph({ kind: 'ring', ax: center.x, ay: center.y, az: center.z, bx: fwd.x, by: fwd.y, bz: fwd.z, radius: 36, dur: 1.1, owner: -1 });
+    w.events.emit('telegraph', { x: center.x, y: center.y, z: center.z, kind: 'ambush' });
+    w.later(1.1, () => {
+      if (this.done) return;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const p = center.clone().addScaledVector(side, Math.cos(a) * 36).addScaledVector(up, Math.sin(a) * 36);
+        const rarity = rollRarity(this.rng, this.sectorIdx, w.heat, this.kind);
+        const e = w.spawnEnemy(def, p.x, p.y, p.z, rarity);
+        e.spawnT = 0.5;
+        e.vel.copy(p).sub(pl.pos).normalize().multiplyScalar(-8);
+        this.spent += def.threat * RARITY[rarity].threat;
+      }
+      w.events.emit('explosion', { x: center.x, y: center.y, z: center.z, radius: 30, r: 0.7, g: 0.5, b: 1.2, enemy: false });
+    });
   }
 
   /** a void rift spills three hostiles of the sector's pool */
@@ -383,11 +476,14 @@ export class Director {
     const ang = this.rng.range(-1.1, 1.1);
     const dir = fwd.clone().applyAxisAngle(new Vector3(0, 1, 0), ang).add(new Vector3(0, this.rng.range(-0.35, 0.35), 0)).normalize();
     if (this.rng.chance(0.2)) dir.negate(); // occasional flank from behind
-    const dist = this.rng.range(80, 120);
+    // turrets cannot come to you, so they drop in close instead (and never in big lines)
+    const turret = def.role === 'turret';
+    const dist = turret ? this.rng.range(38, 58) : this.rng.range(80, 120);
     const center = pl.pos.clone().addScaledVector(dir, dist);
     if (center.length() > w.arenaRadius * 0.95) center.setLength(w.arenaRadius * 0.9);
     let count = Math.max(1, Math.min(def.role === 'swarmer' ? 22 : 6, Math.round(need / Math.max(1, def.threat))));
     if (this.w.heat >= 9 && def.role === 'swarmer') count = Math.round(count * 1.3);
+    if (turret) count = Math.min(count, 2);
     const formation = def.role === 'swarmer' ? this.rng.pick(['cluster', 'ring', 'line'] as const) : this.rng.pick(['cluster', 'line'] as const);
     // guaranteed elites (elite/rift nodes, Heat, Hunted) arrive alone as Rare, sometimes Unique
     let forced: Rarity = 0;

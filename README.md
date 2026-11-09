@@ -84,6 +84,25 @@ Up to three more pilots drop in at any time, in every mode (Act I and II runs, E
 - **Shields:** shield cards now play differently, not only bigger. **Siphon Weave** (kills restore shield), **Overcharge Cells** (pickups can push the shield to 150%), **Reflector Skin** (some rounds glance back while shielded), **Capacitor Burst** (a breaking shield detonates and erases nearby fire), **Hardlight Ram** (boost through enemies with your bubble), **Charged Plating** (+15% damage above half shield) and **Second Wind** (a full shield refill when your hull drops low). Four shield cards complete the **Hardlight Doctrine** synergy.
 - **Sustain drops:** enemies and asteroids can drop **Hull Patches** (12 hull + 8% of max) and **Shield Cells** (30 shield + 20% of max, and regen restarts at once). Fodder rarely drops them; heavies, support ships and rocks are worth chasing.
 
+## Bosses
+
+Every boss has its own set of signature attacks (`src/game/bossmoves.ts`), drawn in its own colour, with volumetric shockfronts, horizons and pools where a hazard needs volume. The boss bar names each attack as it starts. Later phases add moves and drop the gentle ones, and the final phase of every boss keeps up background fire on top of its moves. Bosses also get faster and tougher through the run.
+
+| Boss | Signature attacks |
+| --- | --- |
+| The Foreman | Drill Launch (arms spear at you and return) · Scrap Cage (a closing sphere of scrap with one gap) · Tractor Haul · Mortar Walk · Scrap Conveyor (lanes of scrap, one clear) |
+| Cinder Leviathan | Constrict (coils around you, firing inward) · Cinder Breath (a sweeping cone of fire) · Burning Dive (dives that leave magma) · Eruption (geysers along its whole body) |
+| The Glass Choir | Glass Lattice (a spinning web of beams between shards) · Refraction (orbs that shatter into rings) · Chorus of Lances · Requiem (a beam that bounces through the shards and ends on you) |
+| Pulsar Heart | Pulse Wave (flat rings: leave the plane) · Strobe (lances on the beat) · Magnetar Snap (pull, then a shell: roll or parry through) · Metronome (the safe side swaps every beat) |
+| The Last Dark | Swallow (lingering pools of dark) · Eye Lances · Umbra Wave · Drain (its eyes ring you while the colour drains) |
+| The Kiln Mother | Slag Pools · Bellows (a blast that throws you back) · Kiln Barrage (lobbed mortars) · Molten Pour (a stream that chases you) |
+| Horizon Eater | Swelling Horizon · Lensing (bent light arrives from behind) · Tidal Shear · Accretion (a disc forms around you while you are dragged in). Running away makes its pull stronger. |
+| Quasar Regent | Judgment (falling columns of light) · Court Charge · Jet Sweep · Coronation (a crown of bars, then the centre burns) |
+| Iron Magnetar | Polarity (pull and push, flipping) · Shrapnel Shell · Rail Lock · Iron Storm (every round in the air turns toward you) |
+| The Endless Night | Masks (borrows a move from an earlier boss, named on the bar) · Eclipse · The First Light (rotating spokes) |
+
+**Act II pacing:** turret rigs bolted to asteroids are optional bonus targets and never hold a fight open. Turrets the director sends drop in close. When the last few hostiles hang back far away, they warp in next to you. Every 14–22 s, the Deep folds a ring of enemies in around you.
+
 ## Classes
 
 Every dive starts on the class screen (Quick Dive skips it and flies your last pick). Three pilot classes are free and can be played any time:
