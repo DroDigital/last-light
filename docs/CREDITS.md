@@ -6,7 +6,7 @@ Third-party components are the work of their respective authors and remain
 available under their own licenses. Their full notices are provided in
 `public/third-party/` in the source and `third-party/` in the build.
 
-LAST LIGHT ships **no third-party art assets**. Every model is procedural geometry built in code (`src/render/meshes.ts`), every texture is computed in shaders, and every sound effect is synthesized at runtime with the Web Audio API (`src/audio/audio.ts`). The recorded soundtrack below was supplied by the project owner. The original procedural score is still in the engine as a fallback and a settings option.
+LAST LIGHT ships **no third-party visual assets**. Every model is procedural geometry built in code (`src/render/meshes.ts`) and every texture is computed in shaders. Sound effects are built from the freely licensed recordings listed under *Sound effects*, edited and layered in the engine (`src/audio/`), with synthesized sweeteners and a fully synthesized fallback. The recorded soundtrack below was supplied by the project owner. The original procedural score is still in the engine as a fallback and a settings option.
 
 ## Music
 
@@ -23,6 +23,23 @@ Music by **Digital Dro**, created using Suno during a premium subscription, as c
 | Last Transmission | Victory / finale | 3:07 | `finale-last-transmission.mp3` |
 
 Suno's terms apply to use of its service and generated music.
+
+## Sound effects
+
+All sound effects ship in one sprite, `public/sfx/sfx.ogg` (index: `sfx.json`), built reproducibly by `scripts/sfx/build.py` from commit-pinned sources. Every clip was modified: trimmed, high/low-pass filtered, de-harsh equalised, some pitch-shifted or looped with crossfades, loudness-normalised, then mixed in game with layering, reverb and stereo widening.
+
+| Source | Author | License | Used for |
+| --- | --- | --- | --- |
+| [Sci-Fi Sounds](https://kenney.nl/assets/sci-fi-sounds) (via [Godot port](https://github.com/Boyquotes/kenney-sci-fi-sounds-for-godot)) | Kenney | CC0 1.0 | weapon bodies, lasers, explosions, force fields, engine, thruster and beam loops, warp spool |
+| [Impact Sounds](https://kenney.nl/assets/impact-sounds) (via [mirror](https://github.com/ETdoFresh/kenney.nl)) | Kenney | CC0 1.0 | hits, metal ticks, plates, glass, bells (shield, guard, parry), punches, heartbeat thumps |
+| [Interface Sounds](https://kenney.nl/assets/interface-sounds) (via mirror) | Kenney | CC0 1.0 | UI taps, clicks and confirms, mines, glass plucks for pickups, glitches |
+| [Digital Audio](https://kenney.nl/assets/digital-audio) (via mirror) | Kenney | CC0 1.0 | energy bolts, arcs, phasers, power-ups, telegraph tones, reactions |
+| [Space Shooter Redux](https://kenney.nl/assets/space-shooter-redux) bonus sounds (via mirror) | Kenney | CC0 1.0 | shield down/up |
+| [Oculus Audio Pack 01](https://developers.meta.com/vr/downloads/package/oculus-audio-pack-1/) (via [Meta-open-sound](https://github.com/facebookincubator/Meta-open-sound)) | Oculus VR, LLC | **CC BY 4.0** | whooshes and swooshes (dodge, graze, cards), hull impacts, boss dread impacts and drone, UI confirm/back/error, power-ups, chimes, enemy heavy shots, ambience beds |
+
+**Required attribution:** "Oculus Audio Pack 01" by Oculus VR, LLC (https://developers.meta.com/vr/downloads/package/oculus-audio-pack-1/), licensed under CC BY 4.0. Files renamed to the UCS naming convention; OGG previews transcoded from the original WAVs. Edited for LAST LIGHT as described above. The license text is in `third-party/oculus-audio-pack-CC-BY-4.0.txt`.
+
+Kenney's packs are public domain (CC0); credit is given gladly, not required. See `third-party/kenney-audio-CC0.txt`.
 
 ## Code libraries
 

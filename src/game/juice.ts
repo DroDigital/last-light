@@ -89,7 +89,9 @@ export class Juice {
   }
 
   sfx(id: SfxId, x: number, y: number, z: number, vol = 1, pitch = 1): void {
-    this.audio.play(id, this.pan(x, y, z), vol * this.distVol(x, y, z), pitch);
+    const d = this.view.camera.position.distanceTo(_v.set(x, y, z));
+    // distant events get quieter, darker and wetter rather than just quieter
+    this.audio.play(id, this.pan(x, y, z), vol * this.distVol(x, y, z), pitch, clamp((d - 45) / 150, 0, 1));
   }
 
   addTrauma(t: number): void {
@@ -169,11 +171,13 @@ export class Juice {
         // Beams already use a sustained loop and beamTick feedback.
         if (s.w.def.behavior === 'beam') return;
         const id = s.w.def.sfx;
-        // rising pitch on sustained fire
-        const sustain = Math.min(1, s.w.shots / 40) * 0.15;
-        // linked hardpoints sit a little lower in the mix so a full rack stays readable
+        // a slight lift on sustained fire (kept small: big pitch climbs tire the ear)
+        const sustain = Math.min(1, s.w.shots / 40) * 0.05;
+        // linked hardpoints sit a little lower in the mix so a full rack stays readable,
+        // and port/starboard mounts sit left/right of centre for a wide, legible rack
         const lk = s.linked ? 0.55 : 1;
-        this.audio.play(id, 0, (s.secondary ? 0.9 : 0.55) * lk, (1 + sustain) * (s.linked ? 1.06 : 1));
+        const side = s.side ? Math.sign(s.side) * 0.22 : 0;
+        this.audio.play(id, side, (s.secondary ? 0.9 : 0.55) * lk, (1 + sustain) * (s.linked ? 1.06 : 1));
         this.microKick += (s.w.def.recoil ?? 0.05) * 0.4 * lk;
         if (s.w.def.shake) this.addTrauma(s.w.def.shake * 0.6 * lk);
       }),
@@ -278,12 +282,12 @@ export class Juice {
         const col = hexToRgb(DROP_INFO[d.kind].color);
         if (!d.picked) {
           this.view.addRing(d.x, d.y, d.z, 0.4, 5, 0.4, col[0], col[1], col[2]);
-          this.audio.play('cardIn', 0, 0.35, d.kind === 'cache' || d.kind === 'prism' ? 0.8 : 1.3);
+          this.sfx('dropSpawn', d.x, d.y, d.z, 0.7, d.kind === 'cache' || d.kind === 'prism' ? 0.8 : 1.15);
           return;
         }
         this.view.addRing(d.x, d.y, d.z, 0.5, 7, 0.35, col[0], col[1], col[2]);
         for (let i = 0; i < 10; i++) P().spawn(d.x, d.y, d.z, (r() - 0.5) * 30, (r() - 0.5) * 30, (r() - 0.5) * 30, 0.35, col[0] * 3, col[1] * 3, col[2] * 3, 2.5, 0.5, 4);
-        this.audio.play('uiBuy', 0, 0.6, d.kind === 'repair' || d.kind === 'cell' || d.kind === 'barrier' ? 1.2 : 1);
+        this.audio.play('dropPick', 0, 0.8, d.kind === 'repair' || d.kind === 'cell' || d.kind === 'barrier' ? 1.12 : 1);
         this.toast(`+ ${DROP_INFO[d.kind].name.toUpperCase()}`, DROP_INFO[d.kind].color);
       }),
       ev.on('pickup', (p) => {
@@ -337,7 +341,7 @@ export class Juice {
       }),
       ev.on('guard', (g) => {
         if (!g.up) return;
-        this.audio.play('block', 0, 0.35, 1.5);
+        this.audio.play('guard', 0, 0.8);
         if (!this.settings().reducedMotion) this.view.addRing(g.x, g.y, g.z, 3.6, 2.4, 0.16, 0.5, 0.95, 1);
       }),
       ev.on('parry', (p) => {
@@ -345,8 +349,7 @@ export class Juice {
         this.hitStop(70);
         this.flash = Math.max(this.flash, 0.35);
         this.addTrauma(0.25);
-        this.audio.play('crit', 0, 1, 1.7);
-        this.audio.play('reaction', 0, 0.7, 1.3);
+        this.audio.play('parry', 0, 1);
         this.view.addRing(p.x, p.y, p.z, 1.5, 11, 0.32, 1, 1, 1);
         this.view.addRing(p.x, p.y, p.z, 1, 7, 0.45, 0.45, 0.95, 1);
         for (let i = 0; i < 18; i++) {
@@ -366,7 +369,7 @@ export class Juice {
         }
         const col = ['#ffd890', '#ffb060', '#ff7ae0', '#fff6c0'][k.tier - 1] ?? '#fff6c0';
         this.toast(`${k.name} · ${k.count} KILLS`, col);
-        this.audio.play('lumenFull', 0, 0.6 + k.tier * 0.1, 1 + k.tier * 0.12);
+        this.audio.play('streak', 0, 0.7 + k.tier * 0.1, 1 + k.tier * 0.06);
         this.addTrauma(0.15 + k.tier * 0.05);
         const p = w.player.pos;
         const [cr, cg, cb] = hexToRgb(col);
@@ -376,12 +379,12 @@ export class Juice {
         if (f.kind === 'ram') {
           this.addTrauma(0.12);
           this.view.addRing(f.x, f.y, f.z, 0.5, 5, 0.25, 0.5, 0.95, 1);
-          this.sfx('block', f.x, f.y, f.z, 0.6, 0.8);
+          this.sfx('shieldRam', f.x, f.y, f.z, 0.8);
           return;
         }
         if (f.kind === 'reflect') {
           this.view.addRing(f.x, f.y, f.z, 0.3, 3, 0.18, 0.6, 1, 1);
-          this.sfx('block', f.x, f.y, f.z, 0.5, 1.4);
+          this.sfx('shieldReflect', f.x, f.y, f.z, 0.7);
           return;
         }
         if (f.kind === 'burst') {
@@ -452,7 +455,7 @@ export class Juice {
           }
         } else if (a.kind === 'laststand') {
           // Vanguard keystone: a gold shell snaps around the ship
-          this.audio.play('shockwave', 0, 0.8);
+          this.audio.play('laststand', 0, 0.9);
           this.addTrauma(0.5);
           this.hitStop(90);
           this.flash = Math.max(this.flash, 0.25);

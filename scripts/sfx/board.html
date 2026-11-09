@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LAST LIGHT · SFX board</title>
+    <style>
+      :root { color-scheme: dark; --bg: #0b0a12; --ink: #e9e4d8; --dim: #8d8898; --line: #2a2734; --hot: #ffd890; }
+      body { margin: 0; padding: 20px 16px 40px; background: var(--bg); color: var(--ink); font: 14px/1.4 ui-monospace, Menlo, monospace; }
+      h1 { font-size: 16px; letter-spacing: 0.2em; margin: 0 0 4px; }
+      p { color: var(--dim); margin: 0 0 16px; max-width: 70ch; }
+      .bar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 18px; }
+      .bar label { display: flex; gap: 6px; align-items: center; color: var(--dim); }
+      h2 { font-size: 12px; color: var(--dim); letter-spacing: 0.15em; margin: 18px 0 8px; text-transform: uppercase; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+      button { background: #15131d; color: var(--ink); border: 1px solid var(--line); padding: 9px 8px; font: inherit; cursor: pointer; text-align: left; }
+      button:hover { border-color: var(--hot); }
+      button:active { background: #221f2c; }
+      #status { color: var(--hot); }
+    </style>
+  </head>
+  <body>
+    <h1>LAST LIGHT · SFX BOARD</h1>
+    <p>Dev-only audition page for every sound patch (npm run dev, then open /scripts/sfx/board.html). Click to play; hold a loop button to sustain it. Compare against the synthesized fallback with the toggle.</p>
+    <div class="bar">
+      <span id="status">click anything to start audio</span>
+      <label><input type="checkbox" id="synth" /> synth fallback</label>
+      <label>pan <input type="range" id="pan" min="-1" max="1" step="0.1" value="0" /></label>
+      <label>distance <input type="range" id="far" min="0" max="1" step="0.05" value="0" /></label>
+      <label>pitch <input type="range" id="pitch" min="0.5" max="2" step="0.05" value="1" /></label>
+    </div>
+    <div id="groups"></div>
+    <script type="module" src="./board.ts"></script>
+  </body>
+</html>

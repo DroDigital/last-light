@@ -1,0 +1,15 @@
+Sound effects from Kenney (www.kenney.nl): Sci-Fi Sounds, Impact Sounds,
+Interface Sounds, Digital Audio and the Space Shooter Redux bonus sounds.
+
+License: Creative Commons Zero, CC0 1.0 Universal
+http://creativecommons.org/publicdomain/zero/1.0/
+
+"This content is free to use in personal, educational and commercial projects.
+Support us by crediting Kenney or www.kenney.nl (this is not mandatory)."
+
+Obtained from commit-pinned GitHub mirrors (see scripts/sfx/build.py):
+  https://github.com/Boyquotes/kenney-sci-fi-sounds-for-godot  (c094967fe930c57ddb376f67c75f8aa0296690b7)
+  https://github.com/ETdoFresh/kenney.nl                        (45df48c4d45f8716216b1a9e22df0b69cd9f5932)
+
+LAST LIGHT changes: trimmed, filtered, equalised, pitch-shifted,
+loudness-normalised, looped and packed into public/sfx/sfx.ogg.

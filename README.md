@@ -127,13 +127,22 @@ Each class has its own skill tree: three branches of four nodes, and the last no
 
 `npm run balance -- 10 ok` plays 10 headless full runs (both acts) with a bot (`good`, `ok` or `poor`). It reports win rate, deaths by sector, damage per fight and bonus drafts from drops. `DROPLOG=1` adds a breakdown of where drops come from. The tuning levers live in `src/data/balance.ts`.
 
+## Sound effects
+
+Sound effects come from one sprite, `public/sfx/sfx.ogg`, built from pinned CC0 / CC BY sources (see `docs/CREDITS.md`). Levels and layering live in `src/audio/patches.ts`.
+
+- `python3 scripts/sfx/build.py` rebuilds the sprite (needs ffmpeg with libvorbis and numpy; downloads are cached in `.sfx-cache/`).
+- `npm run dev`, then open `/scripts/sfx/board.html` to audition every sound, scene and the synthesized fallback.
+- With the dev server on port 5199, `node scripts/sfx/render.mjs out/` renders every patch offline and `python3 scripts/sfx/measure.py out/` reports peak, loudness, length, harshness, width and clicks.
+
 ## Structure
 
 ```
 src/core     loop (fixed 60 Hz + interpolation), seeded RNG, input, events, spatial hash
 src/render   pipeline (HDR → bloom → OKLab palette dither → overlay), shaders, GPU particles, streaks, meshes, view
 src/game     world sim, player flight, weapons, AI, bosses, director, run/map, juice, game state machine
-src/audio    Web Audio mixer, synthesized SFX, recorded soundtrack router, procedural fallback score
+src/audio    Web Audio mixer, sampled + layered SFX patches, hall/widener, recorded soundtrack router, procedural fallback
+scripts/sfx  SFX sprite build (build.py), offline renders + measurement, dev audition board
 src/ui       DOM screens, HUD, 2D overlay, navigation
 src/meta     versioned IndexedDB saves with migrations
 src/data     palettes, weapons, upgrades, synergies, enemies, sectors, bosses, events, lore, unlocks
