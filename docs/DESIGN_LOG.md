@@ -244,6 +244,19 @@ The synthesized SFX were readable but thin, and long sessions got tiring: every 
 - **Checks:** `tests/sfx.test.ts` guards the patch table against the sprite index, slicing, round-robin and the reverb impulse. `scripts/sfx/render.mjs` renders every patch offline in Chromium; the measured firefight (8 s, 12 shots/s with hits, kills, enemy fire) peaks at -5.4 dBFS at -18.6 dB loudness, matching the old mix's level, with no clipping anywhere. The dev-only board (`/scripts/sfx/board.html`) auditions every patch and the synthesized fallback side by side.
 - **STATUS:** levels were set by measurement and by ear-safety rules, not by a listening session on speakers. A human pass on the board, especially for the relative weight of weapons against explosions, is the natural next step. A browser that cannot decode Ogg Vorbis (older Safari) keeps the synthesized SFX; the desktop build (Chromium) always decodes it.
 
+## Visibility pass: every menu and HUD state
+
+A full review of every menu and in-run state, measured rather than eyeballed. Each text box was checked against the rendered pixels behind it, with its own text hidden and colour transitions off, across 50 captured states: title, Hearth, classes, codex, settings, chart, loadout, draft, shop, event, forge, rest, pause, death, victory, warp, a boss fight, critical hull, cockpit, co-op, a second sector palette, phone width, and UI scales 0.75 and 1.4. Before the pass, 35% of text boxes failed WCAG 4.5:1 against that backdrop and 276 were under 12px. After it, none are under 12px and 8% fail.
+
+- **Contrast:** secondary and tertiary text went from 68% and 42% paper to 80% and 66%. Disabled and undiscovered entries sit at 72% opacity (was 35-40%), so they read as unavailable without disappearing.
+- **Plates:** text that sits on the 3D world has a plate. HUD corners and readouts went from about 84% to about 95% combined coverage. The Hearth column, dialogue boxes, the engage prompt, draft meta lines and chart names all got plates.
+- **Type:** Silkscreen blurs below its 16px grid, so small labels are JetBrains Mono bold at 12px or more. Silkscreen remains for keys and indices, at 16px.
+- **Floor:** no text renders below 12px at any UI scale. `tests/readability.test.ts` enforces the floor across the stylesheets.
+- **In-world text:** damage numbers, target labels, kill tags, elite names, co-op tags and cockpit readouts have a dark halo and are 12px or more.
+- **HUD:** the ability row has a wider box and tighter tiles, so labels such as `DODGE ×2` fit.
+
+STATUS: the measurement runs headless (SwiftShader) and is approximate. It hides text shadows, so text that relies on one is measured pessimistically, and it counts faded items the same way. The focused primary button's subtitle still measures 3.9:1 and is the next item to tune. The phone-width combat HUD was not captured. A pass on a real display is still needed.
+
 ## Changes from the brief (and why)
 
 - **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.
