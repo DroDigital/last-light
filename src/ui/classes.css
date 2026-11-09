@@ -65,7 +65,7 @@
 .cls-node-body b { font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--s1); }
 .cls-node-body .d { font-size: var(--s1); color: var(--paper-2); line-height: 1.35; }
 .cls-node-hint { font-family: var(--px); font-weight: 700; font-size: max(12px, calc(12px * var(--ui-scale))); color: var(--paper-2); text-transform: uppercase; }
-.cls-node.locked { opacity: 0.66; }
+.cls-node.locked { opacity: 0.72; }
 .cls-node.poor .cls-node-hint { color: var(--danger); }
 .cls-node.open .cls-node-hint { color: var(--lantern); }
 .cls-node.open::before { box-shadow: inset 0 0 0 1px rgba(255, 207, 106, 0.45) !important; }
