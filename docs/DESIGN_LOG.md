@@ -221,6 +221,16 @@ Early fights were one gun and one secondary against a few ships, and they dragge
 
   Win rates match within bot noise while fights are about 30% shorter and denser. Players who parry will find it easier than the bots do; tune `GUARD.parryWindow` first if it proves too generous.
 
+## Bosses: signature attacks, escalation, Act II pacing
+
+Bosses shared one pattern vocabulary (volley, ring, spiral, sweep...), so they felt alike and the early ones were walkovers. Act II fights turned into flying between far-off turrets.
+
+- **Signature attacks** (`src/game/bossmoves.ts`): 41 attacks, 4–5 per boss (the Endless Night has 3 of its own plus Masks), built from a few hazard primitives (`Zone`: wave, shell, pillar, mortar, dark, snipe, lattice, tractor, polarity, horizon, stream, spokes, chain) and part launches (`Flight`). Each one telegraphs, and each has a counterplay: leave a wave's plane, roll or parry through a shell, slip between Coronation's bars, keep moving across a Molten Pour, find the gap in a Scrap Cage. The Endless Night's Masks borrow moves from earlier bosses.
+- **Rendering:** every boss draws its attacks in its own colour on a per-tick vector layer (`BossController.fx`, drawn by the telegraph renderer). Hazards that need volume use four new shell-shader modes, sized each tick from the sim so they match the hitbox (`Shells.put`): shockfront (rim, travelling bands, noise tears), event horizon (empty core, photon ring, swirling accretion), umbra (boiling smoke with burning edges) and crystal (flashing facets). Enemy rounds keep the shared enemy tone for readability. No external assets: the procedural look fits the dither pipeline, so new techniques beat imported art here.
+- **Escalation:** per-boss pattern tempo (0.6 for the Act I bosses down to 0.48 for the Endless Night), longer phase rotations, final-phase overlap pressure that grows with the boss's place in the run, contact damage 18 → 22, and boss HP multipliers (Act II ×2.2–3; their builds used to finish them in 10 s). Hazard damage is scaled ×0.75 as a set and `BAL.bossDamage` went 1.5 → 1.3, because there are now far more attacks.
+- **Balance** (20 bot runs each; bots never dodge, roll or parry): good 6/20 → 2/20 wins, ok 7/20 → 0–2/20, poor unchanged at 0/20 (it still dies in normal sector 1–2 fights). Deaths now spread across the bosses of sectors 3–7 instead of piling up at the Last Dark. Humans have the counterplay the bots lack; if it is too much, raise `TEMPO` or lower `HP_MUL` in `src/game/bosses.ts` first.
+- **Act II pacing** (`src/game/run.ts`): asteroid turret rigs are `optional` (excluded from live threat and the clear check). Director turrets drop in 38–58 m away, at most two at a time. When at most five hostiles remain and all are over 110 m away for 3.5 s, they warp in beside the pilot. Act II fights also get warp ambushes every 14–22 s, paid from the fight's budget, and 30% faster reinforcements.
+
 ## Changes from the brief (and why)
 
 - **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.
