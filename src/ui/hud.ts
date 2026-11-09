@@ -16,6 +16,15 @@ import { SIGNATURES, SIG_NAME, type Signature } from '../game/bossmoves';
 import { hudBindingLabel, visibleMapLabels, type MapLabelPosition } from './hud-layout';
 import './hud-polish.css';
 
+/** World text with a dark halo, so labels stay readable over explosions and a bright sky. */
+function haloText(c: CanvasRenderingContext2D, s: string, x: number, y: number, halo = 'rgba(7,6,11,0.9)'): void {
+  c.lineJoin = 'round';
+  c.lineWidth = 3;
+  c.strokeStyle = halo;
+  c.strokeText(s, x, y);
+  c.fillText(s, x, y);
+}
+
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -87,7 +96,7 @@ export class Hud {
     if (this.refs.hull) return;
     const scan = this.g.settings.scanlines ? '<div class="scanlines"></div>' : '';
     this.el.innerHTML = `${scan}<div class="brackets"><i></i><i></i><i></i><i></i></div>
-      <div class="tl"><div class="display" data-r="sector" style="font-size:var(--s3)"></div><span class="sigbar" style="width:48px"></span><div class="readout" data-r="enc"></div><div class="readout" data-r="coords" style="margin-top:4px;opacity:.6"></div></div>
+      <div class="tl"><div class="display" data-r="sector" style="font-size:var(--s3)"></div><span class="sigbar" style="width:48px"></span><div class="readout" data-r="enc"></div><div class="readout" data-r="coords" style="margin-top:4px;opacity:.85"></div></div>
       <div class="tc"><div data-r="boss" class="bossbar" style="display:none"><div class="name" data-r="bossname"></div><div class="bar"><b data-r="bossghost"></b><i data-r="bosshp"></i></div><div class="dim" data-r="bossphase"></div></div></div>
       <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="bank" data-r="bank"></div><div class="streak" data-r="streak"><span data-r="streakt"></span><i data-r="streakbar"></i></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
       <div class="bl">
@@ -289,9 +298,9 @@ export class Hud {
     // join hint whenever a spare controller could take a seat
     if (inp.canJoin()) {
       const seat = inp.freeSeat()!;
-      c.font = '400 10px "JetBrains Mono"';
+      c.font = '700 12px "JetBrains Mono"';
       c.fillStyle = PILOT_HEX[seat] + 'b3';
-      c.fillText(`P${seat + 1} · PRESS START ON A CONTROLLER TO JOIN`, W / 2, H - 16);
+      haloText(c, `P${seat + 1} · PRESS START ON A CONTROLLER TO JOIN`, W / 2, H - 16);
     }
     if (!w.wingmen.length) return;
     for (const p2 of w.wingmen) {
@@ -307,9 +316,9 @@ export class Hud {
         c.fillRect(p.x - bw / 2, p.y - 30, bw * clamp(p2.hull / p2.maxHull, 0, 1), 4);
         c.fillStyle = '#9adcf0';
         c.fillRect(p.x - bw / 2, p.y - 25, bw * clamp(p2.shield / Math.max(1, p2.maxShield), 0, 1), 2);
-        c.font = '800 10px Archivo';
+        c.font = '800 12px Archivo';
         c.fillStyle = col;
-        c.fillText(p2.alive ? tag : `${tag} · DOWN`, p.x, p.y - 34);
+        haloText(c, p2.alive ? tag : `${tag} · DOWN`, p.x, p.y - 34);
       } else {
         // edge arrow toward the wingman
         let dx = p.x - W / 2;
@@ -333,8 +342,8 @@ export class Hud {
         c.closePath();
         c.fill();
         c.restore();
-        c.font = '800 10px Archivo';
-        c.fillText(tag, ax, ay - 12);
+        c.font = '800 12px Archivo';
+        haloText(c, tag, ax, ay - 12);
       }
     }
     // a party roster under the sector readout: everyone's hull (or revive progress) at a glance
@@ -342,16 +351,16 @@ export class Hud {
     let y = 122;
     for (const pl of w.players) {
       const col = pl.slot === 0 ? '#f3eee2' : PILOT_HEX[pl.slot] ?? PILOT_HEX[1];
-      c.font = '800 10px Archivo';
+      c.font = '800 12px Archivo';
       c.fillStyle = col;
-      c.fillText(`P${pl.slot + 1}`, 26, y + 4);
+      haloText(c, `P${pl.slot + 1}`, 26, y + 4);
       c.fillStyle = 'rgba(0,0,0,0.6)';
       c.fillRect(48, y - 2, 60, 5);
       c.fillStyle = pl.alive ? col : '#ff6a5a';
       c.fillRect(48, y - 2, 60 * (pl.alive ? clamp(pl.hull / pl.maxHull, 0, 1) : clamp(pl.reviveT / World.REVIVE_TIME, 0, 1)), 5);
       if (!pl.alive) {
-        c.font = '400 9px "JetBrains Mono"';
-        c.fillText('DOWN', 114, y + 4);
+        c.font = '700 12px "JetBrains Mono"';
+        haloText(c, 'DOWN', 114, y + 4);
       }
       y += 14;
     }
@@ -361,9 +370,9 @@ export class Hud {
       const top = downed.reduce((a, b) => (b.reviveT > a.reviveT ? b : a));
       const k = Math.round((top.reviveT / World.REVIVE_TIME) * 100);
       const names = downed.map((p) => `P${p.slot + 1}`).join(' + ');
-      c.font = '900 13px Archivo';
+      c.font = '900 14px Archivo';
       c.fillStyle = Math.floor(this.t * 3) % 2 ? PILOT_HEX[1] : '#f3eee2';
-      c.fillText(`${names} DOWN · HOVER CLOSE TO REVIVE${k > 0 ? ` · ${k}%` : ''}`, W / 2, H * 0.3);
+      haloText(c, `${names} DOWN · HOVER CLOSE TO REVIVE${k > 0 ? ` · ${k}%` : ''}`, W / 2, H * 0.3);
     }
   }
 
@@ -475,7 +484,7 @@ export class Hud {
       brackets.push(rec);
     }
     brackets.sort((x, y) => x.d - y.d);
-    c.font = '800 11px Archivo';
+    c.font = '800 13px Archivo';
     c.textAlign = 'left';
     const cockpit = g.camMode === 'cockpit';
     for (let i = 0; i < Math.min(5, brackets.length); i++) {
@@ -514,7 +523,7 @@ export class Hud {
         c.lineWidth = 3;
         c.strokeStyle = 'rgba(5,4,9,.9)';
         c.strokeText(label, p.x + m + 5, p.y - m + 9);
-        c.fillText(label, p.x + m + 5, p.y - m + 9);
+        haloText(c, label, p.x + m + 5, p.y - m + 9);
       }
     }
     // kill confirmations: DESTROYED / 042 with a signal rule
@@ -525,13 +534,13 @@ export class Hud {
       const y = p.y - 26 - k.t * 16;
       c.globalAlpha = a;
       c.fillStyle = '#ebe8e1';
-      c.font = '900 13px Archivo';
-      c.fillText(`DESTROYED / ${String(k.n).padStart(3, '0')}`, p.x + 26, y);
+      c.font = '900 14px Archivo';
+      haloText(c, `DESTROYED / ${String(k.n).padStart(3, '0')}`, p.x + 26, y);
       c.fillStyle = '#ff4f00';
       c.fillRect(p.x + 26, y + 4, 110 * Math.min(1, k.t * 6), 3);
-      c.font = '400 10px "JetBrains Mono"';
+      c.font = '700 12px "JetBrains Mono"';
       c.fillStyle = '#ebe8e1';
-      c.fillText(k.label.toUpperCase(), p.x + 26, y + 18);
+      haloText(c, k.label.toUpperCase(), p.x + 26, y + 18);
       c.globalAlpha = 1;
     }
     // threat indicators: off-screen enemies at the screen edge
@@ -555,13 +564,13 @@ export class Hud {
         c.fillRect(p.x - bw / 2, p.y - 26, bw * clamp(e.hp / e.maxHp, 0, 1), 4);
         if (e.rarity > 0) {
           c.textAlign = 'center';
-          c.font = '800 10px Archivo';
+          c.font = '800 12px Archivo';
           c.fillStyle = rc;
-          c.fillText(e.rarity === 3 ? e.rankName.toUpperCase() : `${RARITY[e.rarity].name.toUpperCase()} ${e.def.name.toUpperCase()}${e.subtype >= 0 ? ' · ' + subtypeName(e.def.id, e.subtype).toUpperCase() : ''}`, p.x, p.y - 42);
+          haloText(c, e.rarity === 3 ? e.rankName.toUpperCase() : `${RARITY[e.rarity].name.toUpperCase()} ${e.def.name.toUpperCase()}${e.subtype >= 0 ? ' · ' + subtypeName(e.def.id, e.subtype).toUpperCase() : ''}`, p.x, p.y - 42);
           if (e.rarity < 3 || e.affixes.length) {
-            c.font = '400 9px "JetBrains Mono"';
+            c.font = '700 12px "JetBrains Mono"';
             c.fillStyle = 'rgba(243,238,226,0.8)';
-            c.fillText(e.affixes.map((a) => AFFIX_BY_ID[a].name).join(' · '), p.x, p.y - 30);
+            haloText(c, e.affixes.map((a) => AFFIX_BY_ID[a].name).join(' · '), p.x, p.y - 30);
           }
         }
       }
@@ -621,10 +630,10 @@ export class Hud {
         const k = n.t / 0.8;
         const pop = n.t < 0.08 ? 1 + (0.08 - n.t) * 8 : 1;
         const label = (n as unknown as { label?: string }).label;
-        const size = (label ? 15 : n.crit ? 17 : 12) * pop;
+        const size = (label ? 16 : n.crit ? 18 : 14) * pop;
         c.font = `600 ${size}px Archivo`;
         c.fillStyle = label ? `rgba(255,154,208,${1 - k})` : n.crit ? `rgba(255,236,150,${1 - k})` : `rgba(255,255,255,${0.85 - k * 0.85})`;
-        c.fillText(label ?? String(n.v), p.x + n.vx * n.t, p.y + n.vy * n.t + 40 * n.t * n.t);
+        haloText(c, label ?? String(n.v), p.x + n.vx * n.t, p.y + n.vy * n.t + 40 * n.t * n.t, `rgba(7,6,11,${(0.9 * (1 - k)).toFixed(3)})`);
       }
     }
     // derelict beacon labels + off-screen guides
@@ -656,9 +665,9 @@ export class Hud {
           c.restore();
           continue;
         }
-        c.font = '600 11px Archivo';
+        c.font = '700 13px Archivo';
         c.fillStyle = b.lit ? '#fff2b8' : '#a6c8ff';
-        c.fillText(b.lit ? 'RELIT' : `BEACON ${Math.round(b.progress * 100)}%`, p.x, p.y - 22);
+        haloText(c, b.lit ? 'RELIT' : `BEACON ${Math.round(b.progress * 100)}%`, p.x, p.y - 22);
       }
     }
     if (g.camMode === 'cockpit') this.drawCockpit(w, W, H, fwdP.x, fwdP.y);
@@ -754,10 +763,10 @@ export class Hud {
       c.lineTo(ox - 4, oy + 4);
       c.closePath();
       c.fill();
-      c.font = '400 9px "JetBrains Mono"';
+      c.font = '700 12px "JetBrains Mono"';
       c.textAlign = 'center';
-      c.fillStyle = 'rgba(235,232,225,0.5)';
-      c.fillText(`${RANGE} M`, ox, oy + R + 14);
+      c.fillStyle = 'rgba(235,232,225,0.85)';
+      haloText(c, `${RANGE} M`, ox, oy + R + 14);
     }
   }
 
@@ -773,7 +782,7 @@ export class Hud {
     const s = w.build.ship;
     const t = this.t;
     const PAPER = 'rgba(235,232,225,0.88)';
-    const DIM = 'rgba(235,232,225,0.22)';
+    const DIM = 'rgba(235,232,225,0.45)';
     const SIG = '#ff4f00';
     const R = Math.min(W, H) * 0.19;
     const deg = Math.PI / 180;
@@ -824,20 +833,20 @@ export class Hud {
     arc(1, R - 9, pl.boostEnergy, '#9fd8ff', 2);
 
     // arc labels (mono, tabular)
-    c.font = '700 10px "JetBrains Mono"';
+    c.font = '700 12px "JetBrains Mono"';
     const lx = cx - R * Math.cos(35 * deg);
     const ly = cy + R * Math.sin(35 * deg) + 16;
     const rx = cx + R * Math.cos(35 * deg);
     c.textAlign = 'right';
     c.fillStyle = critical ? SIG : PAPER;
-    c.fillText(`HULL ${String(Math.ceil(pl.hull)).padStart(3, '0')}`, lx, ly);
+    haloText(c, `HULL ${String(Math.ceil(pl.hull)).padStart(3, '0')}`, lx, ly);
     c.fillStyle = '#8fe3ff';
-    c.fillText(`SHD ${String(Math.ceil(pl.shield)).padStart(3, '0')}`, lx, ly + 13);
+    haloText(c, `SHD ${String(Math.ceil(pl.shield)).padStart(3, '0')}`, lx, ly + 13);
     c.textAlign = 'left';
     c.fillStyle = pl.lumen >= 100 && !flare ? SIG : '#ffd27a';
-    c.fillText(flare ? `FLARE ${pl.flareT.toFixed(1)}S` : pl.lumen >= 100 ? 'LUM RDY · F' : `LUM ${String(Math.floor(pl.lumen)).padStart(3, '0')}%`, rx, ly);
+    haloText(c, flare ? `FLARE ${pl.flareT.toFixed(1)}S` : pl.lumen >= 100 ? 'LUM RDY · F' : `LUM ${String(Math.floor(pl.lumen)).padStart(3, '0')}%`, rx, ly);
     c.fillStyle = '#9fd8ff';
-    c.fillText(`BST ${String(Math.round(pl.boostEnergy * 100)).padStart(3, '0')}%`, rx, ly + 13);
+    haloText(c, `BST ${String(Math.round(pl.boostEnergy * 100)).padStart(3, '0')}%`, rx, ly + 13);
 
     // --- roll / pitch horizon bars outside the arcs
     pl.forward(_v);
@@ -862,12 +871,12 @@ export class Hud {
       c.lineTo(cx + ox2 * ca - (y0 + 6) * sa, cy + ox2 * sa + (y0 + 6) * ca);
       c.stroke();
     }
-    c.font = '400 10px "JetBrains Mono"';
+    c.font = '700 12px "JetBrains Mono"';
     c.fillStyle = PAPER;
     c.textAlign = 'left';
-    c.fillText(`PIT ${pitch >= 0 ? '+' : '-'}${String(Math.abs(Math.round(pitch / deg))).padStart(2, '0')}°`, cx + R + 26, cy + off - 12);
+    haloText(c, `PIT ${pitch >= 0 ? '+' : '-'}${String(Math.abs(Math.round(pitch / deg))).padStart(2, '0')}°`, cx + R + 26, cy + off - 12);
     c.textAlign = 'right';
-    c.fillText(`ROL ${roll >= 0 ? '+' : '-'}${String(Math.abs(Math.round(roll / deg))).padStart(2, '0')}°`, cx - R - 26, cy + off - 12);
+    haloText(c, `ROL ${roll >= 0 ? '+' : '-'}${String(Math.abs(Math.round(roll / deg))).padStart(2, '0')}°`, cx - R - 26, cy + off - 12);
 
     // --- heading tape
     const hdg = ((Math.atan2(_v.x, -_v.z) / deg) % 360 + 360) % 360;
@@ -878,7 +887,7 @@ export class Hud {
     c.fillStyle = PAPER;
     c.lineWidth = 1;
     c.textAlign = 'center';
-    c.font = '400 9px "JetBrains Mono"';
+    c.font = '700 12px "JetBrains Mono"';
     for (let d = Math.ceil((hdg - span / 2) / 5) * 5; d <= hdg + span / 2; d += 5) {
       const x = cx + ((d - hdg) / span) * tapeW;
       const major = ((d % 30) + 30) % 30 === 0;
@@ -887,7 +896,7 @@ export class Hud {
       c.moveTo(x, tapeY);
       c.lineTo(x, tapeY + (major ? 8 : 4));
       c.stroke();
-      if (major) c.fillText(String(((d % 360) + 360) % 360).padStart(3, '0'), x, tapeY - 7);
+      if (major) haloText(c, String(((d % 360) + 360) % 360).padStart(3, '0'), x, tapeY - 7);
     }
     c.globalAlpha = 1;
     c.fillStyle = SIG;
@@ -897,9 +906,9 @@ export class Hud {
     c.lineTo(cx + 5, tapeY + 17);
     c.closePath();
     c.fill();
-    c.font = '700 11px "JetBrains Mono"';
+    c.font = '700 12px "JetBrains Mono"';
     c.fillStyle = PAPER;
-    c.fillText(`HDG ${String(Math.round(hdg) % 360).padStart(3, '0')}`, cx, tapeY + 29);
+    haloText(c, `HDG ${String(Math.round(hdg) % 360).padStart(3, '0')}`, cx, tapeY + 29);
 
     // --- flight-path marker (where the ship is actually going)
     const spd = pl.vel.length();
@@ -930,15 +939,15 @@ export class Hud {
       [ab('E', pl.stasisCd), pl.stasisCd <= 0],
       [ab('RMB', sw.cd), sw.cd <= 0],
     ];
-    c.font = '700 11px "JetBrains Mono"';
+    c.font = '700 12px "JetBrains Mono"';
     c.textAlign = 'left';
     const gap = 18;
     const widths = items.map(([txt]) => c.measureText(txt).width);
     let x = cx - (widths.reduce((a2, b2) => a2 + b2, 0) + gap * (items.length - 1)) / 2;
     const by = cy + R + 44;
     items.forEach(([txt, ready], i) => {
-      c.fillStyle = ready ? PAPER : 'rgba(235,232,225,0.35)';
-      c.fillText(txt, x, by);
+      c.fillStyle = ready ? PAPER : 'rgba(235,232,225,0.6)';
+      haloText(c, txt, x, by);
       if (ready && i > 1) {
         c.fillStyle = SIG;
         c.fillRect(x, by + 8, widths[i]!, 2);
@@ -955,14 +964,14 @@ export class Hud {
       c.fillStyle = SIG;
       c.fillRect(tx, ty - 9, 2, 40);
       c.fillStyle = PAPER;
-      c.font = '900 12px Archivo';
+      c.font = '900 13px Archivo';
       const stn = subtypeName(tgt.def.id, tgt.subtype);
-      c.fillText(tgt.def.name.toUpperCase() + (stn ? ' · ' + stn.toUpperCase() : ''), tx + 8, ty);
-      c.font = '400 10px "JetBrains Mono"';
-      c.fillText(`TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.rarity > 0 ? ' · ' + RARITY[tgt.rarity].name.toUpperCase() : ''}`, tx + 8, ty + 14);
+      haloText(c, tgt.def.name.toUpperCase() + (stn ? ' · ' + stn.toUpperCase() : ''), tx + 8, ty);
+      c.font = '700 12px "JetBrains Mono"';
+      haloText(c, `TGT-${String(tgt.id % 100).padStart(2, '0')} · ${String(dist).padStart(3, '0')}M${tgt.rarity > 0 ? ' · ' + RARITY[tgt.rarity].name.toUpperCase() : ''}`, tx + 8, ty + 14);
       if (tgt.rarity > 0) {
         c.fillStyle = RARITY[tgt.rarity].color;
-        c.fillText(rankLabel(tgt).toUpperCase(), tx + 8, ty + 40);
+        haloText(c, rankLabel(tgt).toUpperCase(), tx + 8, ty + 40);
         c.fillStyle = PAPER;
       }
       const hf = clamp(tgt.hp / tgt.maxHp, 0, 1);
@@ -972,10 +981,10 @@ export class Hud {
       c.fillRect(tx + 8, ty + 24, 90 * hf, 3);
     }
     if (critical) {
-      c.font = '900 13px Archivo';
+      c.font = '900 14px Archivo';
       c.textAlign = 'center';
       c.fillStyle = blink ? SIG : PAPER;
-      c.fillText('HULL CRITICAL', cx, cy - R - 82);
+      haloText(c, 'HULL CRITICAL', cx, cy - R - 82);
     }
     c.restore();
   }
