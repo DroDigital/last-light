@@ -5,6 +5,7 @@ import { Particles, Streaks, Bullets, Telegraphs, Shells } from './fx';
 import { Space } from './space';
 import { buildEnemyMesh, buildPlayerShip, type MeshKind } from './meshes';
 import { makeHullMaterial } from './materials';
+import { SHIP_GLOW, type ShipGlow } from './combat-look';
 import { engineTrailBrightness, engineTrailWidth, lanternGlow } from './combat-look';
 import { HARDPOINTS, haloPositions } from '../game/weapons';
 import { hexToRgb } from '../core/math';
@@ -240,6 +241,17 @@ export class View {
     this.tele.add(this.telegraphs.lines);
   }
 
+  /** Player ship light style: shader blend plus how loud the vector edges are. */
+  shipGlow: ShipGlow = 'shine';
+  setShipGlow(style: ShipGlow): void {
+    this.shipGlow = style;
+    const g = SHIP_GLOW[style] ?? SHIP_GLOW.shine;
+    this.shipMat.uniforms.uGlowStyle!.value = g.style;
+    (this.wing.mesh.material as THREE.ShaderMaterial).uniforms.uGlowStyle!.value = g.style;
+    this.shipEdges.setGains(0.22 * g.edges[0], 0.5 * g.edges[1], g.white);
+    this.wing.edges?.setGains(0.25 * g.edges[0], 0.55 * g.edges[1], g.white);
+  }
+
   private makeShipEdges(id: string): EdgeBatch {
     // detailed hulls: only the strong silhouette creases get vector lines, and
     // the dithered halo stays faint so the shaded plating reads underneath
@@ -290,6 +302,7 @@ export class View {
     this.world.remove(this.shipEdges.halo);
     this.tele.remove(this.shipEdges.core);
     this.shipEdges = this.makeShipEdges(id);
+    this.setShipGlow(this.shipGlow);
     const g = this.ghosts.mesh.geometry;
     const fx = g.getAttribute('aFx');
     const ng = buildPlayerShip(id);

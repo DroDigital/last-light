@@ -30,6 +30,8 @@ export interface Settings {
   scanlines: boolean;
   /** recorded soundtrack or the in-engine procedural score */
   music: 'recorded' | 'procedural';
+  /** how player ship lights blend with the hull (render/combat-look.ts SHIP_GLOW) */
+  shipGlow: 'classic' | 'soft' | 'shine' | 'ember';
 }
 
 export interface RunRecord {
@@ -108,6 +110,7 @@ export function defaultSettings(): Settings {
     cockpit: false,
     scanlines: true,
     music: 'recorded',
+    shipGlow: 'shine',
   };
 }
 

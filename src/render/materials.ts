@@ -13,6 +13,8 @@ export function makeHullMaterial(lights: LightRig, opts: { rim?: number; emissiv
       uEmissive: { value: opts.emissive ?? 3.0 },
       uTint: { value: new THREE.Color(1, 1, 1) },
       uFx: { value: new THREE.Vector4(0, 0, 0, 0) },
+      // player ship light style (see SHIP_GLOW_CHUNK); 0 = classic for everything else
+      uGlowStyle: { value: 0 },
     },
   });
 }

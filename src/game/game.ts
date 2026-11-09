@@ -1,3 +1,4 @@
+import { setPreviewGlow } from '../ui/shippreview';
 import * as THREE from 'three';
 import type { DropKind } from '../data/drops';
 import { GameLoop, SIM_DT } from '../core/loop';
@@ -287,6 +288,8 @@ export class Game {
     this.input.holdToggle.boost = s.boostToggle;
     document.documentElement.style.setProperty('--ui-scale', String(s.uiScale));
     this.pipe.setTones(s.colorblind);
+    this.view.setShipGlow(s.shipGlow);
+    setPreviewGlow(s.shipGlow);
     const pt = this.pipe.bulletUniforms.uPlayerTone.value;
     this.view.setPlayerTone(pt.x, pt.y, pt.z);
     this.audio.volumes = { ...s.volumes };

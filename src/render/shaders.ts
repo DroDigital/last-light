@@ -68,8 +68,53 @@ void main() {
 }
 `;
 
+/**
+ * Player ship light styles (Settings > Video > Ship lights). The lit parts of a
+ * hull (aEmit > 0: nozzles, running lights, stripes, canopy glints) either blow
+ * out to the accent colour on top of white plating (0, classic), or sit in the
+ * plating and let the light through:
+ *   1 soft:  dim inlays, a tinted glass base, brightest face-on;
+ *   2 shine: light leaking through fine slits in the plating, like a lamp behind a grille;
+ *   3 ember: a faint inner glow that breathes slowly.
+ * Shared by the in-flight hull shader and the class-screen turntable.
+ */
+export const SHIP_GLOW_CHUNK = /* glsl */ `
+// Albedo for lit parts: classic keeps the white emitter, the others recess it into dark glass/plating.
+vec3 glowAlbedo(float style, vec3 albedo, float emit) {
+  if (style < 0.5) return albedo;
+  return mix(albedo, vec3(0.16, 0.155, 0.19), clamp(emit * 1.4, 0.0, 1.0));
+}
+// Light added by the lit parts. ndv = facing the camera (1) to grazing (0).
+vec3 glowLight(float style, vec3 tint, float emit, float strength, float boost, float ndv, vec3 local, float time) {
+  if (emit <= 0.0) return vec3(0.0);
+  if (style < 0.5) return tint * emit * strength * (1.0 + boost);
+  float b = 1.0 + boost * 0.6;
+  float face = 0.45 + 0.55 * ndv;
+  if (style < 1.5) {
+    // soft: a smooth, dimmer inlay that fades toward the silhouette
+    return tint * emit * strength * 0.42 * face * b;
+  }
+  if (style < 2.5) {
+    // shine-through: fine slits across the part carry most of the light; a low glow fills between them
+    vec3 g = local * 9.0;
+    vec3 fw = fwidth(g) + 1e-4;
+    vec3 d = abs(fract(g) - 0.5);
+    vec3 slit3 = 1.0 - smoothstep(0.16 - fw, 0.16 + fw, d);
+    float slit = max(slit3.x, max(slit3.y, slit3.z));
+    // far away the slits are sub-pixel: average them instead of shimmering
+    float far = smoothstep(0.25, 0.6, max(fw.x, max(fw.y, fw.z)));
+    slit = mix(slit, 0.35, far);
+    return tint * emit * strength * (0.14 + 0.62 * slit) * face * b;
+  }
+  // ember: low, slow breathing; strongest straight on
+  float breath = 0.72 + 0.28 * sin(time * 1.6 + local.z * 1.3);
+  return tint * emit * strength * 0.3 * breath * pow(ndv, 1.4) * b;
+}
+`;
+
 export const HULL_FRAG = /* glsl */ `
 ${LIGHTING_CHUNK}
+${SHIP_GLOW_CHUNK}
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying vec3 vAlbedo;
@@ -79,6 +124,7 @@ varying vec3 vTint;
 varying vec3 vLocal;
 uniform float uRim;
 uniform float uEmissive;
+uniform float uGlowStyle;
 
 float hash13(vec3 p) {
   p = fract(p * 0.1031);
@@ -102,7 +148,7 @@ void main() {
   float ndl = dot(n, uStarDir);
   // Panel lines: an object-space plating grid, anti-aliased and faded out
   // when it would turn into shimmer at distance.
-  vec3 albedo = vAlbedo;
+  vec3 albedo = glowAlbedo(uGlowStyle, vAlbedo, vEmit);
   if (vEmit < 0.5) {
     vec3 g = vLocal * vec3(2.2, 2.2, 1.4);
     vec3 fw = fwidth(g) + 1e-4;
@@ -129,7 +175,7 @@ void main() {
   float back = clamp(0.35 + 0.65 * dot(-v, uStarDir), 0.0, 1.0);
   vec3 rim = uStarColor * fres * uRim * facing * (0.5 + back * 1.5);
   vec3 pl = pointLights(vWorld, n, 0.3) * (albedo * 2.0 + 0.035 + fres * 0.45);
-  vec3 emiss = vTint * vEmit * uEmissive * (1.0 + vFx.z);
+  vec3 emiss = glowLight(uGlowStyle, vTint, vEmit, uEmissive, vFx.z, max(dot(n, v), 0.0), vLocal, uTime);
   vec3 col = diffuse + rim + pl + emiss;
   // Aerial perspective: distance dissolves hulls into the nebula's haze, so
   // near things pop and colossal far things read as far
