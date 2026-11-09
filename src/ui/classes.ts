@@ -146,7 +146,7 @@ export function showClasses(g: Game, refresh = false): void {
   </div>`;
   if (refresh) g.ui.refresh('classes', html);
   else g.ui.show('classes', html);
-  mountShipPreview(g.ui.screenEl.querySelector<HTMLElement>('[data-ship-preview]'), viewing.id, viewing.accent);
+  mountShipPreview(g.ui.screenEl.querySelector<HTMLElement>('[data-ship-preview]'), viewing.id, viewing.accent, g.settings.reducedMotion);
 }
 
 export function registerClassActions(g: Game): void {

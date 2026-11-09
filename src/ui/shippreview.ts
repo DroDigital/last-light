@@ -148,11 +148,13 @@ function frame(now: number): void {
   }
   const t = (now - t0) / 1000;
   mat.uniforms.uTime!.value = t;
-  const yaw = Math.PI * 0.85 + t * 0.55;
+  // reduced motion: hold a still three-quarter view instead of spinning
+  const m = still ? 0 : t;
+  const yaw = still ? Math.PI * 1.15 : Math.PI * 0.85 + t * 0.55;
   for (const o of [mesh, edges]) {
     if (!o) continue;
-    o.rotation.set(Math.sin(t * 0.7) * 0.08, yaw, Math.sin(t * 0.9) * 0.12);
-    o.position.y = Math.sin(t * 1.3) * 0.08;
+    o.rotation.set(Math.sin(m * 0.7) * 0.08 + (still ? 0.08 : 0), yaw, Math.sin(m * 0.9) * 0.12);
+    o.position.y = Math.sin(m * 1.3) * 0.08;
   }
   renderer.render(scene, camera);
   raf = requestAnimationFrame(frame);
@@ -166,7 +168,10 @@ export function setPreviewGlow(style: ShipGlow): void {
 }
 let glowStyle = 2;
 
-export function mountShipPreview(el: HTMLElement | null, hull: string, accent: string): void {
+let still = false;
+
+export function mountShipPreview(el: HTMLElement | null, hull: string, accent: string, reducedMotion = false): void {
+  still = reducedMotion;
   if (!el || !init() || !renderer) return;
   setShip(hull, accent);
   mat.uniforms.uGlowStyle!.value = glowStyle;
