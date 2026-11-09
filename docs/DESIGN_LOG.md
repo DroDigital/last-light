@@ -201,6 +201,26 @@ The style brief evolved into a fusion of three explored directions. Each owns on
   - **Co-op and the off switch:** wingmen used Player 1's device settings (a weak mouse assist for a controller), and a slider at 0 still gave controllers 35% assist. Wingmen now always get controller assist, and 0 means off.
   - **Flicker and parts:** the lock had no hysteresis and could flicker between neighbours. It now holds within a wider cone unless a clearly better target appears. Locked boss parts now show their bracket.
 
+## Combat feel: linked hardpoints, streaks, parry, shields
+
+Early fights were one gun and one secondary against a few ships, and they dragged. This pass is about more things firing at once while keeping deaths where they were.
+
+- **Linked hardpoints** (`Build.linked`, `linkMuzzle`/`runLinked` in `src/game/weapons.ts`): drafting a primary or secondary no longer replaces the main gun. It mounts outboard and fires on the same trigger, with its own cooldown. Two hardpoints to start; **Auxiliary Hardpoint** (uncommon, 2 stacks) raises it to `MAX_LINKS = 4`. When full, the oldest linked gun is replaced. The main primary keeps the loadout sides and effects. Wingmen fire linked guns with their own cooldowns (`Player.wingCd` now keys by hardpoint). Weapon cards come up more often while a hardpoint is open (24%/36% vs 14%/28%).
+- **Opening armory:** every dive opens with a weapons-only draft (`newWeaponsOnly`, no systems). Endless waits for the pick before wave one (`after: 'wave'`).
+- **Kill streak** (`World.streak`): kills within 3 s chain, each worth +2% fire rate up to +40%. Tiers SURGE/BLAZE/SUPERNOVA/LAST LIGHT at 8/20/40/80. Any hit halves it. **Momentum Engine**: +60% cap, 4.5 s window. Separate from the existing 0.45 s CHAIN counter, which is about simultaneous kills.
+- **Guard and parry** (`GUARD` in `src/game/player.ts`): a new action (X / MMB / pad X), recorded in replays as bit 256. Holding it raises a bubble 1.4 m wider than the hull that leaks 30% of damage, slows you to 65% speed and stops your guns. It lasts up to 1.1 s and then locks out for 0.5 s. A hit inside the first 0.16 s is a perfect parry: no damage, a round is reflected as a homing shot at the lock target (max(40, 6× its damage)), a melee attacker takes a 60-damage counter, +6 Lumen, and the lockout is cleared so timed parries chain. The guard is edge-triggered: holding the key cannot keep the window open. Beams and explosions can be parried too (they go through `hurtPlayer`).
+- **Shields:** new flags `overshield` (cap 150%, excess bleeds 6/s), `reflectSkin`, `capBurst`, `shieldRam`, `chargedShield`, `secondWind`, `guardLattice`, `riposte`, plus the Siphon Weave trigger and the **Hardlight Doctrine** synergy (4 shield tags). Shield Capacitor and Fast Recharge values went up.
+- **Sustain drops:** a new **Shield Cell** drop (`barrier`), and Hull Patches now scale with max hull (12 + 8%). Odds roughly double for repair and are highest on heavies, supports and debris, so shooting rocks is a deliberate way to patch up.
+- **Rebalance** (`npm run balance -- 20 <skill>`, 20 full runs, the Lantern; bots never guard). Linked guns roughly halved kill time and the denser fights paid ~50% more draft drops, which snowballed. Spent it on density and pressure: budget 46+26/sector → 58+32, live threat 15 → 17, `maxPower` 2.4 → 3, boss HP ×1.3 → ×2, enemy fire rate ×1.5 → ×1.75, enemy damage 1.25 (+0.24/sector) → 1.45 (+0.30/sector), and draft-paying drops ×0.5 (`DRAFT_DROP_SCALE`).
+
+  | bot | wins before | wins after | combat fight | boss fight |
+  | --- | --- | --- | --- | --- |
+  | good | 6/20 | 6/20 | 49 s → 40 s | 34 s → 26 s |
+  | ok | 7/20 | 7/20 | 55 s → 38 s | 36 s → 27 s |
+  | poor | 1/20 | 0/20 | 52 s → 35 s | 38 s → 25 s |
+
+  Win rates match within bot noise while fights are about 30% shorter and denser. Players who parry will find it easier than the bots do; tune `GUARD.parryWindow` first if it proves too generous.
+
 ## Changes from the brief (and why)
 
 - **Recorded music instead of a procedural-only score**, at the project owner's request. The adaptive behaviour moved from stems to cue switching, resume-on-return, filtering and ducking.

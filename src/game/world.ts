@@ -7,7 +7,7 @@ import { clamp } from '../core/math';
 import { ENEMY_BY_ID } from '../data/enemies';
 import { SUBTYPES, pickSubtype } from '../data/subtypes';
 import type { Hazard } from './hazards';
-import { DROP_KINDS, dropChance, type DropKind } from '../data/drops';
+import { DROP_KINDS, barrierAmount, dropChance, repairAmount, type DropKind } from '../data/drops';
 import { AFFIX_BY_ID, AFFIX_INDEX, RARITY, rollAffixes, uniqueName, type AffixId, type Rarity } from '../data/affixes';
 import type { EnemyDef, Faction, StatusKind, TriggerDef, TriggerOn, WeaponParams } from './types';
 import { Build, WeaponInstance } from './build';
@@ -30,7 +30,7 @@ import {
   Telegraph,
   Well,
 } from './entities';
-import { MAX_PILOTS, Player, emptyControls, type Controls } from './player';
+import { GUARD, MAX_PILOTS, Player, emptyControls, type Controls } from './player';
 import { updateEnemyAI } from './ai';
 import { updateWeapons, updateWingWeapons, syncDrones, type RailFx } from './weapons';
 import type { BossController } from './bosses';
@@ -49,6 +49,8 @@ export interface WorldEvents {
     secondary: boolean;
     /** -1 port, +1 starboard, 0 center/system. */
     side: number;
+    /** fired from a linked hardpoint (quieter, so a full rack is not deafening) */
+    linked?: boolean;
   };
   hit: {
     x: number;
@@ -98,6 +100,14 @@ export interface WorldEvents {
   playerDeath: { cause: string };
   evolve: { name: string };
   beamTick: { secondary: boolean };
+  /** the guard went up or down */
+  guard: { up: boolean; x: number; y: number; z: number };
+  /** a perfect parry: `reflected` when a shot was sent back */
+  parry: { x: number; y: number; z: number; reflected: boolean };
+  /** the kill streak crossed a tier (tier 0 = it ended) */
+  streak: { count: number; tier: number; name: string };
+  /** a shield upgrade fired (Capacitor Burst, Second Wind, Hardlight Ram, Reflector Skin) */
+  shieldFx: { kind: 'burst' | 'secondwind' | 'ram' | 'reflect'; x: number; y: number; z: number };
   lumenFull: Record<string, never>;
 }
 
@@ -135,6 +145,9 @@ export interface RunStats {
   flareKills: number;
   maxFlareKills: number;
   maxChain: number;
+  /** longest kill streak and perfect parries this run */
+  maxStreak: number;
+  parries: number;
   eliteKills: number;
   bossKills: number;
   reactions: Set<string>;
@@ -193,6 +206,8 @@ export class World {
     flareKills: 0,
     maxFlareKills: 0,
     maxChain: 0,
+    maxStreak: 0,
+    parries: 0,
     eliteKills: 0,
     bossKills: 0,
     reactions: new Set(),
@@ -204,6 +219,10 @@ export class World {
   /** chain-kill tracker for escalating fireworks */
   chain = 0;
   chainT = 0;
+  /** kill streak: kills keep it alive, a hit halves it, quiet lets it lapse */
+  streak = 0;
+  streakT = 0;
+  streakTier = 0;
   moteCombo = 0;
   moteComboT = 0;
   private triggerDepth = 0;
@@ -567,8 +586,12 @@ export class World {
   collectDrop(i: number, by?: Player): void {
     const d = this.drops[i]!;
     const pl = by ?? this.player;
-    if (d.kind === 'repair') pl.hull = Math.min(pl.maxHull, pl.hull + 18);
+    if (d.kind === 'repair') pl.hull = Math.min(pl.maxHull, pl.hull + repairAmount(pl.maxHull));
     else if (d.kind === 'cell') pl.lumen = Math.min(100, pl.lumen + 35);
+    else if (d.kind === 'barrier') {
+      pl.shield = Math.max(pl.shield, Math.min(pl.shieldCap, pl.shield + barrierAmount(pl.maxShield)));
+      pl.shieldDelayT = 0;
+    }
     else this.bank[d.kind]++;
     this.events.emit('drop', { kind: d.kind, x: d.x, y: d.y, z: d.z, picked: true });
     this.drops.splice(i, 1);
@@ -635,6 +658,10 @@ export class World {
       this.chainT -= dt;
       if (this.chainT <= 0) this.chain = 0;
     }
+    if (this.streakT > 0) {
+      this.streakT -= dt;
+      if (this.streakT <= 0) this.endStreak();
+    }
     if (this.moteComboT > 0) {
       this.moteComboT -= dt;
       if (this.moteComboT <= 0) this.moteCombo = 0;
@@ -642,6 +669,10 @@ export class World {
     for (const [t, v] of this.triggerCd) if (v > 0) this.triggerCd.set(t, v - dt);
 
     updateWeapons(this, c, dt);
+    if (this.build.flags.has('shieldRam')) {
+      this.updateShieldRam();
+      for (const p of this.wingmen) this.withPlayer(p, () => this.updateShieldRam());
+    }
     for (const p of this.wingmen) if (p.alive) this.withPlayer(p, () => updateWingWeapons(this, wc(p), dt));
     this.rebuildHash();
     const boss = this.boss;
@@ -1026,6 +1057,7 @@ export class World {
       this.chain++;
       this.chainT = 0.45;
       this.stats.maxChain = Math.max(this.stats.maxChain, this.chain);
+      this.bumpStreak();
       if (this.player.flareT > 0) {
         this.stats.flareKills++;
         if (this.build.flags.has('flareChain'))
@@ -1315,7 +1347,7 @@ export class World {
           }
           break;
         case 'shield':
-          pl.shield = Math.min(pl.maxShield, pl.shield + t.p);
+          pl.shield = Math.max(pl.shield, Math.min(pl.shieldCap, pl.shield + t.p));
           break;
         case 'heal':
           pl.hull = Math.min(pl.maxHull, pl.hull + t.p);
@@ -1439,7 +1471,16 @@ export class World {
 
   hurtPlayer(amount: number, cause: string, attacker?: Enemy, from?: { x: number; y: number; z: number }): void {
     const pl = this.player;
-    if (!pl.alive || pl.iframeT > 0 || pl.hurtT > 0) return;
+    if (!pl.alive || pl.iframeT > 0) return;
+    if (pl.guarding) {
+      if (pl.parryOpen()) {
+        this.onParry(false, attacker);
+        return;
+      }
+      amount *= this.build.flags.has('guardLattice') ? 0.1 : GUARD.blockLeak;
+      this.events.emit('block', { x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
+    }
+    if (pl.hurtT > 0) return;
     const bossK = this.boss && !this.boss.dead ? BAL.bossDamage : 1;
     let dmg = amount * BAL.enemyDamage * bossK * this.sectorDmgScale * this.build.ship.damageTaken * (this.heat >= 8 ? 1.25 : 1);
     if (this.build.flags.has('vgIronWill')) dmg *= 1 - 0.3 * pl.missingHull();
@@ -1454,6 +1495,7 @@ export class World {
       if (pl.shield <= 0.01) {
         this.events.emit('shieldBreak', {});
         this.fireTriggers('shieldBreak', pl.pos.x, pl.pos.y, pl.pos.z, 0);
+        if (this.build.flags.has('capBurst') && pl.capBurstCd <= 0) this.capacitorBurst();
       }
     }
     if (dmg > 0) {
@@ -1461,7 +1503,15 @@ export class World {
       pl.hullDamageTaken += dmg;
       hullHit = true;
       this.fireTriggers('hurt', pl.pos.x, pl.pos.y, pl.pos.z, dmg);
+      // Second Wind: dropping low with the shield gone refills it, once every 30 s
+      if (this.build.flags.has('secondWind') && pl.emergencyCd <= 0 && pl.hull > 0 && pl.hull < pl.maxHull * 0.35) {
+        pl.emergencyCd = 30;
+        pl.shield = pl.maxShield;
+        pl.shieldDelayT = 0;
+        this.events.emit('shieldFx', { kind: 'secondwind', x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
+      }
     }
+    if (amount > 0) this.breakStreak();
     this.stats.damageTaken += amount;
     if (attacker?.affixMask && attacker.has('vampiric')) attacker.hp = Math.min(attacker.maxHp, attacker.hp + amount * 2);
     if (attacker?.affixMask && attacker.has('leeching')) pl.lumen = Math.max(0, pl.lumen - 12);
@@ -1476,6 +1526,129 @@ export class World {
       this.events.emit('explosion', { x: pl.pos.x, y: pl.pos.y, z: pl.pos.z, radius: 14, r: 1, g: 0.7, b: 0.35, enemy: false });
     }
     if (pl.hull <= 0) this.killPlayer(cause);
+  }
+
+  // ------------------------------------------------------------ guard, parry, streak
+
+  /**
+   * A perfect parry. Sends the shot back (when there was one), refunds the
+   * guard so parries can chain, and pays a little Lumen. A melee attacker that
+   * is parried takes a heavy counter-blow.
+   */
+  onParry(reflected: boolean, attacker?: Enemy): void {
+    const pl = this.player;
+    this.stats.parries++;
+    pl.guardCd = 0;
+    pl.parryFlash = 0.25;
+    pl.hurtT = Math.max(pl.hurtT, 0.08);
+    this.addLumen(6);
+    if (this.build.flags.has('guardLattice')) pl.shield = Math.max(pl.shield, Math.min(pl.shieldCap, pl.shield + 15));
+    if (attacker && attacker.alive) {
+      _a.copy(attacker.pos).sub(pl.pos).normalize();
+      this.damageEnemy(attacker, 60 * this.build.ship.globalDamage, this.triggerSrc, attacker.pos.x, attacker.pos.y, attacker.pos.z, -_a.x, -_a.y, -_a.z, { knock: 40 });
+    }
+    this.events.emit('parry', { x: pl.pos.x, y: pl.pos.y, z: pl.pos.z, reflected });
+  }
+
+  /**
+   * Turn enemy shot i around: it becomes a homing player round aimed at the
+   * locked target (or the nearest enemy), hitting much harder than it came in.
+   */
+  reflectShot(i: number, power = 1): void {
+    const P = this.eproj;
+    const pl = this.player;
+    const x = P.x[i]!;
+    const y = P.y[i]!;
+    const z = P.z[i]!;
+    let tgt: Enemy | null = null;
+    if (pl.aimTarget >= 0) for (const e of this.enemies) if (e.id === pl.aimTarget && e.alive) tgt = e;
+    tgt ??= this.nearestEnemy(x, y, z, 220);
+    if (tgt) _a.copy(tgt.pos).sub(_brk.set(x, y, z)).normalize();
+    else _a.set(-P.vx[i]!, -P.vy[i]!, -P.vz[i]!).normalize();
+    const riposte = this.build.flags.has('riposte');
+    const dmg = Math.max(40, P.dmg[i]! * 6) * power * (riposte ? 1.5 : 1) * this.build.ship.globalDamage;
+    const n = riposte ? 3 : 1;
+    pl.right(_brk);
+    for (let k = 0; k < n; k++) {
+      const off = (k - (n - 1) / 2) * 0.12;
+      const vx = (_a.x + _brk.x * off) * 230;
+      const vy = (_a.y + _brk.y * off) * 230;
+      const vz = (_a.z + _brk.z * off) * 230;
+      const j = this.proj.spawn(x, y, z, vx, vy, vz, 2, dmg, 0.7, 0, 0, this.triggerSrc);
+      if (j < 0) break;
+      this.proj.homing[j] = 6;
+      this.proj.explode[j] = 5;
+      this.proj.pierce[j] = 1;
+    }
+  }
+
+  /** Capacitor Burst: a breaking shield blasts enemies and clears nearby fire. */
+  private capacitorBurst(): void {
+    const pl = this.player;
+    pl.capBurstCd = 8;
+    const r = 22;
+    this.explode(pl.pos.x, pl.pos.y, pl.pos.z, r, 45 * this.build.ship.globalDamage, this.triggerSrc, { color: [0.5, 0.95, 1], knock: 50 });
+    const ep = this.eproj;
+    for (let i = ep.n - 1; i >= 0; i--) {
+      const dx = ep.x[i]! - pl.pos.x;
+      const dy = ep.y[i]! - pl.pos.y;
+      const dz = ep.z[i]! - pl.pos.z;
+      if (dx * dx + dy * dy + dz * dz < r * r) ep.kill(i);
+    }
+    this.events.emit('shieldFx', { kind: 'burst', x: pl.pos.x, y: pl.pos.y, z: pl.pos.z });
+  }
+
+  /** Hardlight Ram: boosting with shield above a quarter rams anything you touch. */
+  private updateShieldRam(): void {
+    const pl = this.player;
+    if (!pl.alive || !pl.boosting || pl.shield < pl.maxShield * 0.25) return;
+    this.forEnemiesNear(pl.pos.x, pl.pos.y, pl.pos.z, pl.radius + 3.5, (e) => {
+      if (e.hitCdHalo > 0 || e.def.role === 'inert' && e.radius > 6) return;
+      e.hitCdHalo = 0.35;
+      _a.copy(e.pos).sub(pl.pos).normalize();
+      this.damageEnemy(e, 45 * this.build.ship.globalDamage, this.triggerSrc, e.pos.x, e.pos.y, e.pos.z, -_a.x, -_a.y, -_a.z, { knock: 30 });
+      pl.shield = Math.max(0, pl.shield - 4);
+      pl.iframeT = Math.max(pl.iframeT, 0.12);
+      this.events.emit('shieldFx', { kind: 'ram', x: e.pos.x, y: e.pos.y, z: e.pos.z });
+    });
+  }
+
+  /** Streak tiers: [kills, name]. */
+  static readonly STREAK_TIERS: readonly (readonly [number, string])[] = [[8, 'SURGE'], [20, 'BLAZE'], [40, 'SUPERNOVA'], [80, 'LAST LIGHT']];
+
+  private bumpStreak(): void {
+    const momentum = this.build.flags.has('momentum');
+    this.streak++;
+    this.streakT = momentum ? 4.5 : 3;
+    const tiers = World.STREAK_TIERS;
+    if (this.streakTier < tiers.length && this.streak >= tiers[this.streakTier]![0]) {
+      this.streakTier++;
+      this.events.emit('streak', { count: this.streak, tier: this.streakTier, name: tiers[this.streakTier - 1]![1] });
+    }
+    this.stats.maxStreak = Math.max(this.stats.maxStreak, this.streak);
+  }
+
+  /** Taking a hit halves the streak (and drops its tier to match). */
+  private breakStreak(): void {
+    if (this.streak <= 0) return;
+    this.streak = Math.floor(this.streak / 2);
+    if (this.streak === 0) return this.endStreak();
+    let tier = 0;
+    for (const [n] of World.STREAK_TIERS) if (this.streak >= n) tier++;
+    this.streakTier = tier;
+  }
+
+  private endStreak(): void {
+    if (this.streak >= World.STREAK_TIERS[0]![0]) this.events.emit('streak', { count: this.streak, tier: 0, name: '' });
+    this.streak = 0;
+    this.streakT = 0;
+    this.streakTier = 0;
+  }
+
+  /** Fire-rate multiplier from the kill streak: +2% per kill, capped at +40% (+60% with Momentum Engine). */
+  streakRate(): number {
+    const cap = this.build.flags.has('momentum') ? 0.6 : 0.4;
+    return 1 + Math.min(cap, this.streak * 0.02);
   }
 
   /** Beams hit at most once per BAL.beamCooldown, so a sweep is a threat, not a one-shot. */
@@ -1770,11 +1943,29 @@ export class World {
       for (let pi = 0; pi < np; pi++) {
         const tp = np === 1 ? pl : this._players[pi]!;
         if (!tp.alive) continue;
-        const t = segSphere(x0, y0, z0, x1, y1, z1, tp.pos.x, tp.pos.y, tp.pos.z, pr + sz * 0.6);
+        const t = segSphere(x0, y0, z0, x1, y1, z1, tp.pos.x, tp.pos.y, tp.pos.z, pr + sz * 0.6 + (tp.guarding ? 1.4 : 0));
         if (t >= 0) {
           if (tp.iframeT > 0) {
             // dodged through: wraith crit buff
             if (this.build.flags.has('wraith')) tp.critBuff = true;
+            consumed = true;
+            break;
+          }
+          // perfect parry: the round goes back where it came from, harder
+          if (tp.parryOpen()) {
+            this.withPlayer(tp, () => {
+              this.reflectShot(i);
+              this.onParry(true);
+            });
+            P.kill(i);
+            consumed = true;
+            break;
+          }
+          // Reflector Skin: a charged shield glances some rounds straight back
+          if (!tp.guarding && this.build.flags.has('reflectSkin') && tp.shield > tp.maxShield * 0.25 && this.rng.next() < 0.3) {
+            this.withPlayer(tp, () => this.reflectShot(i, 0.6));
+            this.events.emit('shieldFx', { kind: 'reflect', x: x1, y: y1, z: z1 });
+            P.kill(i);
             consumed = true;
             break;
           }

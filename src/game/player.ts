@@ -15,13 +15,29 @@ export interface Controls {
   ability1: boolean;
   ability2: boolean;
   flare: boolean;
+  /** held: raise the guard (a tap at the right moment parries) */
+  guard: boolean;
   autoLevel: boolean;
 }
 
 export const emptyControls = (): Controls => ({
   mx: 0, my: 0, mz: 0, yaw: 0, pitch: 0, fire1: false, fire2: false, boost: false, dodge: false,
-  ability1: false, ability2: false, flare: false, autoLevel: true,
+  ability1: false, ability2: false, flare: false, guard: false, autoLevel: true,
 });
+
+/** Guard tuning. A shot that lands within PARRY_WINDOW of raising the guard is reflected. */
+export const GUARD = {
+  /** seconds after raising the guard that count as a perfect parry */
+  parryWindow: 0.16,
+  /** longest the guard can stay up */
+  maxHold: 1.1,
+  /** lockout after the guard drops (a perfect parry clears it) */
+  cooldown: 0.5,
+  /** damage a plain (late) block lets through */
+  blockLeak: 0.3,
+  /** movement speed while guarding */
+  moveMul: 0.65,
+};
 
 const _f = new Vector3();
 const _r = new Vector3();
@@ -47,7 +63,7 @@ export class Player {
   /** co-op seat: 0 = P1, 1..3 = P2..P4 */
   slot = 0;
   /** a wingman's own cooldowns on the shared primary/secondary */
-  wingCd = { primary: 0, secondary: 0 };
+  wingCd: Record<string, number> = { primary: 0, secondary: 0 };
   /** seconds a partner has hovered beside this pilot while it is down */
   reviveT = 0;
   pos = new Vector3();
@@ -96,6 +112,25 @@ export class Player {
   boostTrig = 0;
   firingT = 0; // time since last primary shot
   radius = 1.1;
+  /** seconds since the guard went up; -1 while it is down */
+  guardT = -1;
+  /** lockout before the guard can be raised again */
+  guardCd = 0;
+  private guardHeld = false;
+  /** visual flash after a perfect parry */
+  parryFlash = 0;
+  /** Second Wind (emergency shield) and Capacitor Burst cooldowns */
+  emergencyCd = 0;
+  capBurstCd = 0;
+
+  get guarding(): boolean {
+    return this.guardT >= 0;
+  }
+
+  /** Highest the shield can go: Overcharge Cells let pickups and kills push it past max. */
+  get shieldCap(): number {
+    return this.maxShield * (this.world.build.flags.has('overshield') ? 1.5 : 1);
+  }
 
   reset(w: World): void {
     const s = w.build.ship;
@@ -110,6 +145,9 @@ export class Player {
     this.alive = true;
     this.lumen = 0;
     this.flareT = 0;
+    this.guardT = -1;
+    this.guardCd = 0;
+    this.parryFlash = 0;
   }
 
   get maxHull(): number {
@@ -159,7 +197,8 @@ export class Player {
     this.forward(_f);
     this.right(_r);
     this.up(_u);
-    const maxSpeed = 46 * s.speed * (this.slowT > 0 ? 0.6 : 1);
+    this.updateGuard(c, dt);
+    const maxSpeed = 46 * s.speed * (this.slowT > 0 ? 0.6 : 1) * (this.guardT >= 0 ? GUARD.moveMul : 1);
     const boostCap = s.boost;
     const wantBoost = c.boost && this.boostEnergy > 0.02;
     this.boosting = wantBoost;
@@ -238,8 +277,12 @@ export class Player {
       this.hull = Math.min(this.maxHull, this.hull + s.regen * dt);
       if (this.hull <= 0) w.killPlayer('Blood Light');
     }
-    if (this.shield > this.maxShield) this.shield = this.maxShield;
+    // overcharge above max bleeds away; nothing else may exceed the cap
+    if (this.shield > this.maxShield) this.shield = Math.max(this.maxShield, Math.min(this.shieldCap, this.shield - 6 * dt));
     if (this.hull > this.maxHull) this.hull = this.maxHull;
+    if (this.emergencyCd > 0) this.emergencyCd -= dt;
+    if (this.capBurstCd > 0) this.capBurstCd -= dt;
+    if (this.parryFlash > 0) this.parryFlash -= dt;
 
     // abilities
     if (this.shockCd > 0) this.shockCd -= dt;
@@ -288,6 +331,37 @@ export class Player {
     } else this.lowHpFired = false;
   }
 
+  /**
+   * Guard: pressing raises it (edge-triggered, so holding the key never
+   * re-arms the parry window). It drops on release or after GUARD.maxHold,
+   * then locks out for GUARD.cooldown. Dodging cancels it.
+   */
+  private updateGuard(c: Controls, dt: number): void {
+    const pressed = c.guard && !this.guardHeld;
+    this.guardHeld = c.guard;
+    if (this.guardCd > 0) this.guardCd -= dt;
+    if (this.guardT >= 0) {
+      this.guardT += dt;
+      if (!c.guard || this.guardT > GUARD.maxHold || this.dodgeT > 0) this.dropGuard();
+    } else if (pressed && this.guardCd <= 0 && this.dodgeT <= 0) {
+      this.guardT = 0;
+      this.world.events.emit('guard', { up: true, x: this.pos.x, y: this.pos.y, z: this.pos.z });
+    }
+  }
+
+  dropGuard(): void {
+    if (this.guardT < 0) return;
+    this.guardT = -1;
+    this.guardCd = GUARD.cooldown;
+    this.world.events.emit('guard', { up: false, x: this.pos.x, y: this.pos.y, z: this.pos.z });
+  }
+
+  /** True while a hit landing now would be a perfect parry. */
+  parryOpen(): boolean {
+    const win = GUARD.parryWindow * (this.world.build.flags.has('riposte') ? 1.5 : 1);
+    return this.guardT >= 0 && this.guardT <= win;
+  }
+
   /** Damage multiplier from player buffs. */
   damageMul(): number {
     const w = this.world;
@@ -295,6 +369,7 @@ export class Player {
     if (this.flareT > 0) m *= 1.5;
     if (this.buffT > 0) m *= 1.3;
     if (w.build.flags.has('glassStar') && this.shield >= this.maxShield - 0.5 && this.maxShield > 0) m *= 2;
+    if (w.build.flags.has('chargedShield') && this.maxShield > 0 && this.shield >= this.maxShield * 0.5) m *= 1.15;
     if (this.lowHpFired) for (const t of w.build.triggers) if (t.on === 'lowHp' && t.do === 'buff') m *= 1 + t.p;
     if (w.build.flags.has('emberHull')) m *= 1 + this.heat * 0.6;
     if (this.slipT > 0 && w.build.flags.has('stSlipstream')) m *= 1.3;

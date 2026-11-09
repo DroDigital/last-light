@@ -23,9 +23,9 @@ const KINDS: MeshKind[] = [
 /** world props: beacons, map nodes, hearth lanterns, well singularities */
 const PROP_KINDS: MeshKind[] = [
   'beacon', 'beaconCrown', 'wellCore', 'wellDisc', 'navCombat', 'navElite', 'navBoss', 'navShop', 'navWreck', 'navRest', 'navForge', 'navRift', 'navStart', 'pylon',
-  'dropShard', 'dropPrism', 'dropCache', 'dropRepair', 'dropCell',
+  'dropShard', 'dropPrism', 'dropCache', 'dropRepair', 'dropCell', 'dropBarrier',
 ];
-const DROP_MESH: Record<DropKind, MeshKind> = { shard: 'dropShard', prism: 'dropPrism', cache: 'dropCache', repair: 'dropRepair', cell: 'dropCell' };
+const DROP_MESH: Record<DropKind, MeshKind> = { shard: 'dropShard', prism: 'dropPrism', cache: 'dropCache', repair: 'dropRepair', cell: 'dropCell', barrier: 'dropBarrier' };
 const DROP_RGB = Object.fromEntries(Object.entries(DROP_INFO).map(([k, v]) => [k, hexToRgb(v.color)])) as Record<DropKind, [number, number, number]>;
 const PROP_CAP = 48;
 
@@ -601,6 +601,33 @@ export class View {
           _w.set(Math.cos(a1) * rad, 0, Math.sin(a1) * rad).applyQuaternion(_q).add(this.ship.position);
           const k = sf * 0.12;
           this.streaks.push(_v.x, _v.y, _v.z, _w.x, _w.y, _w.z, 0.3 * k, 0.9 * k, 1 * k, 0.05);
+        }
+      }
+      // guard bubble: three bright great circles while the guard is up; hot white in the parry window
+      if (pl.guarding && !this.cockpit) {
+        const open = pl.parryOpen() || pl.parryFlash > 0;
+        const rad = 2.6 + pl.radius;
+        const k = open ? 0.9 : 0.35;
+        const n = 24;
+        for (let ring = 0; ring < 3; ring++) {
+          for (let i = 0; i < n; i++) {
+            const a0 = (i / n) * Math.PI * 2 + time * 1.5;
+            const a1 = ((i + 0.8) / n) * Math.PI * 2 + time * 1.5;
+            const c0 = Math.cos(a0) * rad, s0 = Math.sin(a0) * rad, c1 = Math.cos(a1) * rad, s1 = Math.sin(a1) * rad;
+            if (ring === 0) {
+              _v.set(c0, 0, s0);
+              _w.set(c1, 0, s1);
+            } else if (ring === 1) {
+              _v.set(c0, s0, 0);
+              _w.set(c1, s1, 0);
+            } else {
+              _v.set(0, c0, s0);
+              _w.set(0, c1, s1);
+            }
+            _v.applyQuaternion(_q).add(this.ship.position);
+            _w.applyQuaternion(_q).add(this.ship.position);
+            this.streaks.push(_v.x, _v.y, _v.z, _w.x, _w.y, _w.z, (open ? 1 : 0.4) * k, 0.95 * k, 1 * k, open ? 0.09 : 0.06);
+          }
         }
       }
       // magnet aura when upgraded

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { HULLS } from '../src/data/world';
 import { WEAPONS } from '../src/data/weapons';
-import { Build } from '../src/game/build';
+import { Build, WeaponInstance } from '../src/game/build';
 import { EFFECTS, generateLoot } from '../src/game/loot';
 
 const makeBuild = () => new Build(HULLS[0]!, { bonusHull: 0, bonusShield: 0, bonusLight: 0, unlockedWeapons: new Set(WEAPONS.map(w => w.id)), tier2: true, heat: 0 });
@@ -35,7 +35,9 @@ describe('component loot', () => {
   });
   it('gives an alternate combat bonus when a trait cannot work with the weapon behavior', () => {
     const b = makeBuild();
-    b.addWeapon(WEAPONS.find(w => w.id === 'lance')!);
+    // a beam main gun (new guns mount on linked hardpoints, so set the primary directly)
+    b.primary = new WeaponInstance(WEAPONS.find(w => w.id === 'lance')!);
+    b.recompute();
     const item = generateLoot(new Rng(14), 'legendary', 'port');
     item.mods = [];
     item.trait = { name: 'Ricochet', desc: 'Ricochets, or critical chance for beams.', mods: [{ s: 'ricochet', add: 2 }], behaviors: ['bullet'], fallbackMods: [{ s: 'crit', add: 0.08 }] };

@@ -6,7 +6,7 @@ import { HAZARD_INFO } from '../game/hazards';
 import { NODE_INFO, ROOM_TIER, isThreatRoom } from '../game/run';
 import type { Game, State } from '../game/game';
 import { World } from '../game/world';
-import { PILOT_HEX } from '../game/player';
+import { GUARD, PILOT_HEX } from '../game/player';
 import { PALETTES } from '../data/palettes';
 import { fmtInt, clamp } from '../core/math';
 import { esc } from './ui';
@@ -88,7 +88,7 @@ export class Hud {
     this.el.innerHTML = `${scan}<div class="brackets"><i></i><i></i><i></i><i></i></div>
       <div class="tl"><div class="display" data-r="sector" style="font-size:var(--s3)"></div><span class="sigbar" style="width:48px"></span><div class="readout" data-r="enc"></div><div class="readout" data-r="coords" style="margin-top:4px;opacity:.6"></div></div>
       <div class="tc"><div data-r="boss" class="bossbar" style="display:none"><div class="name" data-r="bossname"></div><div class="bar"><b data-r="bossghost"></b><i data-r="bosshp"></i></div><div class="dim" data-r="bossphase"></div></div></div>
-      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="bank" data-r="bank"></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
+      <div class="tr"><div class="lightcount" data-r="light">0</div><div class="readout">LIGHT · KILLS <span data-r="kills">000</span></div><div class="bank" data-r="bank"></div><div class="streak" data-r="streak"><span data-r="streakt"></span><i data-r="streakbar"></i></div><div class="weapons" data-r="weapons" style="margin-top:10px"></div></div>
       <div class="bl">
         <div class="label"><span>Hull</span><b data-r="hullt"></b></div><div class="bar hull"><b data-r="hullghost"></b><i data-r="hull"></i></div>
         <div class="label"><span>Shield</span><b data-r="shieldt"></b></div><div class="bar shield"><i data-r="shield"></i></div>
@@ -100,6 +100,7 @@ export class Hud {
           <div class="ab" data-r="abq"><span class="k" data-r="kq">Q</span><div class="cd" data-r="cdq"></div><span class="n">SHOCK</span></div>
           <div class="ab" data-r="abe"><span class="k" data-r="ke">E</span><div class="cd" data-r="cde"></div><span class="n">STASIS</span></div>
           <div class="ab" data-r="abs"><span class="k" data-r="ks">RMB</span><div class="cd" data-r="cds"></div><span class="n">2ND</span></div>
+          <div class="ab guard" data-r="abg"><span class="k" data-r="kg">X</span><div class="cd" data-r="cdg"></div><span class="n">GUARD</span></div>
         </div></div>
       <div class="toasts" data-r="toasts"></div>
       <div data-r="hint"></div>
@@ -202,6 +203,20 @@ export class Hud {
     keyCap(r.kq!, 'ability1');
     keyCap(r.ke!, 'ability2');
     keyCap(r.ks!, 'fire2');
+    keyCap(r.kg!, 'guard');
+    r.cdg!.style.height = `${Math.max(0, pl.guardCd / GUARD.cooldown) * 100}%`;
+    r.abg!.classList.toggle('ready', pl.guardCd <= 0 && !pl.guarding);
+    r.abg!.classList.toggle('active', pl.guarding);
+    r.abg!.classList.toggle('parried', pl.parryFlash > 0);
+    r.abg!.title = 'Guard: hold to block 70% of damage. Raise it just as a hit lands to parry and reflect it.';
+    // kill streak: count, tier name, fire-rate bonus and the time left to keep it alive
+    if (w.streak >= 3) {
+      const tier = w.streakTier > 0 ? World.STREAK_TIERS[w.streakTier - 1]![1] : 'STREAK';
+      r.streak!.classList.add('on');
+      r.streak!.dataset.tier = String(w.streakTier);
+      r.streakt!.textContent = `${tier} ×${w.streak} · +${Math.round((w.streakRate() - 1) * 100)}% RATE`;
+      r.streakbar!.style.width = `${Math.max(0, Math.min(1, w.streakT / (w.build.flags.has('momentum') ? 4.5 : 3))) * 100}%`;
+    } else r.streak!.classList.remove('on');
     r.abdodge!.classList.toggle('ready', pl.dodgeCharges > 0);
     const qcd = 9 * s.abilityCd;
     const ecd = 14 * s.abilityCd;
@@ -217,7 +232,12 @@ export class Hud {
     r.abs!.classList.toggle('ready', sw.cd <= 0);
     this.el.classList.toggle('critical', hf < 0.3);
     if (this.t % 0.25 < 0.02 || !r.weapons!.innerHTML) {
-      r.weapons!.innerHTML = w.build.weapons.map((x, i) => `${i === 0 ? esc(hudBindingLabel(g.input.bindings, 'fire1', g.input.lastDevice)) : i === 1 ? esc(hudBindingLabel(g.input.bindings, 'fire2', g.input.lastDevice)) : 'SYS'} <b>${esc(x.name)}</b> ${'▮'.repeat(x.level)}${x.evolved ? ' ❂' : ''}`).join('<br>');
+      const b = w.build;
+      const key = (a: 'fire1' | 'fire2') => esc(hudBindingLabel(g.input.bindings, a, g.input.lastDevice));
+      const label = (x: (typeof b.weapons)[number]) =>
+        x === b.primary ? key('fire1') : x === b.secondary ? key('fire2') : b.linked.includes(x) ? `+${key(x.def.slot === 'secondary' ? 'fire2' : 'fire1')}` : 'SYS';
+      const open = b.linkSlots - b.linked.length;
+      r.weapons!.innerHTML = b.weapons.map((x) => `${label(x)} <b>${esc(x.name)}</b> ${'▮'.repeat(x.level)}${x.evolved ? ' ❂' : ''}`).join('<br>') + (open > 0 ? `<br><span class="faint">${open} open hardpoint${open > 1 ? 's' : ''}</span>` : '');
       const run = g.run;
       if (run) {
         r.sector!.textContent = run.endless ? 'SECTOR ∞ — BEYOND' : `SECTOR ${String(run.sector + 1).padStart(2, '0')} — ${SECTORS[run.sector]!.name.replace(/^[IVX]+ · /, '')}`;

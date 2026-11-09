@@ -128,6 +128,9 @@ function playRun(seed: number): { reached: string; logs: EncLog[]; won: boolean 
   const hull = HULLS.find((h) => h.id === hullId)!;
   const b = new Build(hull, meta());
   if (hull.classId) b.setSkills(skillLoadout(hull.classId, CLASS_SKILLS === 'max' ? maxTree(hull.classId) : []));
+  // the opening armory: a free gun for a linked hardpoint, picked at random
+  const armory = b.draft(rng.fork('armory'), { newWeaponsOnly: true });
+  if (armory.length) b.apply(armory[rng.int(0, armory.length - 1)]!);
   const w = new World('BAL' + seed, b);
   w.refreshParams();
   if (process.env.DROPLOG) {

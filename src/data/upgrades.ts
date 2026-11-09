@@ -105,8 +105,8 @@ ELEMENT_TIERS.push({
 
 const SHIP: TierSpec[] = [
   { id: 'hullplate', name: 'Reinforced Hull', tags: ['hull'], values: [20, 30, 45], desc: (v) => `+${v} max hull. Visible armor plating.`, mods: (v) => [{ s: 'hull', add: v }], visual: 'ship' },
-  { id: 'capacitor', name: 'Shield Capacitor', tags: ['shield'], values: [15, 25, 40], desc: (v) => `+${v} max shield. Your shield bubble thickens.`, mods: (v) => [{ s: 'shield', add: v }], visual: 'aura' },
-  { id: 'recharge', name: 'Fast Recharge', tags: ['shield'], values: [0.3, 0.5], desc: (v) => `+${pct(v)} shield regen, shorter recharge delay.`, mods: (v) => [{ s: 'shieldRegen', mul: 1 + v }, { s: 'shieldDelay', mul: 1 - v / 2 }], visual: 'aura' },
+  { id: 'capacitor', name: 'Shield Capacitor', tags: ['shield'], values: [20, 35, 55], desc: (v) => `+${v} max shield. Your shield bubble thickens.`, mods: (v) => [{ s: 'shield', add: v }], visual: 'aura' },
+  { id: 'recharge', name: 'Fast Recharge', tags: ['shield'], values: [0.35, 0.6], desc: (v) => `+${pct(v)} shield regen, shorter recharge delay.`, mods: (v) => [{ s: 'shieldRegen', mul: 1 + v }, { s: 'shieldDelay', mul: 1 - v / 2 }], visual: 'aura' },
   { id: 'ablative', name: 'Ablative Plating', tags: ['hull'], values: [2, 4], desc: (v) => `Reduce every hit by ${v}.`, mods: (v) => [{ s: 'armor', add: v }], visual: 'ship' },
   { id: 'nanite', name: 'Nanite Mesh', tags: ['hull'], rarityStart: 1, values: [0.2, 0.4], desc: (v) => `Regenerate ${v} hull per second.`, mods: (v) => [{ s: 'regen', add: v }], visual: 'ship' },
   { id: 'thrusters', name: 'Ion Thrusters', tags: ['speed'], values: [0.08, 0.12, 0.18], desc: (v) => `+${pct(v)} speed. Longer engine plume.`, mods: (v) => [{ s: 'speed', mul: 1 + v }], visual: 'trail' },
@@ -229,6 +229,22 @@ const EXPANSION: TierSpec[] = [
   { id: 'scavenger', name: 'Scavenger Protocols', tags: ['hull'], values: [0.15, 0.3], desc: (v) => `Hull regenerates ${v} per second.`, mods: (v) => [{ s: 'regen', add: v }], visual: 'ship' },
 ];
 
+/** Loadout, momentum and parry upgrades: more guns, longer streaks, sharper ripostes. */
+const ARSENAL: UpgradeDef[] = [
+  { id: 'aux_hardpoint', name: 'Auxiliary Hardpoint', rarity: 'uncommon', tags: [], desc: '+1 linked hardpoint: one more gun fires with your trigger. New primaries and secondaries mount here.', visual: 'ship', maxStacks: 2 },
+  { id: 'momentum', name: 'Momentum Engine', rarity: 'uncommon', tags: ['rapid', 'on-kill'], desc: 'Kill streaks last 50% longer and their fire-rate bonus caps at +60% instead of +40%.', flags: ['momentum'], visual: 'hud', maxStacks: 1 },
+  { id: 'riposte', name: 'Riposte Coils', rarity: 'rare', tags: ['shield'], desc: 'Perfect-parry window +50%. Reflected shots split into three and deal +50% damage.', flags: ['riposte'], visual: 'aura', maxStacks: 1 },
+  { id: 'bulwark_guard', name: 'Guard Lattice', rarity: 'common', tags: ['shield'], desc: 'Guarding blocks 90% of damage instead of 70%, and a perfect parry restores 15 shield.', flags: ['guardLattice'], visual: 'aura', maxStacks: 1 },
+  // ---- shields: ways to play around the bubble, not just make it bigger
+  trig('siphon', 'Siphon Weave', 'common', ['shield', 'on-kill'], 'Kills restore 2 shield.', [{ on: 'kill', do: 'shield', p: 2 }], 'aura'),
+  { id: 'overshield', name: 'Overcharge Cells', rarity: 'rare', tags: ['shield'], desc: 'Shield pickups, kills and parries can overcharge your shield to 150%. The excess slowly bleeds away.', flags: ['overshield'], visual: 'aura', maxStacks: 1 },
+  { id: 'reflectskin', name: 'Reflector Skin', rarity: 'rare', tags: ['shield'], desc: 'While your shield is above 25%, 30% of enemy rounds glance off and fly back at your target.', flags: ['reflectSkin'], visual: 'aura', maxStacks: 1 },
+  { id: 'capburst', name: 'Capacitor Burst', rarity: 'uncommon', tags: ['shield', 'area'], desc: 'When your shield breaks it detonates: a blast that knocks enemies back and erases nearby fire (8 s cooldown).', flags: ['capBurst'], visual: 'explosion', maxStacks: 1 },
+  { id: 'shieldram', name: 'Hardlight Ram', rarity: 'uncommon', tags: ['shield', 'boost'], desc: 'Boosting with over 25% shield turns your bubble into a ram: enemies you touch take heavy damage, at a little shield per hit.', flags: ['shieldRam'], visual: 'aura', maxStacks: 1 },
+  { id: 'chargedplating', name: 'Charged Plating', rarity: 'uncommon', tags: ['shield'], desc: 'Deal 15% more damage while your shield is above half.', flags: ['chargedShield'], visual: 'aura', maxStacks: 1 },
+  { id: 'secondwind', name: 'Second Wind', rarity: 'rare', tags: ['shield', 'hull'], desc: 'When a hit drops your hull below 35%, your shield refills completely (30 s cooldown).', flags: ['secondWind'], visual: 'aura', maxStacks: 1 },
+];
+
 export const UPGRADES: UpgradeDef[] = [
   ...WEAPON_MODS.flatMap(tiers),
   ...EXPANSION.flatMap(tiers),
@@ -236,6 +252,7 @@ export const UPGRADES: UpgradeDef[] = [
   ...ELEMENT_TIERS.flatMap(tiers),
   ...SHIP.flatMap(tiers),
   ...TRIGGERS,
+  ...ARSENAL,
   ...ARTIFACTS,
   ...CURSES,
 ];
@@ -267,6 +284,7 @@ export const SYNERGIES: SynergyDef[] = [
   { id: 'thermal', name: 'Thermal Lance', desc: 'Energy weapons deal +20% damage when you also burn.', needs: { burn: 2, energy: 2 }, mods: [{ s: 'damage', mul: 1.2, tag: 'energy' }], kind: 'synergy' },
   { id: 'longshot', name: 'Longshot', desc: 'Piercing shots crit for +50% more.', needs: { pierce: 2, crit: 1 }, mods: [{ s: 'critMul', add: 0.5, tag: 'pierce' }], kind: 'synergy' },
   { id: 'siege', name: 'Siege Line', desc: 'Ordnance: +25% blast radius, +10% damage.', needs: { ordnance: 3 }, mods: [{ s: 'explode', mul: 1.25, tag: 'ordnance' }, { s: 'damage', mul: 1.1, tag: 'ordnance' }], kind: 'synergy' },
+  { id: 'hardlight', name: 'Hardlight Doctrine', desc: 'Four shield cards: +25% max shield and shield regen.', needs: { shield: 4 }, mods: [{ s: 'shield', mul: 1.25 }, { s: 'shieldRegen', mul: 1.25 }], kind: 'synergy' },
   { id: 'phalanx', name: 'Phalanx', desc: 'Hull and shield together: take 15% less damage.', needs: { hull: 2, shield: 2 }, mods: [{ s: 'damageTaken', mul: 0.85 }], kind: 'synergy' },
   // Reactions: always active; discovered when first triggered.
   { id: 'r_shatter', name: 'Shatter', desc: 'Kinetic hits on frozen enemies shatter them for +150% damage and shards.', needs: {}, kind: 'reaction' },

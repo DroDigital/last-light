@@ -352,10 +352,10 @@ function fireArc(w: World, wi: WeaponInstance, secondary: boolean, dmgMul = 1, o
   if (best.alive || p.chain > 0 || p.split > 0) w.chainLightning(best, p.chain + p.split, p.damage * dmgMul * 0.8, src, p.range * 0.5);
 }
 
-function fireWell(w: World, wi: WeaponInstance): void {
+function fireWell(w: World, wi: WeaponInstance, origin?: Vector3): void {
   const p = wi.params;
   const pl = w.player;
-  const m = muzzle(w, 0, _m);
+  const m = origin ?? muzzle(w, 0, _m);
   const eh = w.build.flags.has('eventhorizon') ? 1.3 : 1;
   w.wells.push({
     x: m.x, y: m.y, z: m.z,
@@ -403,6 +403,73 @@ function fireWeapon(w: World, wi: WeaponInstance, secondary: boolean): void {
     w.events.emit('shot', { x: _m.x, y: _m.y, z: _m.z, dx: pl.aimDir.x, dy: pl.aimDir.y, dz: pl.aimDir.z, w: wi, secondary, side: !secondary && wi === w.build.primary ? w.gunSide : 0 });
 }
 
+const _lm = new Vector3();
+/**
+ * World-space muzzle for linked hardpoint i: pods hung outboard of the main
+ * guns, alternating port/starboard and stepping lower for each extra pair.
+ */
+export function linkMuzzle(w: World, i: number, out: Vector3): Vector3 {
+  const pl = w.player;
+  const hp = HARDPOINTS[w.build.hull.id] ?? HARDPOINTS.lantern!;
+  const side = i % 2 === 0 ? -1 : 1;
+  const pair = Math.floor(i / 2);
+  const x = (Math.abs(hp.primary[0]) * 1.3 + 0.45 + pair * 0.5) * side;
+  _bank.setFromAxisAngle(_ax, pl.bank + pl.roll);
+  out.set(x, hp.primary[1] - 0.35 - pair * 0.3, hp.primary[2] + 0.2).multiplyScalar(hp.scale).applyQuaternion(_bank).applyQuaternion(pl.quat);
+  return out.add(pl.pos);
+}
+
+/**
+ * Fire linked weapon `wi` from hardpoint `i` while its trigger is held.
+ * `cd` is that gun's cooldown for the current pilot (wingmen keep their own).
+ * Returns the updated cooldown.
+ */
+function runLinked(w: World, wi: WeaponInstance, i: number, held: boolean, cd: number, dt: number, rateMul: number): number {
+  cd -= dt;
+  if (!held) return cd < 0 ? 0 : cd;
+  const pl = w.player;
+  const secondary = wi.def.slot === 'secondary';
+  const m = linkMuzzle(w, i, _lm);
+  const rate = Math.max(0.05, wi.params.rate * rateMul);
+  if (wi.def.behavior === 'beam') {
+    const tick = cd <= 0;
+    fireBeam(w, wi, true, tick, 1, m);
+    if (tick) {
+      cd += 1 / rate;
+      w.events.emit('beamTick', { secondary });
+    }
+    return cd < -0.1 ? 0 : cd;
+  }
+  if (cd > 0) return cd;
+  switch (wi.def.behavior) {
+    case 'bullet':
+    case 'missile':
+    case 'mine':
+      fireBullets(w, wi, true, 1, m);
+      break;
+    case 'rail':
+      fireRail(w, wi, 1, m);
+      break;
+    case 'arc':
+      fireArc(w, wi, true, 1, m);
+      break;
+    case 'well':
+      fireWell(w, wi, m);
+      break;
+    case 'pulse':
+      firePulse(w, wi);
+      break;
+    default:
+      break;
+  }
+  wi.shots++;
+  cd += 1 / rate;
+  if (cd < -0.05) cd = 0;
+  pl.recoil = Math.min(1, pl.recoil + (secondary ? 0.15 : (wi.def.recoil ?? 0.05) * 2));
+  w.events.emit('shot', { x: m.x, y: m.y, z: m.z, dx: pl.aimDir.x, dy: pl.aimDir.y, dz: pl.aimDir.z, w: wi, secondary, side: 0, linked: true });
+  return cd;
+}
+
 export function updateWeapons(w: World, c: Controls, dt: number): void {
   const pl = w.player;
   w.beams.length = 0;
@@ -412,12 +479,16 @@ export function updateWeapons(w: World, c: Controls, dt: number): void {
   }
   computeAim(w);
   if (!pl.alive) return;
-  const flareRate = pl.flareT > 0 ? 2 : 1;
+  const streak = w.streakRate();
+  const flareRate = (pl.flareT > 0 ? 2 : 1) * streak;
+  // the guard and the guns share the reactor: no firing while it is up
+  const fire1 = c.fire1 && !pl.guarding;
+  const fire2 = c.fire2 && !pl.guarding;
 
   // primary
   const pw = w.build.primary;
   pw.cd -= dt;
-  if (c.fire1) {
+  if (fire1) {
     if (pw.def.behavior === 'beam') {
       const tick = pw.cd <= 0;
       fireBeam(w, pw, false, tick);
@@ -449,8 +520,9 @@ export function updateWeapons(w: World, c: Controls, dt: number): void {
 
   // secondary
   const sw = w.build.secondary;
+  const secRate = (pl.flareT > 0 ? 1.5 : 1) * streak;
   sw.cd -= dt;
-  if (c.fire2) {
+  if (fire2) {
     if (sw.def.behavior === 'beam') {
       const tick = sw.cd <= 0;
       if (tick) sw.cd += 1 / (sw.params.rate * flareRate);
@@ -459,11 +531,19 @@ export function updateWeapons(w: World, c: Controls, dt: number): void {
     } else if (sw.cd <= 0) {
       fireWeapon(w, sw, true);
       if (w.build.flags.has('twinSoul')) fireWeapon(w, sw, true);
-      sw.cd = 1 / (sw.params.rate * (flareRate > 1 ? 1.5 : 1));
+      sw.cd = 1 / (sw.params.rate * secRate);
       pl.recoil = Math.min(1, pl.recoil + 0.3);
       w.fireTriggers('secondary', pl.pos.x, pl.pos.y, pl.pos.z, 0);
     }
   } else if (sw.cd < 0) sw.cd = 0;
+
+  // linked hardpoints fire with their trigger, each on its own cooldown
+  const linked = w.build.linked;
+  for (let i = 0; i < linked.length; i++) {
+    const lw = linked[i]!;
+    const sec = lw.def.slot === 'secondary';
+    lw.cd = runLinked(w, lw, i, sec ? fire2 : fire1, lw.cd, dt, sec ? secRate : flareRate);
+  }
 
   // systems
   const combat = w.liveEnemyCount() > 0;
@@ -498,7 +578,11 @@ export function updateWingWeapons(w: World, c: Controls, dt: number): void {
   const pl = w.player;
   if (!pl.alive) return;
   computeAim(w);
-  const flareRate = pl.flareT > 0 ? 2 : 1;
+  const streak = w.streakRate();
+  const flareRate = (pl.flareT > 0 ? 2 : 1) * streak;
+  const secRate = (pl.flareT > 0 ? 1.5 : 1) * streak;
+  const fire1 = c.fire1 && !pl.guarding;
+  const fire2 = c.fire2 && !pl.guarding;
   const run = (wi: WeaponInstance, key: 'primary' | 'secondary', held: boolean, secondary: boolean) => {
     const keep = wi.cd;
     wi.cd = pl.wingCd[key] - dt;
@@ -510,7 +594,7 @@ export function updateWingWeapons(w: World, c: Controls, dt: number): void {
         if (wi.cd < -0.1) wi.cd = 0;
       } else if (wi.cd <= 0) {
         fireWeapon(w, wi, secondary);
-        wi.cd = secondary ? 1 / (wi.params.rate * (flareRate > 1 ? 1.5 : 1)) : wi.cd + 1 / (w.params[w.sideSrc(w.gunSide < 0 ? 'port' : 'starboard')]!.rate * flareRate);
+        wi.cd = secondary ? 1 / (wi.params.rate * secRate) : wi.cd + 1 / (w.params[w.sideSrc(w.gunSide < 0 ? 'port' : 'starboard')]!.rate * flareRate);
         if (wi.cd < -0.05) wi.cd = 0;
         pl.recoil = Math.min(1, pl.recoil + (secondary ? 0.3 : (wi.def.recoil ?? 0.05) * 4));
       }
@@ -518,8 +602,15 @@ export function updateWingWeapons(w: World, c: Controls, dt: number): void {
     pl.wingCd[key] = wi.cd;
     wi.cd = keep;
   };
-  run(w.build.primary, 'primary', c.fire1, false);
-  run(w.build.secondary, 'secondary', c.fire2, true);
+  run(w.build.primary, 'primary', fire1, false);
+  run(w.build.secondary, 'secondary', fire2, true);
+  const linked = w.build.linked;
+  for (let i = 0; i < linked.length; i++) {
+    const lw = linked[i]!;
+    const sec = lw.def.slot === 'secondary';
+    const key = 'l' + i;
+    pl.wingCd[key] = runLinked(w, lw, i, sec ? fire2 : fire1, pl.wingCd[key] ?? 0, dt, sec ? secRate : flareRate);
+  }
 }
 
 /** World positions of halo blades this tick (for rendering). */

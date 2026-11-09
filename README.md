@@ -57,6 +57,7 @@ Action buttons are rebindable in Settings → Controls; rebinding one device pre
 | Dodge roll | Shift | B |
 | Shockwave / Stasis | Q / E | LB / RB |
 | Flare (when Lumen is full) | F | Y |
+| Guard / parry | X / MMB | X |
 | Camera: chase / cockpit | V | View |
 | Radar | Tab | Left stick click |
 | Pause | Esc / P | Menu |
@@ -73,6 +74,15 @@ Up to three more pilots drop in at any time, in every mode (Act I and II runs, E
 - **Camera:** it stays behind Player 1 and pulls back to keep the whole party in frame. A soft tether keeps wingmen near Player 1, and each fight starts in formation.
 - **Downed pilots:** hover close to a downed partner for 3 s to revive them. Each extra rescuer speeds it up. The run ends only when every pilot is down. A roster under the sector readout shows each pilot's hull or revive progress.
 - **Leaving:** hold **View/Back** for 1.5 s to leave, or unplug the controller. Seats carry over into the next run and across modes while their controllers stay connected. Outside fights, a strip at the bottom of the screen shows who is seated.
+
+## Combat
+
+- **Linked hardpoints:** a new primary or secondary no longer replaces your gun. It mounts on a linked hardpoint, outboard of the main guns, and fires together with them on the same trigger, on its own cooldown. Every ship has 2 linked hardpoints; **Auxiliary Hardpoint** upgrades add up to 2 more. When all of them are full, a new gun replaces the oldest linked one (the draft card says which). Linked guns level and evolve like any other weapon. Draft cards offer weapons more often while a hardpoint is open.
+- **Opening armory:** every dive, including Endless and the Daily Dive, opens with a free pick of three new guns for a linked hardpoint, so the first fight already has two weapons on each trigger you fill.
+- **Kill streak:** kills within 3 s of each other build a streak worth +2% fire rate per kill, up to +40% (**Momentum Engine**: +60% and 4.5 s). Tiers at 8, 20, 40 and 80 kills announce themselves. Any hit halves the streak.
+- **Guard and parry:** hold Guard to raise a shield bubble. It blocks 70% of incoming damage, slows you and stops your guns, lasts up to 1.1 s, then locks out for 0.5 s. If a hit lands within 0.16 s of raising it, that is a **perfect parry**: you take nothing, an enemy round flies back as a homing shot at your target for 6× its damage, a melee attacker takes a counter-blow, and the guard is ready again at once. Holding the key never re-arms the window; you have to time each press. **Riposte Coils** and **Guard Lattice** improve both.
+- **Shields:** shield cards now play differently, not only bigger. **Siphon Weave** (kills restore shield), **Overcharge Cells** (pickups can push the shield to 150%), **Reflector Skin** (some rounds glance back while shielded), **Capacitor Burst** (a breaking shield detonates and erases nearby fire), **Hardlight Ram** (boost through enemies with your bubble), **Charged Plating** (+15% damage above half shield) and **Second Wind** (a full shield refill when your hull drops low). Four shield cards complete the **Hardlight Doctrine** synergy.
+- **Sustain drops:** enemies and asteroids can drop **Hull Patches** (12 hull + 8% of max) and **Shield Cells** (30 shield + 20% of max, and regen restarts at once). Fodder rarely drops them; heavies, support ships and rocks are worth chasing.
 
 ## Classes
 

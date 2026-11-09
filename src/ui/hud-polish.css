@@ -21,3 +21,18 @@
   .hud .ab { width: min(58px, 9vw); }
   .hud .weapons { line-height: 1.4; }
 }
+
+/* Kill streak: a tight tag under the kill count, with a draining keep-alive bar. */
+.hud .streak { display: none; flex-direction: column; align-items: flex-end; gap: 2px; margin-top: 6px; --sc: #ffd890; }
+.hud .streak.on { display: flex; }
+.hud .streak[data-tier="2"] { --sc: #ffb060; }
+.hud .streak[data-tier="3"] { --sc: #ff7ae0; }
+.hud .streak[data-tier="4"] { --sc: #fff6c0; }
+.hud .streak span { font-family: var(--px); font-size: max(10px, calc(10px * var(--ui-scale))); letter-spacing: 0.06em; color: var(--sc); }
+.hud .streak i { display: block; height: 3px; width: 100%; max-width: 140px; background: var(--sc); transition: width 0.1s linear; }
+
+/* Guard: cyan while raised, white flash on a perfect parry. */
+.hud .ab.guard.active { --br: #7fe8ff; }
+.hud .ab.guard.active .k, .hud .ab.guard.active .n { color: #bff4ff; }
+.hud .ab.guard.parried { --br: #ffffff; }
+.hud .ab.guard.parried .k { color: #ffffff; }
