@@ -147,7 +147,7 @@ export function showHearth(g: Game, refresh = false): void {
   }
   const tabs = ['unlocks', 'hulls', 'arsenal', 'heat', 'challenges', 'history'];
   const html = `<div class="row" style="padding:3vh 3vw;gap:3vw;align-items:stretch;width:100%">
-    <div class="col" style="width:min(420px,32vw)">
+    <div class="col hearth-side" style="width:min(420px,32vw)">
       <h1>The Hearth</h1>
       <div class="light display" style="font-size:var(--s4)">${fmtInt(d.embers)} Embers</div>
       <div class="dim">Hearth level ${d.hearthLevel} · ${HEARTH_HULLS.filter((h) => d.hulls.includes(h.id)).length}/${HEARTH_HULLS.length} hulls · ${d.weapons.length}/${WEAPONS.length} weapons</div>

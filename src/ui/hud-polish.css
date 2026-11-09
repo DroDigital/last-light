@@ -1,17 +1,18 @@
 /* Quiet instrument plates keep readouts legible over a bright star or nebula. */
 .hud .tl, .hud .tr {
   padding: 8px 10px;
-  background: linear-gradient(90deg, rgba(7, 6, 11, .84), rgba(7, 6, 11, .56) 72%, transparent);
+  background: linear-gradient(90deg, rgba(7, 6, 11, .92), rgba(7, 6, 11, .8) 70%, transparent);
   text-shadow: 0 1px 3px #07060b;
 }
-.hud .tr { background: linear-gradient(270deg, rgba(7, 6, 11, .84), rgba(7, 6, 11, .56) 72%, transparent); }
+.hud .tr { background: linear-gradient(270deg, rgba(7, 6, 11, .92), rgba(7, 6, 11, .8) 70%, transparent); }
 .hud .bl, .hud .br, .hud .bossbar {
-  background-color: rgba(7, 6, 11, .42);
+  background-color: rgba(7, 6, 11, .6);
   text-shadow: 0 1px 3px #07060b;
 }
-.hud .readout, .hud .weapons { font-size: max(11px, var(--s1)); }
-.hud .ab .n { font-size: max(10px, calc(9px * var(--ui-scale))); }
-.hud .ab .k { font-size: 11px; letter-spacing: 0; white-space: nowrap; }
+.hud .readout, .hud .weapons { font-size: max(12px, var(--s1)); }
+.hud .ab .n { font-size: max(12px, calc(12px * var(--ui-scale))); font-weight: 700; color: var(--paper-2); }
+.hud .ab .k { font-size: 16px; letter-spacing: 0; white-space: nowrap; }
+.hud .ab .k.long { font-family: var(--px); font-weight: 700; font-size: max(12px, calc(12px * var(--ui-scale))); }
 .hud.critical .bl { --br: var(--signal); }
 .hud.critical .bar.hull { color: var(--signal); }
 @media (max-width: 700px) {
@@ -28,7 +29,7 @@
 .hud .streak[data-tier="2"] { --sc: #ffb060; }
 .hud .streak[data-tier="3"] { --sc: #ff7ae0; }
 .hud .streak[data-tier="4"] { --sc: #fff6c0; }
-.hud .streak span { font-family: var(--px); font-size: max(10px, calc(10px * var(--ui-scale))); letter-spacing: 0.06em; color: var(--sc); }
+.hud .streak span { font-family: var(--px); font-weight: 700; font-size: max(12px, calc(12px * var(--ui-scale))); letter-spacing: 0.06em; color: var(--sc); }
 .hud .streak i { display: block; height: 3px; width: 100%; max-width: 140px; background: var(--sc); transition: width 0.1s linear; }
 
 /* Guard: cyan while raised, white flash on a perfect parry. */
