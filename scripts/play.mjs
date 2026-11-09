@@ -313,6 +313,21 @@ if (scenario === 'music') {
   await ll(() => { const g = window.__ll; g.settings.music = 'procedural'; g.applySettings(); }); await page.waitForTimeout(2000); await probe('procedural');
   await ll(() => { const g = window.__ll; g.settings.music = 'recorded'; g.applySettings(); }); await page.waitForTimeout(2000); await probe('recorded-again');
 }
+if (scenario === 'sfx') {
+  // sample sprite loads, voices stay bounded under sustained fire, beds follow the scene
+  const probe = (tag) => ll((tag) => { const g = window.__ll; const a = g.audio; return { tag, state: g.state, ctx: a.ctx && a.ctx.state, ready: a.bank.ready, failed: a.bank.failed, live: a.live.filter((v) => v.end > a.now).length, fatigue: +a.fatigue.toFixed(2), rate: +a.fireRate.toFixed(1), shots: g.world ? g.world.build.primary && g.world.build.primary.shots : null, kills: g.world ? g.world.stats.kills : null, scene: a.scene, engine: !!a.engine, beds: !!a.beds }; }, tag).then((r) => console.log(JSON.stringify(r)));
+  await page.mouse.click(640, 360); await page.waitForTimeout(2500); await probe('title');
+  await ll(() => window.__ll.startRun({ seed: 'SFX' })); await page.waitForTimeout(3000); await probe('map');
+  await ll(() => window.__ll.chooseNode(window.__ll.reachable()[0].id)); await page.waitForTimeout(3000);
+  await ll(() => { const i = window.__ll.input; i.synthetic.add('fire1'); i.synthetic.add('forward'); i.syntheticAimX = 0.4; });
+  for (let k = 0; k < 4; k++) { await page.waitForTimeout(2000); await probe('firing-' + k); }
+  await ll(() => { const i = window.__ll.input; i.synthetic.delete('fire1'); }); await page.waitForTimeout(3000); await probe('ceasefire');
+  // a needle-hose barrage through the live engine: caps hold, habituation engages
+  await ll(() => { const a = window.__ll.audio; window.__barrage = setInterval(() => { a.play('kinetic', 0, 0.55); a.play('hit', Math.random() - 0.5, 0.5); if (Math.random() < 0.2) a.play('kill', 0, 0.8); }, 1000 / 24); });
+  for (let k = 0; k < 4; k++) { await page.waitForTimeout(2000); await probe('barrage-' + k); }
+  await ll(() => clearInterval(window.__barrage)); await page.waitForTimeout(4000); await probe('recovered');
+  await ll(() => window.__ll.startEncounter('boss', 0)); await page.waitForTimeout(3500); await probe('boss');
+}
 if (scenario === 'breakup') {
   await ll(() => window.__ll.startRun({ seed: 'BREAK' }));
   await page.waitForTimeout(2500);

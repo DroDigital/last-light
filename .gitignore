@@ -6,3 +6,7 @@ dist
 test-results
 
 release/
+
+# sound-effect build cache (scripts/sfx/build.py)
+.sfx-cache/
+__pycache__/

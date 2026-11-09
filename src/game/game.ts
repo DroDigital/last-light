@@ -335,8 +335,19 @@ export class Game {
     document.body.classList.remove('print');
   }
 
+  /** Ambience beds follow the game state; pause and warp keep the current scene. */
+  private updateAudioScene(): void {
+    const s = this.state;
+    if (s === 'pause' || s === 'warp') return;
+    if (s === 'death') this.audio.setScene('death');
+    else if (s === 'combat') this.audio.setScene(this.director?.kind === 'boss' ? 'boss' : 'combat');
+    else if (s === 'title' || s === 'hearth' || s === 'classes' || s === 'victory') this.audio.setScene('menu');
+    else this.audio.setScene('explore');
+  }
+
   /** Route the recorded soundtrack from game state. Pause/warp/death keep the current cue. */
   updateMusicCue(): void {
+    this.updateAudioScene();
     const st = this.audio.soundtrack;
     if (!st) return;
     if (this.settings.music !== 'recorded') {
@@ -1667,9 +1678,15 @@ export class Game {
     if (!w) this.drawScene(frameDt);
     this.view.sync(w, alpha, this.loop.realTime, frameDt);
     if (w) {
-      this.audio.boostHold(w.player.boosting && w.player.alive && this.state === 'combat');
+      const flying = w.player.alive && this.state === 'combat';
+      this.audio.boostHold(w.player.boosting && flying);
+      // engine bed rises with speed (46 u/s cruise, ~70 boosting)
+      this.audio.engineHold(flying, w.player.vel.length() / 70);
       if (w.player.boosting && this.state === 'combat') this.spawnSpeedLines(4, 1.5);
-    } else this.audio.boostHold(false);
+    } else {
+      this.audio.boostHold(false);
+      this.audio.engineHold(false, 0);
+    }
     this.audio.tick(frameDt);
     this.pipe.lights.update(frameDt, this.view.camera.position, (push) => {
       if (w && w.player.alive) {

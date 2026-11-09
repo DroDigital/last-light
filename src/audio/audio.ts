@@ -1,24 +1,73 @@
 /**
- * Web Audio engine: buses (music, sfx, ui, ambience) -> limiter -> out.
- * All SFX are synthesized (layered transient/body/tail with randomized pitch)
- * so there is no download cost and infinite variety. Voice limiting per sound
- * id keeps busy fights clean. Spatial panning by screen position.
+ * Web Audio engine.
+ *
+ *   weapon -> tone LP -> duck --\
+ *   impact ---------> duck ------+-> sfx (volume) -> de-harsh EQ -> glue comp --\
+ *   enemy / world / player -----/      ^ hall return, widener return             +-> master -> limiter -> out
+ *   ui, ambience, music -------------------------------------------------------/
+ *
+ * Sound effects are layered patches (src/audio/patches.ts) of round-robin
+ * samples from one sprite (src/audio/bank.ts, built by scripts/sfx/build.py)
+ * plus small synthesized sweeteners. Until the sprite has decoded, or if it
+ * cannot be loaded, every sound falls back to pure synthesis.
+ *
+ * Anti-fatigue machinery: per-sound voice caps with oldest-voice stealing, a
+ * flam guard, density-aware gain (swarms do not stack up loud), pitch/level
+ * jitter, weapon habituation (sustained fire slowly settles back and darkens),
+ * priority ducking for warnings, distance darkening, and a gentle de-harsh EQ
+ * and glue compressor on the whole SFX bus.
  */
+import { SampleBank } from './bank';
+import { PATCHES, SYNTH_FALLBACK, scaleRate, type BusId, type SynthKit } from './patches';
+import { makeHall, makeWidener, type SpaceBus } from './space';
 import { Soundtrack } from './soundtrack';
 export type SfxId =
   | 'kinetic' | 'heavy' | 'energy' | 'beam' | 'arc' | 'missile' | 'mine' | 'exotic' | 'drone' | 'light' | 'rail' | 'scatter'
   | 'hit' | 'crit' | 'block' | 'kill' | 'killBig' | 'explosion' | 'pickup' | 'graze' | 'hurt' | 'shieldBreak'
   | 'dodge' | 'flareOn' | 'flareOff' | 'lumenFull' | 'enemyShot' | 'enemyBig' | 'telegraph' | 'warpCharge' | 'warpGo'
   | 'warpArrive' | 'uiMove' | 'uiSelect' | 'uiBack' | 'uiBuy' | 'uiDeny' | 'cardIn' | 'shockwave' | 'stasis' | 'boss'
-  | 'bossPhase' | 'bossDeath' | 'relight' | 'death' | 'heartbeat' | 'evolve' | 'reaction' | 'spawn' | 'status';
+  | 'bossPhase' | 'bossDeath' | 'relight' | 'death' | 'heartbeat' | 'evolve' | 'reaction' | 'spawn' | 'status'
+  | 'parry' | 'guard' | 'shieldRam' | 'shieldReflect' | 'streak' | 'laststand' | 'dropSpawn' | 'dropPick' | 'boost';
+
+/** Ambience/mix scene, set by the game state. */
+export type AudioScene = 'menu' | 'explore' | 'combat' | 'boss' | 'death';
+
+interface LegacyVoice {
+  t: number;
+}
 
 interface Voice {
-  t: number;
+  id: SfxId;
+  start: number;
+  end: number;
+  prio: number;
+  out: GainNode;
+  srcs: AudioScheduledSourceNode[];
+}
+
+interface Loop {
+  src: AudioBufferSourceNode;
+  filt: BiquadFilterNode;
+  gain: GainNode;
 }
 
 const LIMITS: Partial<Record<SfxId, number>> = {
   kinetic: 4, energy: 4, hit: 6, kill: 6, pickup: 5, enemyShot: 4, graze: 3, explosion: 5, beam: 1, drone: 3, status: 3, spawn: 3,
 };
+
+/** Hard ceiling on concurrent one-shot voices across the whole mix. */
+const MAX_VOICES = 56;
+
+const BEDS: Record<AudioScene, { hum: number; air: number; void: number }> = {
+  menu: { hum: 0.5, air: 0.32, void: 0 },
+  explore: { hum: 0.55, air: 0.38, void: 0.1 },
+  combat: { hum: 0.42, air: 0.3, void: 0.3 },
+  boss: { hum: 0.34, air: 0.24, void: 0.55 },
+  death: { hum: 0.18, air: 0.14, void: 0.45 },
+};
+
+const dbToGain = (db: number) => Math.pow(10, db / 20);
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 export class AudioEngine {
   ctx: AudioContext | null = null;
@@ -31,15 +80,37 @@ export class AudioEngine {
   musicDuck!: GainNode;
   private limiter!: DynamicsCompressorNode;
   private noise!: AudioBuffer;
-  private voices = new Map<SfxId, Voice[]>();
+  private legacyVoices = new Map<SfxId, LegacyVoice[]>();
   private mono = false;
   volumes = { master: 0.8, music: 0.6, sfx: 0.8, ui: 0.7, ambience: 0.6 };
   music: Music | null = null;
   /** recorded soundtrack; when active the procedural score stays silent */
   soundtrack: Soundtrack | null = null;
+  /** decoded sample sprite; until ready, SFX are synthesized */
+  readonly bank = new SampleBank();
+  private buses!: Record<BusId, AudioNode>;
+  private duckW!: GainNode;
+  private duckI!: GainNode;
+  private weaponTone!: BiquadFilterNode;
+  private weaponLevel!: GainNode;
+  private hall!: SpaceBus;
+  private wide!: SpaceBus;
+  private kit!: SynthKit;
+  private live: Voice[] = [];
+  private recent = new Map<SfxId, { t: number; pan: number }[]>();
+  private duckUntil = 0;
+  private duckDepth = 0;
+  private shotsThisFrame = 0;
+  private fireRate = 0;
+  private fatigue = 0;
+  private lastTick = 0;
   private boostNode: { src: AudioBufferSourceNode; gain: GainNode; filt: BiquadFilterNode } | null = null;
-  private beamNode: { osc: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null = null;
+  private beamNode: { srcs: AudioScheduledSourceNode[]; gain: GainNode; rate?: AudioParam } | null = null;
   private beamT = 0;
+  private engine: { rumble: Loop; thrust: Loop; level: number } | null = null;
+  private beds: { hum: Loop; air: Loop; void: Loop } | null = null;
+  private synthAmb: GainNode | null = null;
+  private scene: AudioScene = 'menu';
   /** visual cue hook for important sounds (accessibility) */
   onCue: ((id: SfxId, pan: number) => void) | null = null;
 
@@ -53,11 +124,11 @@ export class AudioEngine {
     const ctx = new Ctx({ latencyHint: 'interactive' });
     this.ctx = ctx;
     this.limiter = ctx.createDynamicsCompressor();
-    this.limiter.threshold.value = -8;
-    this.limiter.knee.value = 4;
-    this.limiter.ratio.value = 12;
-    this.limiter.attack.value = 0.003;
-    this.limiter.release.value = 0.15;
+    this.limiter.threshold.value = -6;
+    this.limiter.knee.value = 3;
+    this.limiter.ratio.value = 16;
+    this.limiter.attack.value = 0.002;
+    this.limiter.release.value = 0.12;
     this.master = ctx.createGain();
     this.master.connect(this.limiter).connect(ctx.destination);
     this.musicFilter = ctx.createBiquadFilter();
@@ -66,20 +137,69 @@ export class AudioEngine {
     this.musicDuck = ctx.createGain();
     this.musicBus = ctx.createGain();
     this.musicBus.connect(this.musicFilter).connect(this.musicDuck).connect(this.master);
+
+    // ---- SFX: volume -> de-harsh EQ -> glue compressor -> master
     this.sfxBus = ctx.createGain();
-    this.sfxBus.connect(this.master);
+    const deharsh = ctx.createBiquadFilter();
+    deharsh.type = 'peaking';
+    deharsh.frequency.value = 3300;
+    deharsh.Q.value = 0.9;
+    deharsh.gain.value = -1.5;
+    const air = ctx.createBiquadFilter();
+    air.type = 'highshelf';
+    air.frequency.value = 10500;
+    air.gain.value = -1.5;
+    const glue = ctx.createDynamicsCompressor();
+    glue.threshold.value = -20;
+    glue.knee.value = 12;
+    glue.ratio.value = 2.2;
+    glue.attack.value = 0.008;
+    glue.release.value = 0.2;
+    this.sfxBus.connect(deharsh).connect(air).connect(glue).connect(this.master);
+
+    // sub-buses
+    this.weaponTone = ctx.createBiquadFilter();
+    this.weaponTone.type = 'lowpass';
+    this.weaponTone.frequency.value = 18000;
+    this.weaponTone.Q.value = 0.5;
+    this.weaponLevel = ctx.createGain();
+    this.duckW = ctx.createGain();
+    this.weaponTone.connect(this.weaponLevel).connect(this.duckW).connect(this.sfxBus);
+    this.duckI = ctx.createGain();
+    this.duckI.connect(this.sfxBus);
+    const sub = () => {
+      const g = ctx.createGain();
+      g.connect(this.sfxBus);
+      return g;
+    };
     this.uiBus = ctx.createGain();
     this.uiBus.connect(this.master);
+    this.buses = { weapon: this.weaponTone, impact: this.duckI, enemy: sub(), world: sub(), player: sub(), ui: this.uiBus };
+    this.hall = makeHall(ctx);
+    this.hall.output.gain.value = 0.9;
+    this.hall.output.connect(this.sfxBus);
+    this.wide = makeWidener(ctx);
+    this.wide.output.gain.value = 1;
+    this.wide.output.connect(this.sfxBus);
+
     this.ambBus = ctx.createGain();
     this.ambBus.connect(this.master);
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    this.kit = {
+      osc: (...a) => this.osc(...a),
+      noise: (...a) => this.noiseBurst(...a),
+      bell: (...a) => this.bell(...a),
+    };
     this.applyVolumes();
     this.music = new Music(this);
     this.soundtrack = new Soundtrack(this);
     this.startAmbience();
+    void this.bank.load(ctx, import.meta.env.BASE_URL).then(() => {
+      if (this.bank.ready) this.startBeds();
+    });
   }
 
   setMono(m: boolean): void {
@@ -117,19 +237,45 @@ export class AudioEngine {
     this.musicFilter.frequency.setTargetAtTime(freq, this.now, 0.08);
   }
 
-  private allow(id: SfxId): boolean {
+  /** Ambience beds follow the game state (hum in the hangar, void dread in a boss fight). */
+  setScene(scene: AudioScene): void {
+    this.scene = scene;
+    if (!this.ctx || !this.beds) return;
+    const b = BEDS[scene];
+    const t = this.now;
+    this.beds.hum.gain.gain.setTargetAtTime(b.hum, t, 1.2);
+    this.beds.air.gain.gain.setTargetAtTime(b.air, t, 1.2);
+    this.beds.void.gain.gain.setTargetAtTime(b.void, t, 2);
+  }
+
+  /** Warnings pull the weapon and impact buses down for a moment so they read clearly. */
+  private duckSfx(db: number): void {
+    const now = this.now;
+    if (now < this.duckUntil && db <= this.duckDepth) return;
+    this.duckDepth = db;
+    this.duckUntil = now + 0.22;
+    const target = dbToGain(-db);
+    for (const g of [this.duckW.gain, this.duckI.gain]) {
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.setTargetAtTime(target, now, 0.012);
+      g.setTargetAtTime(1, now + 0.2, 0.15);
+    }
+  }
+
+  private allowLegacy(id: SfxId): boolean {
     const lim = LIMITS[id];
     if (!lim) return true;
     const now = this.now;
-    let list = this.voices.get(id);
-    if (!list) this.voices.set(id, (list = []));
+    let list = this.legacyVoices.get(id);
+    if (!list) this.legacyVoices.set(id, (list = []));
     for (let i = list.length - 1; i >= 0; i--) if (list[i]!.t < now) list.splice(i, 1);
     if (list.length >= lim) return false;
     list.push({ t: now + 0.08 });
     return true;
   }
 
-  private out(bus: GainNode, pan: number, gain: number): GainNode {
+  private out(bus: AudioNode, pan: number, gain: number): GainNode {
     const ctx = this.ctx!;
     const g = ctx.createGain();
     g.gain.value = gain;
@@ -174,19 +320,152 @@ export class AudioEngine {
     s.start(t0, off, dur + 0.05);
   }
 
+  private steal(v: Voice, now: number): void {
+    const g = v.out.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(0, now + 0.025);
+    for (const s of v.srcs) {
+      try {
+        s.stop(now + 0.03);
+      } catch {
+        /* already stopped */
+      }
+    }
+    v.end = now;
+  }
+
   /**
-   * Play a sound. pan -1..1, vol 0..1, pitch multiplier.
+   * Play a sound. pan -1..1, vol 0..1, pitch multiplier, far 0 (close) .. 1
+   * (distant: darker and wetter).
    */
-  play(id: SfxId, pan = 0, vol = 1, pitch = 1): void {
+  play(id: SfxId, pan = 0, vol = 1, pitch = 1, far = 0): void {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
-    if (!this.allow(id)) return;
-    const t = ctx.currentTime + 0.005;
-    const r = (a: number, b: number) => a + Math.random() * (b - a);
-    const p = pitch * r(0.94, 1.06);
-    const ui = id.startsWith('ui') || id === 'cardIn';
-    const dest = this.out(ui ? this.uiBus : this.sfxBus, pan, vol);
+    const patch = id === 'beam' ? undefined : PATCHES[id];
+    if (!this.bank.ready || !patch) {
+      if (!this.allowLegacy(id)) return;
+      this.onCue?.(id, pan);
+      const t = ctx.currentTime + 0.005;
+      const ui = id.startsWith('ui') || id === 'cardIn';
+      const dest = this.out(ui ? this.uiBus : this.sfxBus, pan, vol);
+      this.synth(SYNTH_FALLBACK[id] ?? id, t, pitch * rand(0.94, 1.06), pitch, dest);
+      return;
+    }
+    const now = ctx.currentTime;
+    // ---- flam guard + density
+    let rec = this.recent.get(id);
+    if (!rec) this.recent.set(id, (rec = []));
+    while (rec.length && now - rec[0]!.t > 0.5) rec.shift();
+    if (patch.gap && rec.some((r) => now - r.t < patch.gap! && Math.abs(r.pan - pan) < 0.2)) return;
+    const dens = Math.max(0.5, 1 / (1 + 0.1 * Math.max(0, rec.length - 2)));
+    rec.push({ t: now, pan });
+    // ---- voice management
+    this.live = this.live.filter((v) => v.end > now);
+    const prio = patch.prio ?? 1;
+    const mine = this.live.filter((v) => v.id === id);
+    if (mine.length >= (patch.voices ?? 4)) this.steal(mine[0]!, now);
+    if (this.live.length >= MAX_VOICES) {
+      let victim: Voice | null = null;
+      for (const v of this.live) if (v.end > now && v.prio <= prio && (!victim || v.prio < victim.prio || (v.prio === victim.prio && v.start < victim.start))) victim = v;
+      if (!victim) return;
+      this.steal(victim, now);
+    }
     this.onCue?.(id, pan);
+
+    // ---- voice graph: layers -> out -> [far LP] -> [panner] -> bus (+ sends)
+    const t = now + 0.004;
+    const out = ctx.createGain();
+    out.gain.value = dbToGain((patch.db ?? 0) + rand(-1, 1)) * vol * dens;
+    let node: AudioNode = out;
+    if (far > 0.05) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 18000 * Math.pow(0.15, Math.min(1, far));
+      lp.Q.value = 0.5;
+      node = node.connect(lp);
+    }
+    const sweep = patch.sweep ?? 0;
+    if (!this.mono && (pan !== 0 || sweep) && ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      const c = Math.max(-1, Math.min(1, pan));
+      if (sweep) {
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        p.pan.setValueAtTime(Math.max(-1, Math.min(1, c - dir * sweep * 0.5)), t);
+        p.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, c + dir * sweep * 0.5)), t + 0.35);
+      } else p.pan.value = c;
+      node = node.connect(p);
+    }
+    node.connect(this.buses[patch.bus]);
+    const rev = Math.min(1, (patch.rev ?? 0) + far * 0.25);
+    if (rev > 0.005 && patch.bus !== 'ui') {
+      const s = ctx.createGain();
+      s.gain.value = rev * 0.55;
+      node.connect(s).connect(this.hall.input);
+    }
+    if (patch.wide && !this.mono) {
+      const s = ctx.createGain();
+      s.gain.value = patch.wide * 0.6;
+      node.connect(s).connect(this.wide.input);
+    }
+
+    const srcs: AudioScheduledSourceNode[] = [];
+    let end = t + 0.3;
+    const p = pitch * rand(0.97, 1.03);
+    for (const L of patch.layers) {
+      if (L.chance !== undefined && Math.random() > L.chance) continue;
+      const t0 = t + (L.delay ?? 0);
+      const lg = ctx.createGain();
+      lg.gain.value = dbToGain(L.db ?? 0);
+      lg.connect(out);
+      if (L.synth) {
+        L.synth(this.kit, t0, p, lg, pitch);
+        end = Math.max(end, t0 + 4.5);
+        continue;
+      }
+      const pk = this.bank.pick(L.s!);
+      if (!pk) continue;
+      const src = ctx.createBufferSource();
+      src.buffer = pk.buf;
+      const r = L.rate ?? [0.97, 1.03];
+      let rate = rand(r[0], r[1]);
+      rate *= L.scale ? scaleRate(pitch) : 1 + (pitch - 1) * (L.track ?? 1);
+      rate = Math.max(0.1, rate);
+      src.playbackRate.setValueAtTime(rate, t0);
+      if (L.rateTo) src.playbackRate.exponentialRampToValueAtTime(rate * L.rateTo, t0 + (L.ramp ?? pk.buf.duration));
+      lg.gain.value *= pk.gain;
+      let head: AudioNode = src;
+      if (L.lp) {
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = L.lp;
+        head = head.connect(f);
+      }
+      if (L.hp) {
+        const f = ctx.createBiquadFilter();
+        f.type = 'highpass';
+        f.frequency.value = L.hp;
+        head = head.connect(f);
+      }
+      head.connect(lg);
+      src.start(t0);
+      let len = pk.buf.duration / Math.min(rate, L.rateTo ? rate * L.rateTo : rate);
+      if (L.dur && L.dur < len) {
+        len = L.dur;
+        lg.gain.setValueAtTime(lg.gain.value, t0 + len - 0.03);
+        lg.gain.linearRampToValueAtTime(0, t0 + len);
+        src.stop(t0 + len + 0.01);
+      }
+      end = Math.max(end, t0 + len);
+      srcs.push(src);
+    }
+    this.live.push({ id, start: now, end, prio, out, srcs });
+    if (patch.duck) this.duckSfx(patch.duck);
+    if (patch.bus === 'weapon') this.shotsThisFrame++;
+  }
+
+  /** Procedural voice for every id (used before the sprite decodes, or if it cannot). */
+  private synth(id: SfxId, t: number, p: number, pitch: number, dest: AudioNode): void {
     switch (id) {
       case 'kinetic':
         this.noiseBurst(t, 0.06, dest, 0.5, 'bandpass', 3200 * p, 900, 1.2);
@@ -401,11 +680,43 @@ export class AudioEngine {
     for (let i = 0; i < 6; i++) this.noiseBurst(t + Math.random() * dur, 0.04, dest, gain * Math.random(), 'highpass', 3000, 6000);
   }
 
+  private loop(name: string, bus: AudioNode, type: BiquadFilterType, freq: number, rate = 1): Loop | null {
+    const ctx = this.ctx!;
+    const pk = this.bank.pick(name);
+    if (!pk) return null;
+    const src = ctx.createBufferSource();
+    src.buffer = pk.buf;
+    src.loop = true;
+    src.playbackRate.value = rate;
+    const filt = ctx.createBiquadFilter();
+    filt.type = type;
+    filt.frequency.value = freq;
+    filt.Q.value = 0.6;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(filt).connect(gain).connect(bus);
+    // start each bed at a random point so sessions never sound identical
+    src.start(ctx.currentTime + 0.01, Math.random() * pk.buf.duration);
+    return { src, filt, gain };
+  }
+
   /** Continuous sounds held while active. Call every frame. */
   boostHold(on: boolean): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    const t = ctx.currentTime;
     if (on && !this.boostNode) {
+      if (this.bank.ready) {
+        const l = this.loop('thrust_loop', this.buses.player, 'lowpass', 900, rand(0.95, 1.05));
+        if (!l) return;
+        // ignition: a deep whoomp, then the burner opens up
+        this.play('boost', 0, 0.8);
+        l.gain.gain.setValueAtTime(0, t);
+        l.gain.gain.linearRampToValueAtTime(0.3, t + 0.12);
+        l.filt.frequency.setTargetAtTime(5200, t, 0.12);
+        this.boostNode = { src: l.src, gain: l.gain, filt: l.filt };
+        return;
+      }
       const src = ctx.createBufferSource();
       src.buffer = this.noise;
       src.loop = true;
@@ -415,64 +726,153 @@ export class AudioEngine {
       filt.Q.value = 0.8;
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      gain.gain.linearRampToValueAtTime(0.45, ctx.currentTime + 0.1);
-      filt.frequency.linearRampToValueAtTime(900, ctx.currentTime + 0.4);
+      gain.gain.linearRampToValueAtTime(0.45, t + 0.1);
+      filt.frequency.linearRampToValueAtTime(900, t + 0.4);
       src.connect(filt).connect(gain).connect(this.sfxBus);
       src.start();
       this.boostNode = { src, gain, filt };
     } else if (!on && this.boostNode) {
       const b = this.boostNode;
-      b.gain.gain.cancelScheduledValues(ctx.currentTime);
-      b.gain.gain.setValueAtTime(b.gain.gain.value, ctx.currentTime);
-      b.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
-      b.src.stop(ctx.currentTime + 0.3);
+      b.gain.gain.cancelScheduledValues(t);
+      b.gain.gain.setValueAtTime(b.gain.gain.value, t);
+      b.gain.gain.linearRampToValueAtTime(0, t + 0.35);
+      b.filt.frequency.cancelScheduledValues(t);
+      b.filt.frequency.setTargetAtTime(500, t, 0.1);
+      b.src.stop(t + 0.4);
       this.boostNode = null;
     }
+  }
+
+  /**
+   * Ship engine bed: a low rumble and a thrust texture that rise with speed.
+   * `speed` is 0..1; pass active=false outside combat.
+   */
+  engineHold(active: boolean, speed: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.bank.ready) return;
+    if (!this.engine) {
+      if (!active) return; // build the loops on first flight, not on the title screen
+      const rumble = this.loop('rumble_loop', this.buses.player, 'lowpass', 500);
+      const thrust = this.loop('engine_loop', this.buses.player, 'lowpass', 900);
+      if (!rumble || !thrust) return;
+      this.engine = { rumble, thrust, level: -1 };
+    }
+    const s = active ? Math.max(0, Math.min(1, speed)) : 0;
+    const e = this.engine;
+    const target = active ? s : -0.5;
+    if (Math.abs(target - e.level) < 0.01) return;
+    e.level = target;
+    const t = ctx.currentTime;
+    const k = 0.12;
+    e.rumble.gain.gain.setTargetAtTime(active ? 0.2 + 0.14 * s : 0, t, active ? k : 0.4);
+    e.rumble.src.playbackRate.setTargetAtTime(0.85 + 0.3 * s, t, k);
+    e.rumble.filt.frequency.setTargetAtTime(380 + 600 * s, t, k);
+    e.thrust.gain.gain.setTargetAtTime(active ? 0.03 + 0.15 * s : 0, t, active ? k : 0.4);
+    e.thrust.src.playbackRate.setTargetAtTime(0.9 + 0.45 * s, t, k);
+    e.thrust.filt.frequency.setTargetAtTime(600 + 2800 * s, t, k);
   }
 
   beamHold(on: boolean, pitch = 1): void {
     const ctx = this.ctx;
     if (!ctx) return;
     if (on) this.beamT = 0.1;
-    if (on && !this.beamNode) {
-      const osc = ctx.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.value = 220 * pitch;
-      const osc2 = ctx.createOscillator();
-      osc2.type = 'square';
-      osc2.frequency.value = 331 * pitch;
-      const lfo = ctx.createOscillator();
-      lfo.frequency.value = 30;
-      const lfoG = ctx.createGain();
-      lfoG.gain.value = 20;
-      lfo.connect(lfoG).connect(osc.frequency);
-      lfo.start();
-      const f = ctx.createBiquadFilter();
-      f.type = 'lowpass';
-      f.frequency.value = 2400;
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.05);
-      osc.connect(f);
-      osc2.connect(f);
-      f.connect(gain).connect(this.sfxBus);
-      osc.start();
-      osc2.start();
-      this.beamNode = { osc, osc2, gain };
+    if (on && this.beamNode?.rate) this.beamNode.rate.setTargetAtTime(pitch, ctx.currentTime, 0.05);
+    if (!on || this.beamNode) return;
+    const t = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    if (this.bank.ready) {
+      // burning texture + a soft harmonic hum with slow filter drift; kept dark and low
+      const pk = this.bank.pick('beam_loop');
+      const tex = ctx.createBufferSource();
+      tex.buffer = pk!.buf;
+      tex.loop = true;
+      tex.playbackRate.value = pitch;
+      const texF = ctx.createBiquadFilter();
+      texF.type = 'lowpass';
+      texF.frequency.value = 3600;
+      const texG = ctx.createGain();
+      texG.gain.value = 0.32 * pk!.gain;
+      tex.connect(texF).connect(texG).connect(gain);
+      const hum = ctx.createOscillator();
+      hum.type = 'sawtooth';
+      hum.frequency.value = 110 * pitch;
+      const hum2 = ctx.createOscillator();
+      hum2.type = 'triangle';
+      hum2.frequency.value = 165.5 * pitch;
+      const humF = ctx.createBiquadFilter();
+      humF.type = 'lowpass';
+      humF.frequency.value = 1100;
+      humF.Q.value = 2;
+      const drift = ctx.createOscillator();
+      drift.frequency.value = 0.7;
+      const driftG = ctx.createGain();
+      driftG.gain.value = 350;
+      drift.connect(driftG).connect(humF.frequency);
+      const humG = ctx.createGain();
+      humG.gain.value = 0.05;
+      hum.connect(humF);
+      hum2.connect(humF);
+      humF.connect(humG).connect(gain);
+      gain.connect(this.buses.weapon);
+      const send = ctx.createGain();
+      send.gain.value = 0.08;
+      gain.connect(send).connect(this.hall.input);
+      for (const n of [tex, hum, hum2, drift]) n.start(t);
+      gain.gain.linearRampToValueAtTime(1.1, t + 0.05);
+      this.beamNode = { srcs: [tex, hum, hum2, drift], gain, rate: tex.playbackRate };
+      this.play('exotic', 0, 0.25, 1.4);
+      return;
     }
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 220 * pitch;
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'square';
+    osc2.frequency.value = 331 * pitch;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 30;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 20;
+    lfo.connect(lfoG).connect(osc.frequency);
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 2400;
+    gain.gain.linearRampToValueAtTime(0.12, t + 0.05);
+    osc.connect(f);
+    osc2.connect(f);
+    f.connect(gain).connect(this.sfxBus);
+    for (const n of [osc, osc2, lfo]) n.start(t);
+    this.beamNode = { srcs: [osc, osc2, lfo], gain };
   }
 
   tick(dt: number): void {
-    if (this.beamNode) {
+    const ctx = this.ctx;
+    if (this.beamNode && ctx) {
       this.beamT -= dt;
       if (this.beamT <= 0) {
-        const ctx = this.ctx!;
         const b = this.beamNode;
-        b.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
-        b.osc.stop(ctx.currentTime + 0.2);
-        b.osc2.stop(ctx.currentTime + 0.2);
+        const t = ctx.currentTime;
+        b.gain.gain.cancelScheduledValues(t);
+        b.gain.gain.setValueAtTime(b.gain.gain.value, t);
+        b.gain.gain.setTargetAtTime(0, t, 0.04);
+        for (const s of b.srcs) s.stop(t + 0.3);
         this.beamNode = null;
       }
+    }
+    if (ctx && this.weaponLevel) {
+      // weapon habituation: sustained fire settles ~3 dB and darkens, then recovers.
+      // Measured on the audio clock: game dt is clamped and scaled by hit-stop/slow-mo.
+      const t = ctx.currentTime;
+      const adt = t - this.lastTick;
+      this.lastTick = t;
+      if (adt > 0 && adt < 3) {
+        this.fireRate += (this.shotsThisFrame / adt - this.fireRate) * (1 - Math.exp(-adt / 0.6));
+        this.fatigue = Math.max(0, Math.min(1, this.fatigue + (this.fireRate > 4 ? adt / 7 : -adt / 2)));
+        this.weaponLevel.gain.setTargetAtTime(1 - 0.3 * this.fatigue, t, 0.4);
+        this.weaponTone.frequency.setTargetAtTime(18000 - 8500 * this.fatigue, t, 0.4);
+      }
+      this.shotsThisFrame = 0;
     }
     this.soundtrack?.tick();
     this.music?.tick();
@@ -480,6 +880,8 @@ export class AudioEngine {
 
   private startAmbience(): void {
     const ctx = this.ctx!;
+    const bed = ctx.createGain();
+    bed.connect(this.ambBus);
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     src.loop = true;
@@ -488,16 +890,35 @@ export class AudioEngine {
     f.frequency.value = 220;
     const gain = ctx.createGain();
     gain.gain.value = 0.35;
-    src.connect(f).connect(gain).connect(this.ambBus);
+    src.connect(f).connect(gain).connect(bed);
     src.start();
     // slow drone
     const o = ctx.createOscillator();
     o.frequency.value = 55;
     const og = ctx.createGain();
     og.gain.value = 0.05;
-    o.connect(og).connect(this.ambBus);
+    o.connect(og).connect(bed);
     o.start();
-    void gain;
+    this.synthAmb = bed;
+  }
+
+  /** Swap the synthesized ambience for the recorded beds once the sprite is in. */
+  private startBeds(): void {
+    const ctx = this.ctx!;
+    const hum = this.loop('amb_hum', this.ambBus, 'lowpass', 700);
+    const air = this.loop('amb_air', this.ambBus, 'lowpass', 2200);
+    const vd = this.loop('amb_void', this.ambBus, 'lowpass', 1300);
+    if (!hum || !air || !vd) return;
+    this.beds = { hum, air, void: vd };
+    // the hum breathes very slowly so the room never feels static
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.05;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 180;
+    lfo.connect(lfoG).connect(hum.filt.frequency);
+    lfo.start();
+    if (this.synthAmb) this.synthAmb.gain.setTargetAtTime(0, ctx.currentTime, 1);
+    this.setScene(this.scene);
   }
 }
 
