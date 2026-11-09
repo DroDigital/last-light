@@ -248,8 +248,8 @@ export class View {
     const g = SHIP_GLOW[style] ?? SHIP_GLOW.shine;
     this.shipMat.uniforms.uGlowStyle!.value = g.style;
     (this.wing.mesh.material as THREE.ShaderMaterial).uniforms.uGlowStyle!.value = g.style;
-    this.shipEdges.setGains(0.22 * g.edges[0], 0.5 * g.edges[1]);
-    this.wing.edges?.setGains(0.25 * g.edges[0], 0.55 * g.edges[1]);
+    this.shipEdges.setGains(0.22 * g.edges[0], 0.5 * g.edges[1], g.white);
+    this.wing.edges?.setGains(0.25 * g.edges[0], 0.55 * g.edges[1], g.white);
   }
 
   private makeShipEdges(id: string): EdgeBatch {

@@ -43,9 +43,11 @@ varying vec3 vCol;
 varying float vA;
 varying float vFlash;
 uniform float uGain;
+uniform float uWhite;
 void main() {
   // pale core: mostly white with a breath of the tint, like a hot neon filament
-  vec3 c = mix(vCol, vec3(1.0), 0.62);
+  // (uWhite lowers the white so the line takes the hull's accent instead)
+  vec3 c = mix(vCol, vec3(1.0), uWhite);
   gl_FragColor = vec4(c * (uGain + vFlash * 0.8) * vA, 1.0);
 }
 `;
@@ -97,7 +99,7 @@ export class EdgeBatch {
     const coreMat = new THREE.ShaderMaterial({
       vertexShader: EDGE_VERT,
       fragmentShader: CORE_FRAG,
-      uniforms: { uBias: { value: 0.0006 }, uGain: { value: opts.coreGain ?? 0.55 } },
+      uniforms: { uBias: { value: 0.0006 }, uGain: { value: opts.coreGain ?? 0.55 }, uWhite: { value: 0.62 } },
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthTest: true,
@@ -112,9 +114,11 @@ export class EdgeBatch {
   }
 
   /** Retune the halo (dithered bloom) and core (crisp line) strengths. */
-  setGains(halo: number, core: number): void {
+  setGains(halo: number, core: number, white = 0.62): void {
     (this.halo.material as THREE.ShaderMaterial).uniforms.uGain!.value = halo;
-    (this.core.material as THREE.ShaderMaterial).uniforms.uGain!.value = core;
+    const cm = (this.core.material as THREE.ShaderMaterial).uniforms;
+    cm.uGain!.value = core;
+    cm.uWhite!.value = white;
   }
 
   /** For batches that own their instance data. */
